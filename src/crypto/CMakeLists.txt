@@ -15,7 +15,6 @@ add_library(bitcoin_crypto STATIC EXCLUDE_FROM_ALL
   ripemd160.cpp
   sha1.cpp
   sha256.cpp
-  sha256_sse4.cpp
   sha3.cpp
   sha512.cpp
   siphash.cpp

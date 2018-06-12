@@ -23,16 +23,11 @@
 #endif
 
 #if defined(__x86_64__) || defined(__amd64__) || defined(__i386__)
-namespace sha256_sse4
-{
-void Transform(uint32_t* s, const unsigned char* chunk, size_t blocks);
-}
 
 namespace sha256_sse41
 {
 void Transform(uint32_t* s, const unsigned char* chunk, size_t blocks);
 }
-#endif
 
 namespace sha256d64_sse41
 {
@@ -53,6 +48,7 @@ namespace sha256_x86_shani
 {
 void Transform(uint32_t* s, const unsigned char* chunk, size_t blocks);
 }
+#endif // defined(__x86_64__) || defined(__amd64__) || defined(__i386__)
 
 namespace sha256_arm_shani
 {

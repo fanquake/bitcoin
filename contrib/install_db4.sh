@@ -6,6 +6,8 @@
 # Install libdb4.8 (Berkeley DB).
 
 export LC_ALL=C
+export CFLAGS="-Wno-error=implicit-function-declaration"
+
 set -e
 
 if [ -z "${1}" ]; then

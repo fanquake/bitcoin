@@ -24,3 +24,7 @@ ipc_packages = capnp
 multiprocess_native_packages = native_libmultiprocess native_capnp
 
 usdt_linux_packages=systemtap
+
+ifneq ($(USE_MUSL_LIBC),)
+linux_native_packages = native_musl_cross_make
+endif

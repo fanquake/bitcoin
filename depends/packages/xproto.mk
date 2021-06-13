@@ -26,3 +26,5 @@ endef
 define $(package)_stage_cmds
   $(MAKE) MKDIRPROG="mkdir -p" DESTDIR=$($(package)_staging_dir) install
 endef
+
+packages/$(package).mk:: ;

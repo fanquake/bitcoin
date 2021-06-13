@@ -43,3 +43,5 @@ endif
 linux_cmake_system_name=Linux
 # Refer to doc/dependencies.md for the minimum required kernel.
 linux_cmake_system_version=3.17.0
+
+hosts/linux.mk:: ;

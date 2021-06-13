@@ -154,3 +154,5 @@ define $(package)_postprocess_cmds
   rm -rf doc/ && \
   mv translations/ ..
 endef
+
+packages/$(package).mk:: ;

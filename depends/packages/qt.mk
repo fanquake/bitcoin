@@ -284,3 +284,5 @@ endef
 define $(package)_postprocess_cmds
   rm -rf doc/
 endef
+
+packages/$(package).mk:: ;

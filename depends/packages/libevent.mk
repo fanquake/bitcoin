@@ -44,3 +44,5 @@ define $(package)_postprocess_cmds
   rm include/event2/*_compat.h && \
   rm lib/libevent.a
 endef
+
+packages/$(package).mk:: ;

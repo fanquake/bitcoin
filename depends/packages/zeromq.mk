@@ -47,3 +47,5 @@ define $(package)_postprocess_cmds
   rm -rf share && \
   rm -rf lib/pkgconfig
 endef
+
+packages/$(package).mk:: ;

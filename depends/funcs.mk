@@ -339,3 +339,5 @@ $(foreach package,$(all_packages),$(eval $(call int_config_attach_build_config,$
 
 #create build targets
 $(foreach package,$(all_packages),$(eval $(call int_add_cmds,$(package))))
+
+funcs.mk:: ;

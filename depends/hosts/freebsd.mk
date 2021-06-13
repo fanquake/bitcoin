@@ -29,3 +29,5 @@ x86_64_freebsd_CXX=$(default_host_CXX) -m64
 endif
 
 freebsd_cmake_system_name=FreeBSD
+
+hosts/freebsd.mk:: ;

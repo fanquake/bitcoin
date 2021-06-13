@@ -35,3 +35,5 @@ x86_64_netbsd_CXX=$(default_host_CXX) -m64
 endif
 
 netbsd_cmake_system_name=NetBSD
+
+hosts/netbsd.mk:: ;

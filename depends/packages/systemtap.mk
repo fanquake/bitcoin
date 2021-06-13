@@ -10,3 +10,5 @@ define $(package)_preprocess_cmds
   mkdir -p $($(package)_staging_prefix_dir)/include/sys && \
   cp includes/sys/sdt.h $($(package)_staging_prefix_dir)/include/sys/sdt.h
 endef
+
+packages/$(package).mk:: ;

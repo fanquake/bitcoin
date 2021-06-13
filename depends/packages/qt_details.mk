@@ -24,3 +24,5 @@ qt_details_top_cmake_ecmoptionaladdsubdirectory_sha256_hash := 97ee8bbfcb0a4bdcc
 qt_details_top_cmake_qttoplevelhelpers_file_name := QtTopLevelHelpers.cmake
 qt_details_top_cmake_qttoplevelhelpers_download_file := $(qt_details_top_cmake_qttoplevelhelpers_file_name)?h=$(qt_details_version)
 qt_details_top_cmake_qttoplevelhelpers_sha256_hash := 5ac2a7159ee27b5b86d26ecff44922e7b8f319aa847b7b5766dc17932fd4a294
+
+packages/qt_details.mk:: ;

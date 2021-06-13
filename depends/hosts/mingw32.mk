@@ -25,3 +25,5 @@ mingw32_debug_CPPFLAGS=-D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_PEDANTIC
 mingw32_cmake_system_name=Windows
 # Windows 10
 mingw32_cmake_system_version=10.0
+
+hosts/mingw32.mk:: ;

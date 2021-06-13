@@ -29,3 +29,5 @@ x86_64_openbsd_CXX=$(default_host_CXX) -m64
 endif
 
 openbsd_cmake_system_name=OpenBSD
+
+hosts/openbsd.mk:: ;

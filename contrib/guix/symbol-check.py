@@ -40,7 +40,7 @@ MAX_VERSIONS = {
 # Ignore symbols that are exported as part of every executable
 IGNORE_EXPORTS = {
 'environ', '_environ', '__environ', '_fini', '_init', 'stdin',
-'stdout', 'stderr',
+'stdout', 'stderr', 'in6addr_any',
 }
 
 # Expected linker-loader names can be found here:

@@ -46,7 +46,7 @@ MAX_VERSIONS = {
 
 # Ignore symbols that are exported as part of every executable
 IGNORE_EXPORTS = {
-'stdin', 'stdout', 'stderr',
+'in6addr_any', 'stderr', 'stdin', 'stdout',
 }
 
 # Expected linker-loader names can be found here:

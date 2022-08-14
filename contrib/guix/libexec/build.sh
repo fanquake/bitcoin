@@ -157,6 +157,7 @@ case "$HOST" in
                 riscv64-linux-gnu)     echo /lib/ld-linux-riscv64-lp64d.so.1 ;;
                 powerpc64-linux-gnu)   echo /lib64/ld64.so.1;;
                 powerpc64le-linux-gnu) echo /lib64/ld64.so.2;;
+                s390x-linux-gnu)       echo /lib/ld64.so.1;;
                 *)                     exit 1 ;;
             esac
         )

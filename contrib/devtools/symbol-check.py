@@ -38,6 +38,7 @@ MAX_VERSIONS = {
     lief.ELF.ARCH.ARM:    (2,27),
     lief.ELF.ARCH.AARCH64:(2,27),
     lief.ELF.ARCH.PPC64:  (2,27),
+    lief.ELF.ARCH.S390:   (2,27),
     lief.ELF.ARCH.RISCV:  (2,27),
 },
 'LIBATOMIC': (1,0),
@@ -68,6 +69,9 @@ ELF_INTERPRETER_NAMES: dict[lief.ELF.ARCH, dict[lief.ENDIANNESS, str]] = {
     },
     lief.ELF.ARCH.RISCV:    {
         lief.ENDIANNESS.LITTLE: "/lib/ld-linux-riscv64-lp64d.so.1",
+    },
+    lief.ELF.ARCH.S390:    {
+        lief.ENDIANNESS.BIG: "/lib/ld64.so.1",
     },
 }
 

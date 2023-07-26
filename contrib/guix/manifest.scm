@@ -494,6 +494,38 @@ inspecting signatures in Mach-O binaries.")
                    (("^install-others =.*$")
                     (string-append "install-others = " out "/etc/rpc\n")))))))))))))
 
+(define-public glibc-2.32
+  (let ((commit "6fa61e5997cca8c92e7ea9816341ecb63f8623e3"))
+  (package
+    (inherit glibc) ;; 2.39
+    (version "2.32")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://sourceware.org/git/glibc.git")
+                    (commit commit)))
+              (file-name (git-file-name "glibc" commit))
+              (sha256
+               (base32
+                "1iqslif1iqfqmck0yimcpzlb2ra4dnpy4zhl8qkd8rcz61gl4fgc"))
+              (patches (search-our-patches "glibc-guix-prefix.patch"))))
+    (arguments
+      (substitute-keyword-arguments (package-arguments glibc)
+        ((#:configure-flags flags)
+          `(append ,flags
+            ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
+            (list "--enable-bind-now",
+                  "--enable-cet=yes",
+                  "--enable-stack-protector=all",
+                  "--enable-static-nss=yes",
+                  "--enable-static-pie",
+                  "--disable-nscd",
+                  "--disable-profile",
+                  "--disable-pt_chown",
+                  "--disable-timezone-tools",
+                  "--disable-werror",
+                  building-on))))))))
+
 ;; The sponge tool from moreutils.
 (define-public sponge
   (package

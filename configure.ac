@@ -899,6 +899,8 @@ if test "$TARGET_OS" != "windows"; then
   AX_CHECK_COMPILE_FLAG([-fPIC], [PIC_FLAGS="-fPIC"])
 fi
 
+AX_CHECK_LINK_FLAG([-Wl,-z,pack-relative-relocs], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,pack-relative-relocs"], [], [$LDFLAG_WERROR])
+
 if test "$use_hardening" != "no"; then
   use_hardening=yes
   AX_CHECK_COMPILE_FLAG([-Wstack-protector], [HARDENED_CXXFLAGS="$HARDENED_CXXFLAGS -Wstack-protector"])

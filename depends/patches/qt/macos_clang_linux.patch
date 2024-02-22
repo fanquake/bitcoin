@@ -1,0 +1,54 @@
+commit 0e826b27d2f293c8e31ef4131a5698ae57ddcc2c
+Author: fanquake <fanquake@gmail.com>
+Date:   Fri Feb 2 16:02:59 2024 +0000
+
+    build: patches for a Clang on Linux macos build
+
+    Currently when using Clang on Linux, Qt still uses GCC..
+
+diff --git a/qtbase/mkspecs/common/clang.conf b/qtbase/mkspecs/common/clang.conf
+index 6eb08a9d2f..af8d5d25ce 100644
+--- a/qtbase/mkspecs/common/clang.conf
++++ b/qtbase/mkspecs/common/clang.conf
+@@ -2,7 +2,7 @@
+ # Qmake configuration for Clang on Linux, OS X and iOS
+ #
+ 
+-QMAKE_COMPILER          = gcc clang llvm   # clang pretends to be gcc
++QMAKE_COMPILER          = clang llvm
+ 
+ QMAKE_CC                = $${CROSS_COMPILE}clang
+ QMAKE_CXX               = $${CROSS_COMPILE}clang++
+diff --git a/qtbasemkspecs/features/toolchain.prf b/qtbasemkspecs/features/toolchain.prf
+index 0c505fc965..3e08eb5ac6 100644
+--- a/qtbase/mkspecs/features/toolchain.prf
++++ b/qtbase/mkspecs/features/toolchain.prf
+@@ -60,7 +60,7 @@ isEmpty($${target_prefix}.COMPILER_MACROS) {
+         } else {
+             vars = $$qtVariablesFromMSVC($$QMAKE_CXX)
+         }
+-    } else: gcc|ghs {
++    } else: clang|gcc|ghs {
+         vars = $$qtVariablesFromGCC($$QMAKE_CXX)
+     }
+     for (v, vars) {
+@@ -166,7 +166,7 @@ isEmpty($${target_prefix}.INCDIRS) {
+     #
+     wasm {
+         # wasm compiler does not work here, just use defaults
+-    } else: gcc {
++    } else: clang|gcc {
+         cmd_suffix = "<$$QMAKE_SYSTEM_NULL_DEVICE >$$QMAKE_SYSTEM_NULL_DEVICE"
+         equals(QMAKE_HOST.os, Windows): \
+             cmd_prefix = "set LC_ALL=C&"
+diff --git a/qtbase/mkspecs/linux-clang/qmake.conf b/qtbase/mkspecs/linux-clang/qmake.conf
+index 77d913f8a5..354a8bec0a 100644
+--- a/qtbase/mkspecs/linux-clang/qmake.conf
++++ b/qtbase/mkspecs/linux-clang/qmake.conf
+@@ -11,6 +11,5 @@ include(../common/linux.conf)
+ include(../common/gcc-base-unix.conf)
+ include(../common/clang.conf)
+ 
+-QMAKE_LFLAGS += -ccc-gcc-name g++
+ 
+ load(qt_config)

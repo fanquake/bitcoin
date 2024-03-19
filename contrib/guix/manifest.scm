@@ -108,6 +108,21 @@ desirable for building Bitcoin Core release binaries."
                         base-libc
                         base-gcc))
 
+;; We can drop this package and switch back to
+;; mingw-w64-x86_64-winpthreads once 12.x is upstreamed.
+(define-public mingw-w64-x86_64-12
+  (package
+    (inherit mingw-w64-x86_64-winpthreads)
+    (version "12.0.0")
+    (source
+       (origin
+         (method url-fetch)
+         (uri (string-append
+               "mirror://sourceforge/mingw-w64/mingw-w64/"
+               "mingw-w64-release/mingw-w64-v" version ".tar.bz2"))
+         (sha256
+          (base32 "0bzdprdrb8jy5dhkl2j2yhnr2nsiv6wk2wzxrzaqsvjbmj58jhfc"))))))
+
 (define (gcc-mingw-patches gcc)
   (package-with-extra-patches gcc
     (search-our-patches "gcc-remap-guix-store.patch")))
@@ -119,7 +134,7 @@ desirable for building Bitcoin Core release binaries."
 (define (make-mingw-pthreads-cross-toolchain target)
   "Create a cross-compilation toolchain package for TARGET"
   (let* ((xbinutils (binutils-mingw-patches (cross-binutils target)))
-         (pthreads-xlibc mingw-w64-x86_64-winpthreads)
+         (pthreads-xlibc mingw-w64-x86_64-12)
          (pthreads-xgcc (cross-gcc target
                                     #:xgcc (gcc-mingw-patches mingw-w64-base-gcc)
                                     #:xbinutils xbinutils

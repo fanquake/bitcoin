@@ -104,6 +104,7 @@ darwin_LDFLAGS=-Wl,-platform_version,macos,$(OSX_MIN_VERSION),$(OSX_SDK_VERSION)
 ifneq ($(build_os),darwin)
 darwin_CFLAGS += -mlinker-version=$(LD64_VERSION)
 darwin_CXXFLAGS += -mlinker-version=$(LD64_VERSION)
+darwin_LDFLAGS += --ld-path=$(build_prefix)/bin/$(host)-ld
 endif
 
 darwin_release_CFLAGS=-O2

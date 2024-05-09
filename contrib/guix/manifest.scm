@@ -480,6 +480,9 @@ inspecting signatures in Mach-O binaries.")
                    (("^install-others =.*$")
                     (string-append "install-others = " out "/etc/rpc\n"))))))))))))
 
+(define-public lld-as-ld-wrapper-17
+  (make-lld-wrapper lld-17 #:lld-as-ld? #t))
+
 (packages->manifest
  (append
   (list ;; The Basics
@@ -534,6 +537,8 @@ inspecting signatures in Mach-O binaries.")
                  gcc-toolchain-11
                  binutils
                  clang-toolchain-17
+                 lld-17
+                 lld-as-ld-wrapper-17
                  python-signapple
                  zip))
           (else '())))))

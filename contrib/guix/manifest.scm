@@ -535,7 +535,6 @@ inspecting signatures in Mach-O binaries.")
           ((string-contains target "darwin")
            (list ;; Native GCC 11 toolchain
                  gcc-toolchain-11
-                 binutils
                  clang-toolchain-17
                  lld-17
                  lld-as-ld-wrapper-17

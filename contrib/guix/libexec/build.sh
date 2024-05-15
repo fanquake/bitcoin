@@ -57,11 +57,6 @@ store_path() {
               --expression='s|"[[:space:]]*$||'
 }
 
-
-# Set environment variables to point the NATIVE toolchain to the right
-# includes/libs
-NATIVE_GCC="$(store_path gcc-toolchain)"
-
 unset LIBRARY_PATH
 unset CPATH
 unset C_INCLUDE_PATH
@@ -72,10 +67,12 @@ unset OBJCPLUS_INCLUDE_PATH
 case "$HOST" in
     *darwin*)
         # Required for qt/qmake
-        export C_INCLUDE_PATH="${NATIVE_GCC}/include"
-        export CPLUS_INCLUDE_PATH="${NATIVE_GCC}/include/c++:${NATIVE_GCC}/include"
+        export NATIVE_GCC="$(store_path gcc)" # base toolchain
+        KERNEL="$(store_path "linux-libre-headers")"
+        export CPLUS_INCLUDE_PATH="${NATIVE_GCC}/include/c++:${NATIVE_GCC}/include${KERNEL}/include"
         ;;
     *)
+        export NATIVE_GCC="$(store_path gcc-toolchain)"
         export C_INCLUDE_PATH="${NATIVE_GCC}/include"
         export CPLUS_INCLUDE_PATH="${NATIVE_GCC}/include/c++:${NATIVE_GCC}/include"
         export OBJC_INCLUDE_PATH="${NATIVE_GCC}/include"
@@ -192,7 +189,6 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
 case "$HOST" in
     *darwin*)
         # Unset now that Qt is built
-        unset C_INCLUDE_PATH
         unset CPLUS_INCLUDE_PATH
         unset LIBRARY_PATH
         ;;

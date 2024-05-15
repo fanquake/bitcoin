@@ -528,10 +528,9 @@ inspecting signatures in Mach-O binaries.")
                  (list gcc-toolchain-12 "static")
                  (make-bitcoin-cross-toolchain target)))
           ((string-contains target "darwin")
-           (list ;; Native GCC 11 toolchain
-                 gcc-toolchain-11
-                 clang-toolchain-18
+           (list clang-toolchain-18
                  lld-18
+                 linux-libre-headers-6.1
                  (make-lld-wrapper lld-18 #:lld-as-ld? #t)
                  python-signapple
                  zip))

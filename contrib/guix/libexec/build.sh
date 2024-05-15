@@ -57,11 +57,6 @@ store_path() {
               --expression='s|"[[:space:]]*$||'
 }
 
-
-# Set environment variables to point the NATIVE toolchain to the right
-# includes/libs
-NATIVE_GCC="$(store_path gcc-toolchain)"
-
 unset LIBRARY_PATH
 unset CPATH
 unset C_INCLUDE_PATH
@@ -69,8 +64,16 @@ unset CPLUS_INCLUDE_PATH
 unset OBJC_INCLUDE_PATH
 unset OBJCPLUS_INCLUDE_PATH
 
-export C_INCLUDE_PATH="${NATIVE_GCC}/include"
-export CPLUS_INCLUDE_PATH="${NATIVE_GCC}/include/c++:${NATIVE_GCC}/include"
+case "$HOST" in
+    *darwin*) ;;
+    *)
+        # Set environment variables to point the NATIVE toolchain to the right
+        # includes/libs
+        NATIVE_GCC="$(store_path gcc-toolchain)"
+        export C_INCLUDE_PATH="${NATIVE_GCC}/include"
+        export CPLUS_INCLUDE_PATH="${NATIVE_GCC}/include/c++:${NATIVE_GCC}/include"
+        ;;
+esac
 
 case "$HOST" in
     *darwin*) export LIBRARY_PATH="${NATIVE_GCC}/lib" ;; # Required for qt/qmake
@@ -177,15 +180,6 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    x86_64_linux_RANLIB=x86_64-linux-gnu-gcc-ranlib \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
                                    x86_64_linux_STRIP=x86_64-linux-gnu-strip
-
-case "$HOST" in
-    *darwin*)
-        # Unset now that Qt is built
-        unset C_INCLUDE_PATH
-        unset CPLUS_INCLUDE_PATH
-        unset LIBRARY_PATH
-        ;;
-esac
 
 ###########################
 # Source Tarball Building #

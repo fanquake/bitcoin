@@ -508,7 +508,6 @@ inspecting signatures in Mach-O binaries.")
         gzip
         xz
         ;; Build tools
-        gcc-toolchain-12
         cmake-minimal
         gnu-make
         ;; Scripting
@@ -519,7 +518,8 @@ inspecting signatures in Mach-O binaries.")
         python-lief)
   (let ((target (getenv "HOST")))
     (cond ((string-suffix? "-mingw32" target)
-           (list zip
+           (list gcc-toolchain-12
+                 zip
                  (make-mingw-pthreads-cross-toolchain "x86_64-w64-mingw32")
                  nsis-x86_64
                  nss-certs
@@ -527,6 +527,7 @@ inspecting signatures in Mach-O binaries.")
           ((string-contains target "-linux-")
            (list bison
                  pkg-config
+                 gcc-toolchain-12
                  (list gcc-toolchain-12 "static")
                  (make-bitcoin-cross-toolchain target)))
           ((string-contains target "darwin")

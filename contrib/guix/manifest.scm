@@ -94,12 +94,47 @@ chain for " target " development."))
 (define base-gcc gcc-12)
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 
+(define-public base-gcc-no-pthreads
+  (package
+    (inherit base-gcc)
+    (arguments
+      (substitute-keyword-arguments (package-arguments base-gcc)
+        ((#:configure-flags flags)
+          `(append ,flags
+            ;; https://gcc.gnu.org/install/configure.html
+            (list "--enable-initfini-array=yes",
+                  "--enable-default-ssp=yes",
+                  "--enable-default-pie=yes",
+                  "--enable-standard-branch-protection=yes",
+                  building-on)))
+        ((#:phases phases)
+          `(modify-phases ,phases
+            ;; Given a XGCC package, return a modified package that replace each instance of
+            ;; -rpath in the default system spec that's inserted by Guix with -rpath-link
+            (add-after 'pre-configure 'replace-rpath-with-rpath-link
+             (lambda _
+               (substitute* (cons "gcc/config/rs6000/sysv4.h"
+                                  (find-files "gcc/config"
+                                              "^gnu-user.*\\.h$"))
+                 (("-rpath=") "-rpath-link="))
+               #t))))))))
+
+(define-public base-gcc-with-pthreads
+  (package
+    (inherit base-gcc-no-pthreads)
+    (arguments
+      (substitute-keyword-arguments (package-arguments base-gcc-no-pthreads)
+        ((#:configure-flags flags)
+          `(append ,flags
+            ;; https://gcc.gnu.org/install/configure.html
+            (list "--enable-threads=posix")))))))
+
 (define* (make-bitcoin-cross-toolchain target
                                        #:key
-                                       (base-gcc-for-libc linux-base-gcc)
+                                       (base-gcc-for-libc base-gcc-no-pthreads)
                                        (base-kernel-headers base-linux-kernel-headers)
                                        (base-libc glibc-2.31)
-                                       (base-gcc linux-base-gcc))
+                                       (base-gcc base-gcc-with-pthreads))
   "Convenience wrapper around MAKE-CROSS-TOOLCHAIN with default values
 desirable for building Bitcoin Core release binaries."
   (make-cross-toolchain target
@@ -119,9 +154,13 @@ desirable for building Bitcoin Core release binaries."
 (define (make-mingw-pthreads-cross-toolchain target)
   "Create a cross-compilation toolchain package for TARGET"
   (let* ((xbinutils (binutils-mingw-patches (cross-binutils target)))
-         (pthreads-xlibc mingw-w64-x86_64-winpthreads)
+         (pthreads-xlibc (let ((machine (substring target 0 (string-index target #\-))))
+                                (make-mingw-w64 machine
+                                                #:xgcc base-gcc-no-pthreads
+                                                #:xbinutils xbinutils
+                                                #:with-winpthreads? #t)))
          (pthreads-xgcc (cross-gcc target
-                                    #:xgcc (gcc-mingw-patches mingw-w64-base-gcc)
+                                    #:xgcc (gcc-mingw-patches base-gcc-with-pthreads)
                                     #:xbinutils xbinutils
                                     #:libc pthreads-xlibc)))
     ;; Define a meta-package that propagates the resulting XBINUTILS, XLIBC, and
@@ -402,43 +441,6 @@ specific moment in time, whitelisting and revocation checks.")
       (description "signapple is a Python tool for creating, verifying, and
 inspecting signatures in Mach-O binaries.")
       (license license:expat))))
-
-(define-public mingw-w64-base-gcc
-  (package
-    (inherit base-gcc)
-    (arguments
-      (substitute-keyword-arguments (package-arguments base-gcc)
-        ((#:configure-flags flags)
-          `(append ,flags
-            ;; https://gcc.gnu.org/install/configure.html
-            (list "--enable-threads=posix",
-                  "--enable-default-ssp=yes",
-                  building-on)))))))
-
-(define-public linux-base-gcc
-  (package
-    (inherit base-gcc)
-    (arguments
-      (substitute-keyword-arguments (package-arguments base-gcc)
-        ((#:configure-flags flags)
-          `(append ,flags
-            ;; https://gcc.gnu.org/install/configure.html
-            (list "--enable-initfini-array=yes",
-                  "--enable-default-ssp=yes",
-                  "--enable-default-pie=yes",
-                  "--enable-standard-branch-protection=yes",
-                  building-on)))
-        ((#:phases phases)
-          `(modify-phases ,phases
-            ;; Given a XGCC package, return a modified package that replace each instance of
-            ;; -rpath in the default system spec that's inserted by Guix with -rpath-link
-            (add-after 'pre-configure 'replace-rpath-with-rpath-link
-             (lambda _
-               (substitute* (cons "gcc/config/rs6000/sysv4.h"
-                                  (find-files "gcc/config"
-                                              "^gnu-user.*\\.h$"))
-                 (("-rpath=") "-rpath-link="))
-               #t))))))))
 
 (define-public glibc-2.31
   (let ((commit "8e30f03744837a85e33d84ccd34ed3abe30d37c3"))

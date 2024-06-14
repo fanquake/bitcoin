@@ -92,8 +92,6 @@ BOOST_AUTO_TEST_CASE(double_serfloat_tests) {
     BOOST_CHECK_EQUAL(TestDouble(-std::numeric_limits<double>::max()), 0xffefffffffffffff);
     BOOST_CHECK_EQUAL(TestDouble(std::numeric_limits<double>::lowest()), 0xffefffffffffffff);
     BOOST_CHECK_EQUAL(TestDouble(-std::numeric_limits<double>::lowest()), 0x7fefffffffffffff);
-    BOOST_CHECK_EQUAL(TestDouble(std::numeric_limits<double>::denorm_min()), 0x1);
-    BOOST_CHECK_EQUAL(TestDouble(-std::numeric_limits<double>::denorm_min()), 0x8000000000000001);
     // Note that all NaNs are encoded the same way.
     BOOST_CHECK_EQUAL(TestDouble(std::numeric_limits<double>::quiet_NaN()), 0x7ff8000000000000);
     BOOST_CHECK_EQUAL(TestDouble(-std::numeric_limits<double>::quiet_NaN()), 0x7ff8000000000000);

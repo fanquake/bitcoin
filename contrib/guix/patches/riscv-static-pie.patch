@@ -1,0 +1,35 @@
+commit c70b6f4fad4bac26529aebfcdfba61e59bed6f8d
+Author: Yanzhang Wang <yanzhang.wang@intel.com>
+Date:   Sat Oct 7 19:32:25 2023 +0800
+
+    RISC-V: add static-pie support
+    
+    We only need to pass options to the linker when static-pie is passed.
+    There's another patch to enable static-pie in glibc. And we need to
+    enable in GCC first.
+    
+    gcc/ChangeLog:
+    
+            * config/riscv/linux.h: Pass the static-pie specific options to
+            the linker.
+    
+    Signed-off-by: Yanzhang Wang <yanzhang.wang@intel.com>
+
+diff --git a/gcc/config/riscv/linux.h b/gcc/config/riscv/linux.h
+index 38803723ba9..0627bbed803 100644
+--- a/gcc/config/riscv/linux.h
++++ b/gcc/config/riscv/linux.h
+@@ -65,9 +65,10 @@ along with GCC; see the file COPYING3.  If not see
+ %{shared} \
+   %{!shared: \
+     %{!static: \
+-      %{rdynamic:-export-dynamic} \
+-      -dynamic-linker " GNU_USER_DYNAMIC_LINKER "} \
+-    %{static:-static}}"
++      %{!static-pie: \
++	%{rdynamic:-export-dynamic} \
++	-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}} \
++    %{static:-static} %{static-pie:-static -pie --no-dynamic-linker -z text}}"
+ 
+ #define TARGET_ASM_FILE_END file_end_indicate_exec_stack
+ 

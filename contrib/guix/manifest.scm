@@ -123,7 +123,8 @@ desirable for building Bitcoin Core release binaries."
 
 (define (gcc-static-pie-patches gcc)
   (package-with-extra-patches gcc
-    (search-our-patches "arm_static_pie.patch")))
+    (search-our-patches "arm_static_pie.patch"
+                        "riscv-static-pie.patch")))
 
 (define (gcc-mingw-patches gcc)
   (package-with-extra-patches gcc

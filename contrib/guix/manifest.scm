@@ -471,6 +471,7 @@ inspecting signatures in Mach-O binaries.")
             (list "--enable-stack-protector=all",
                   "--enable-cet",
                   "--enable-bind-now",
+                  "--enable-static-pie",
                   "--disable-werror",
                   building-on)))
     ((#:phases phases)

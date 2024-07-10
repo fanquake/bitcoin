@@ -470,6 +470,7 @@ inspecting signatures in Mach-O binaries.")
             ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
             (list "--enable-stack-protector=all",
                   "--enable-bind-now",
+                  "--enable-static-pie",
                   "--disable-werror",
                   building-on)))
     ((#:phases phases)

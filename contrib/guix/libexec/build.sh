@@ -57,15 +57,6 @@ store_path() {
               --expression='s|"[[:space:]]*$||'
 }
 
-case "$HOST" in
-    # We only want clang and lld
-    *darwin*)
-        ln -s --no-dereference "$(command -v clang)" /usr/bin/gcc
-        ln -s --no-dereference "$(command -v clang++)" /usr/bin/g++
-        ln -s --no-dereference "$(command -v lld)"  /usr/bin/ld
-        ;;
-esac
-
 unset LIBRARY_PATH
 unset CPATH
 unset C_INCLUDE_PATH
@@ -151,6 +142,15 @@ export GUIX_LD_WRAPPER_DISABLE_RPATH=yes
 # Symlink file and env to a conventional path
 [ -e /usr/bin/file ] || ln -s --no-dereference "$(command -v file)" /usr/bin/file
 [ -e /usr/bin/env ]  || ln -s --no-dereference "$(command -v env)"  /usr/bin/env
+
+case "$HOST" in
+    # We only want clang and lld when building for macOS
+    *darwin*)
+        ln -s --no-dereference "$(command -v clang)" /usr/bin/gcc
+        ln -s --no-dereference "$(command -v clang++)" /usr/bin/g++
+        ln -s --no-dereference "$(command -v lld)"  /usr/bin/ld
+        ;;
+esac
 
 # Determine the correct value for -Wl,--dynamic-linker for the current $HOST
 case "$HOST" in

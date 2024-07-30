@@ -146,7 +146,7 @@ export GUIX_LD_WRAPPER_DISABLE_RPATH=yes
 case "$HOST" in
     # We only want clang and lld when building for macOS
     *darwin*)
-        ln -s --no-dereference "$(command -v clang)" /usr/bin/gcc
+        ln -s --no-dereference "$(command -v clang)" /usr/bin/cc
         ln -s --no-dereference "$(command -v clang++)" /usr/bin/g++
         ln -s --no-dereference "$(command -v lld)"  /usr/bin/ld
         ;;

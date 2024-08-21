@@ -165,6 +165,14 @@ export TZ="UTC"
 # Depends Building #
 ####################
 
+case "$HOST" in
+    x86_64-linux-gnu)
+        CFLAGS="-fcf-protection=full -O2"
+        CXXFLAGS="-fcf-protection=full -O2"
+        ;;
+esac
+
+
 # Build the depends tree, overriding variables that assume multilib gcc
 make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${V:+V=1} \
@@ -179,6 +187,7 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    x86_64_linux_RANLIB=x86_64-linux-gnu-gcc-ranlib \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
                                    x86_64_linux_STRIP=x86_64-linux-gnu-strip
+
 
 case "$HOST" in
     *darwin*)
@@ -212,6 +221,7 @@ CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_GUI_TESTS=OFF -DBUILD
 HOST_CFLAGS="-O2 -g"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 case "$HOST" in
+    x86_64-linux-gnu) HOST_CFLAGS+=" -fcf-protection=full" ;;
     *mingw*)  HOST_CFLAGS+=" -fno-ident" ;;
     *darwin*) unset HOST_CFLAGS ;;
 esac
@@ -227,6 +237,10 @@ esac
 case "$HOST" in
     *linux*)  HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O2" ;;
     *mingw*)  HOST_LDFLAGS="-Wl,--no-insert-timestamp" ;;
+esac
+
+case "$HOST" in
+    x86_64-linux-gnu) HOST_LDFLAGS="${HOST_LDFLAGS} -Wl,-z,cet-report=error" ;;
 esac
 
 # EXE FLAGS

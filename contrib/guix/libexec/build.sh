@@ -165,6 +165,15 @@ export TZ="UTC"
 # Depends Building #
 ####################
 
+case "$HOST" in
+    x86_64-linux-gnu)
+        export x86_64_linux_CFLAGS="-fcf-protection=full -O2"
+        export x86_64_linux_CXXFLAGS="-fcf-protection=full -O2"
+        export x86_64_linux_LDFLAGS="-Wl,-z,cet-report=error"
+        ;;
+esac
+
+
 # Build the depends tree, overriding variables that assume multilib gcc
 make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${V:+V=1} \
@@ -178,7 +187,11 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    x86_64_linux_AR=x86_64-linux-gnu-gcc-ar \
                                    x86_64_linux_RANLIB=x86_64-linux-gnu-gcc-ranlib \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
-                                   x86_64_linux_STRIP=x86_64-linux-gnu-strip
+                                   x86_64_linux_STRIP=x86_64-linux-gnu-strip \
+                                   ${x86_64_linux_CFLAGS+x86_64_linux_CFLAGS="$x86_64_linux_CFLAGS"} \
+                                   ${x86_64_linux_CXXFLAGS+x86_64_linux_CXXFLAGS="$x86_64_linux_CXXFLAGS"} \
+                                   ${x86_64_linux_LDFLAGS+x86_64_linux_LDFLAGS="$x86_64_linux_LDFLAGS"}
+
 
 case "$HOST" in
     *darwin*)

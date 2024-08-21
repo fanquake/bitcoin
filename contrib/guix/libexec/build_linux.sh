@@ -47,6 +47,10 @@ case "$HOST" in
     *) HOST_LDFLAGS="${HOST_LDFLAGS} -Wl,--fatal-warnings" ;;
 esac
 
+case "$HOST" in
+    x86_64-linux-gnu) HOST_LDFLAGS="${HOST_LDFLAGS} -Wl,-z,cet-report=error" ;;
+esac
+
 mkdir -p "$DISTSRC"
 (
     cd "$DISTSRC"

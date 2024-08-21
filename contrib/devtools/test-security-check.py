@@ -67,7 +67,7 @@ class TestSecurityChecks(unittest.TestCase):
             self.assertEqual(call_security_check(cxx, source, executable, pass_flags + ['-no-pie','-fno-PIE']), (1, executable + ': failed PIE'))
             self.assertEqual(call_security_check(cxx, source, executable, pass_flags + ['-Wl,-znorelro']), (1, executable + ': failed RELRO'))
             self.assertEqual(call_security_check(cxx, source, executable, pass_flags + ['-Wl,-z,noseparate-code']), (1, executable + ': failed SEPARATE_CODE'))
-            self.assertEqual(call_security_check(cxx, source, executable, pass_flags + ['-fcf-protection=none']), (1, executable + ': failed CONTROL_FLOW'))
+            self.assertEqual(call_security_check(cxx, source, executable, pass_flags + ['-fcf-protection=none', '-Wl,-z,cet-report=none']), (1, executable + ': failed CONTROL_FLOW'))
             self.assertEqual(call_security_check(cxx, source, executable, pass_flags + ['-U_FORTIFY_SOURCE']), (1, executable + ': failed FORTIFY'))
             self.assertEqual(call_security_check(cxx, source, executable, pass_flags), (0, ''))
         else:

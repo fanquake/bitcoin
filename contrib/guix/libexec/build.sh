@@ -165,12 +165,22 @@ export TZ="UTC"
 # Depends Building #
 ####################
 
+case "$HOST" in
+    x86_64-linux-gnu)
+        export CFLAGS="${CFLAGS} -fcf-protection=full"
+        export CXXFLAGS="${CXXFLAGS} -fcf-protection=full"
+        ;;
+esac
+
+
 # Build the depends tree, overriding variables that assume multilib gcc
 make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${V:+V=1} \
                                    ${SOURCES_PATH+SOURCES_PATH="$SOURCES_PATH"} \
                                    ${BASE_CACHE+BASE_CACHE="$BASE_CACHE"} \
                                    ${SDK_PATH+SDK_PATH="$SDK_PATH"} \
+                                   CFLAGS="${CFLAGS}" \
+                                   CXXFLAGS="${CXXFLAGS}" \
                                    x86_64_linux_CC=x86_64-linux-gnu-gcc \
                                    x86_64_linux_CXX=x86_64-linux-gnu-g++ \
                                    x86_64_linux_AR=x86_64-linux-gnu-gcc-ar \
@@ -227,6 +237,10 @@ esac
 case "$HOST" in
     *linux*)  HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -static-libstdc++ -Wl,-O2" ;;
     *mingw*)  HOST_LDFLAGS="-Wl,--no-insert-timestamp" ;;
+esac
+
+case "$HOST" in
+    x86_64-linux-gnu)  HOST_LDFLAGS="${HOST_LDFLAGS} -Wl,-z,cet-report=error" ;;
 esac
 
 mkdir -p "$DISTSRC"

@@ -175,6 +175,8 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${build_CXX+build_CXX="$build_CXX"} \
                                    x86_64_linux_CC=x86_64-linux-gnu-gcc \
                                    x86_64_linux_CXX=x86_64-linux-gnu-g++ \
+                                   x86_64_linux_CFLAGS="-fcf-protection=full" \
+                                   x86_64_linux_CXXFLAGS="-fcf-protection=full"\
                                    x86_64_linux_AR=x86_64-linux-gnu-gcc-ar \
                                    x86_64_linux_RANLIB=x86_64-linux-gnu-gcc-ranlib \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
@@ -228,6 +230,10 @@ esac
 case "$HOST" in
     *linux*)  HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O2" ;;
     *mingw*)  HOST_LDFLAGS="-Wl,--no-insert-timestamp" ;;
+esac
+
+case "$HOST" in
+    x86_64-linux-gnu) HOST_LDFLAGS="${HOST_LDFLAGS} -Wl,-z,cet-report=error" ;;
 esac
 
 # EXE FLAGS

@@ -1,7 +1,6 @@
 (use-modules (gnu packages)
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
-             ((gnu packages certs) #:select (nss-certs))
              ((gnu packages cmake) #:select (cmake-minimal))
              (gnu packages commencement)
              (gnu packages compression)

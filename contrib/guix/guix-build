@@ -441,6 +441,7 @@ EOF
         # shellcheck disable=SC2086,SC2031
         time-machine shell --manifest="${PWD}/contrib/guix/manifest.scm" \
                                  --container \
+                                 --writable-root \
                                  --pure \
                                  --no-cwd \
                                  --share="$PWD"=/bitcoin \

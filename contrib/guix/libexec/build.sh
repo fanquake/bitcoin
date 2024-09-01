@@ -134,12 +134,6 @@ done
 # Disable Guix ld auto-rpath behavior
 export GUIX_LD_WRAPPER_DISABLE_RPATH=yes
 
-# Make /usr/bin if it doesn't exist
-[ -e /usr/bin ] || mkdir -p /usr/bin
-
-# Symlink env to a conventional path
-[ -e /usr/bin/env ]  || ln -s --no-dereference "$(command -v env)"  /usr/bin/env
-
 # Determine the correct value for -Wl,--dynamic-linker for the current $HOST
 case "$HOST" in
     *linux*)

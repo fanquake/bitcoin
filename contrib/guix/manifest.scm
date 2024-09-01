@@ -1,8 +1,6 @@
 (use-modules (gnu packages)
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
-             ((gnu packages certs) #:select (nss-certs))
-             ((gnu packages check) #:select (libfaketime))
              ((gnu packages cmake) #:select (cmake-minimal))
              (gnu packages commencement)
              (gnu packages compression)
@@ -586,7 +584,6 @@ inspecting signatures in Mach-O binaries.")
            (list zip
                  (make-mingw-pthreads-cross-toolchain "x86_64-w64-mingw32")
                  nsis-x86_64
-                 nss-certs
                  osslsigncode))
           ((string-contains target "-linux-")
            (list bison

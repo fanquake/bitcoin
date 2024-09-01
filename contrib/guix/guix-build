@@ -443,6 +443,7 @@ EOF
                                  --container \
                                  --pure \
                                  --no-cwd \
+                                 --emulate-fhs \
                                  --share="$PWD"=/bitcoin \
                                  --share="$DISTSRC_BASE"=/distsrc-base \
                                  --share="$OUTDIR_BASE"=/outdir-base \

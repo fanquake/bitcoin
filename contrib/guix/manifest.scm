@@ -2,7 +2,7 @@
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
              ((gnu packages certs) #:select (nss-certs))
-             ((gnu packages cmake) #:select (cmake-minimal))
+             ((gnu packages cmake) #:select (cmake-3.30))
              (gnu packages commencement)
              (gnu packages compression)
              (gnu packages cross-base)
@@ -38,6 +38,24 @@ FILE-NAME found in ./patches relative to the current file."
     (list (search-patch file-name) ...)))
 
 (define building-on (string-append "--build=" (list-ref (string-split (%current-system) #\-) 0) "-guix-linux-gnu"))
+
+;; Define our own minimal version of CMake, with documentation
+;; and other unnecessary features removed. This helps to avoid
+;; build failures and other issues, while bootstrapping.
+(define cmake-3.30-minimal
+  (package
+    (inherit cmake-3.30)
+    (arguments
+     (list
+      #:tests? #f
+      #:configure-flags
+      #~(list "-DSPHINX_INFO=OFF"
+              "-DSPHINX_MAN=OFF"
+              "-DSPHINX_HTML=OFF"
+              "-DCMAKE_USE_OPENSSL=OFF")))
+    (native-inputs
+     (modify-inputs (package-native-inputs cmake-3.30)
+       (delete "python-sphinx" "texinfo")))))
 
 (define (make-cross-toolchain target
                               base-gcc-for-libc
@@ -152,8 +170,6 @@ chain for " target " development."))
 
 ;; While LIEF is packaged in Guix, we maintain our own package,
 ;; to simplify building, and more easily apply updates.
-;; Moreover, the Guix's package uses cmake, which caused build
-;; failure; see https://github.com/bitcoin/bitcoin/pull/27296.
 (define-public python-lief
   (package
     (name "python-lief")
@@ -177,7 +193,7 @@ chain for " target " development."))
                (base32
                 "0y48x358ppig5xp97ahcphfipx7cg9chldj2q5zrmn610fmi4zll"))))
     (build-system python-build-system)
-    (native-inputs (list cmake-minimal python-tomli))
+    (native-inputs (list cmake-3.30-minimal python-tomli))
     (arguments
      (list
       #:tests? #f                  ;needs network
@@ -508,7 +524,7 @@ inspecting signatures in Mach-O binaries.")
         xz
         ;; Build tools
         gcc-toolchain-12
-        cmake-minimal
+        cmake-3.30-minimal
         gnu-make
         pkg-config
         ;; Scripting

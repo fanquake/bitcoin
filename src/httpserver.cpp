@@ -712,3 +712,77 @@ void UnregisterHTTPHandler(const std::string &prefix, bool exactMatch)
         pathHandlers.erase(i);
     }
 }
+
+namespace http_bitcoin {
+std::optional<std::string> HTTPHeaders::FindFirst(const std::string& key) const
+{
+    for (const auto &item : m_map) {
+        if (CaseInsensitiveEqual(key, item.first)) {
+            return item.second;
+        }
+    }
+    return std::nullopt;
+}
+
+void HTTPHeaders::Write(const std::string& key, const std::string& value)
+{
+    m_map.emplace_back(key, value);
+}
+
+bool HTTPHeaders::RemoveFirst(const std::string& key)
+{
+    for (auto it = m_map.begin(); it != m_map.end(); ++it) {
+        if (CaseInsensitiveEqual(key, it->first)) {
+            m_map.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool HTTPHeaders::Read(util::LineReader& reader)
+{
+    // Headers https://httpwg.org/specs/rfc9110.html#rfc.section.6.3
+    // A sequence of Field Lines https://httpwg.org/specs/rfc9110.html#rfc.section.5.2
+    do {
+        auto maybe_line = reader.ReadLine();
+        if (!maybe_line) return false;
+        const std::string& line = *maybe_line;
+
+        // An empty line indicates end of the headers section https://www.rfc-editor.org/rfc/rfc2616#section-4
+        if (line.length() == 0) break;
+
+        // Header line must have at least one ":"
+        // keys are not allowed to have delimiters like ":" but values are
+        // https://httpwg.org/specs/rfc9110.html#rfc.section.5.6.2
+        const size_t pos{line.find(':')};
+        if (pos == std::string::npos) throw std::runtime_error("HTTP header missing colon (:)");
+
+        // Whitespace is optional
+        std::string key = util::TrimString(std::string_view(line).substr(0, pos));
+        std::string value = util::TrimString(std::string_view(line).substr(pos + 1));
+
+        // Header keys are Field Names: https://httpwg.org/specs/rfc9110.html#fields.names
+        // which consist of "tokens": https://httpwg.org/specs/rfc9110.html#rfc.section.5.6.2
+        // that can not be empty.
+        if (key.empty()) throw std::runtime_error("Empty HTTP header name");
+
+        Write(key, value);
+    } while (true);
+
+    return true;
+}
+
+std::string HTTPHeaders::Stringify() const
+{
+    std::string out;
+    for (const auto& [key, value] : m_map) {
+        out += key + ": " + value + "\r\n";
+    }
+
+    // Headers are terminated by an empty line
+    out += "\r\n";
+
+    return out;
+}
+} // namespace http_bitcoin

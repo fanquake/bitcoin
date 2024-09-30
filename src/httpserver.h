@@ -6,9 +6,13 @@
 #define BITCOIN_HTTPSERVER_H
 
 #include <functional>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
+
+#include <util/strencodings.h>
+#include <util/string.h>
 
 namespace util {
 class SignalInterrupt;
@@ -186,5 +190,40 @@ public:
 private:
     struct event* ev;
 };
+
+namespace http_bitcoin {
+class HTTPHeaders
+{
+public:
+    /**
+     * @param[in] key The field-name of the header to search for
+     * @returns The value of the first header that matches the provided key
+     *          nullopt if key is not found
+     */
+    std::optional<std::string> FindFirst(const std::string& key) const;
+    void Write(const std::string& key, const std::string& value);
+    /**
+     * @param[in] key The field-name of the header to search for
+     * @returns true if a header was found and erased, false otherwise
+     */
+    bool RemoveFirst(const std::string& key);
+    /**
+     * @returns false if LineReader hits the end of the buffer before reading an
+     *                \n, meaning that we are still waiting on more data from the client.
+     *          true  after reading an entire HTTP headers section, terminated
+     *                by an empty line and \n.
+     * @throws on exceeded read limit and on bad headers syntax (e.g. no ":" in a line)
+     */
+    bool Read(util::LineReader& reader);
+    std::string Stringify() const;
+
+private:
+    /**
+     * Headers can have duplicate field names, so we use a vector of key-value pairs instead of a map.
+     * https://httpwg.org/specs/rfc9110.html#rfc.section.5.2
+     */
+    std::vector<std::pair<std::string, std::string>> m_map;
+};
+} // namespace http_bitcoin
 
 #endif // BITCOIN_HTTPSERVER_H

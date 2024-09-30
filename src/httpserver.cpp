@@ -46,6 +46,7 @@
 #include <support/events.h>
 
 using common::InvalidPortErrMsg;
+using http_libevent::HTTPRequest;
 
 /** Maximum size of http request (request line + headers) */
 static const size_t MAX_HEADERS_SIZE = 8192;
@@ -373,6 +374,7 @@ static void libevent_log_cb(int severity, const char *msg)
     }
 }
 
+namespace http_libevent {
 bool InitHTTPServer(const util::SignalInterrupt& interrupt)
 {
     if (!InitHTTPAllowList())
@@ -484,6 +486,7 @@ void StopHTTPServer()
     }
     LogDebug(BCLog::HTTP, "Stopped HTTP server\n");
 }
+} // namespace http_libevent
 
 struct event_base* EventBase()
 {
@@ -516,6 +519,8 @@ void HTTPEvent::trigger(struct timeval* tv)
     else
         evtimer_add(ev, tv); // trigger after timeval passed
 }
+
+namespace http_libevent {
 HTTPRequest::HTTPRequest(struct evhttp_request* _req, const util::SignalInterrupt& interrupt, bool _replySent)
     : req(_req), m_interrupt(interrupt), replySent(_replySent)
 {
@@ -678,6 +683,7 @@ std::optional<std::string> GetQueryParameterFromUri(const char* uri, const std::
 
     return result;
 }
+} // namespace http_libevent
 
 void RegisterHTTPHandler(const std::string &prefix, bool exactMatch, const HTTPRequestHandler &handler)
 {

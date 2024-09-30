@@ -4,8 +4,11 @@
 
 #include <httpserver.h>
 #include <test/util/setup_common.h>
+#include <test/util/str.h>
 
 #include <boost/test/unit_test.hpp>
+
+using http_bitcoin::HTTPHeaders;
 
 BOOST_FIXTURE_TEST_SUITE(httpserver_tests, BasicTestingSetup)
 
@@ -39,5 +42,75 @@ BOOST_AUTO_TEST_CASE(test_query_parameters)
     // URI with invalid characters (%) raises a runtime error regardless of which query parameter is queried
     uri = "/rest/endpoint/someresource.json&p1=v1&p2=v2%";
     BOOST_CHECK_EXCEPTION(GetQueryParameterFromUri(uri.c_str(), "p1"), std::runtime_error, HasReason("URI parsing failed, it likely contained RFC 3986 invalid characters"));
+}
+
+BOOST_AUTO_TEST_CASE(http_headers_tests)
+{
+    {
+        // Writing response headers
+        HTTPHeaders headers{};
+        BOOST_CHECK(!headers.FindFirst("Cache-Control"));
+        headers.Write("Cache-Control", "no-cache");
+        // Check case-insensitive key matching
+        BOOST_CHECK_EQUAL(headers.FindFirst("Cache-Control").value(), "no-cache");
+        BOOST_CHECK_EQUAL(headers.FindFirst("cache-control").value(), "no-cache");
+        // Additional values are appended but FindFirst() does not return them
+        headers.Write("Cache-Control", "no-store");
+        BOOST_CHECK_EQUAL(headers.FindFirst("Cache-Control").value(), "no-cache");
+        // Add a few more
+        headers.Write("Pie", "apple");
+        headers.Write("Sandwich", "ham");
+        headers.Write("Coffee", "black");
+        BOOST_CHECK_EQUAL(headers.FindFirst("Pie").value(), "apple");
+        // Remove
+        headers.RemoveFirst("Pie");
+        BOOST_CHECK(!headers.FindFirst("Pie"));
+        // Combine for transmission
+        std::string headers_string{headers.Stringify()};
+        BOOST_CHECK_EQUAL(headers_string, "Cache-Control: no-cache\r\n"
+                                          "Cache-Control: no-store\r\n"
+                                          "Sandwich: ham\r\n"
+                                          "Coffee: black\r\n"
+                                          "\r\n");
+    }
+    {
+        // Reading request headers captured from bitcoin-cli
+        std::vector<std::byte> buffer{TryParseHex<std::byte>(
+            "486f73743a203132372e302e302e310d0a436f6e6e656374696f6e3a20636c6f73"
+            "650d0a436f6e74656e742d547970653a206170706c69636174696f6e2f6a736f6e"
+            "0d0a417574686f72697a6174696f6e3a204261736963205831396a623239726157"
+            "5666587a6f7a597a4a6b4e5441784e44466c4d474a69596d56684d5449354f4467"
+            "334e7a49354d544d334e54526d4e54686b4e6a63324f574d775a5459785a6a677a"
+            "4e5467794e7a4577595459314f47526b596a566d5a4751330d0a436f6e74656e74"
+            "2d4c656e6774683a2034360d0a0d0a").value()};
+        util::LineReader reader(buffer, /*max_line_length=*/1028);
+        HTTPHeaders headers{};
+        headers.Read(reader);
+        BOOST_CHECK_EQUAL(headers.FindFirst("Host").value(), "127.0.0.1");
+        BOOST_CHECK_EQUAL(headers.FindFirst("Connection").value(), "close");
+        BOOST_CHECK_EQUAL(headers.FindFirst("Content-Type").value(), "application/json");
+        BOOST_CHECK_EQUAL(headers.FindFirst("Authorization").value(), "Basic X19jb29raWVfXzozYzJkNTAxNDFlMGJiYmVhMTI5ODg3NzI5MTM3NTRmNThkNjc2OWMwZTYxZjgzNTgyNzEwYTY1OGRkYjVmZGQ3");
+        BOOST_CHECK_EQUAL(headers.FindFirst("Content-Length").value(), "46");
+        BOOST_CHECK(!headers.FindFirst("Pizza"));
+    }
+    {
+        // Ensure invalid headers are rejected
+        std::vector<std::byte> missing_a_colon{StringToBuffer("key value\n")};
+        util::LineReader reader1(missing_a_colon, /*max_line_length=*/1028);
+        HTTPHeaders headers1{};
+        BOOST_CHECK_EXCEPTION(headers1.Read(reader1), std::runtime_error, HasReason{"HTTP header missing colon (:)"});
+
+        std::vector<std::byte> missing_a_key{StringToBuffer(":value\n")};
+        util::LineReader reader2(missing_a_key, /*max_line_length=*/1028);
+        HTTPHeaders headers2{};
+        BOOST_CHECK_EXCEPTION(headers2.Read(reader2), std::runtime_error, HasReason{"Empty HTTP header name"});
+
+        // Fixed
+        std::vector<std::byte> fixed_headers{StringToBuffer("key:value\n")};
+        util::LineReader reader3(fixed_headers, /*max_line_length=*/1028);
+        HTTPHeaders headers3{};
+        headers3.Read(reader3);
+        BOOST_CHECK_EQUAL(headers3.FindFirst("key").value(), "value");
+    }
 }
 BOOST_AUTO_TEST_SUITE_END()

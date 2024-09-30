@@ -6,6 +6,9 @@
 #define BITCOIN_TEST_UTIL_STR_H
 
 #include <string>
+#include <vector>
+
+#include <span.h>
 
 /**
  * Increment a string. Useful to enumerate all fixed length strings with
@@ -39,5 +42,14 @@ void ForEachNoDup(CharType (&string)[StringLength], CharType min_char, CharType 
         if (!skip_string) fn();
     }
 }
+
+/**
+ * Returns a byte vector filled with data from a string. Used to test string-encoded
+ * data from a socket like HTTP headers.
+ *
+ * @param[in] str    the string to convert into bytes
+ * @returns          byte vector
+ */
+std::vector<std::byte> StringToBuffer(const std::string& str);
 
 #endif // BITCOIN_TEST_UTIL_STR_H

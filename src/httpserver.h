@@ -193,6 +193,15 @@ private:
 };
 
 namespace http_bitcoin {
+using util::LineReader;
+
+//! Shortest valid request line, used by libevent in evhttp_parse_request_line()
+constexpr size_t MIN_REQUEST_LINE_LENGTH = std::string_view("GET / HTTP/1.0").size();
+
+//! Maximum size of http request (request line + headers)
+//! see https://github.com/bitcoin/bitcoin/issues/6425
+constexpr size_t MAX_HEADERS_SIZE{8192};
+
 class HTTPHeaders
 {
 public:
@@ -229,8 +238,8 @@ private:
 class HTTPResponse
 {
 public:
-    int m_version_major;
-    int m_version_minor;
+    uint8_t m_version_major;
+    uint8_t m_version_minor;
     HTTPStatusCode m_status;
     std::string m_reason;
     HTTPHeaders m_headers;
@@ -238,6 +247,39 @@ public:
     bool m_keep_alive{false};
 
     std::string StringifyHeaders() const;
+};
+
+class HTTPRequest
+{
+public:
+    std::string m_method;
+    std::string m_target;
+
+    /**
+     * Default HTTP protocol version 1.1 is used by error responses
+     * when a request is unreadable.
+     */
+    /// @{
+    uint8_t m_version_major{1};
+    uint8_t m_version_minor{1};
+    /// @}
+
+    HTTPHeaders m_headers;
+    std::string m_body;
+
+    /**
+     * Methods that attempt to parse HTTP request fields line-by-line
+     * from a receive buffer.
+     * @param[in]   reader  A LineReader object constructed over a span of data.
+     * @returns     true    If the request field was parsed.
+     *              false   If there was not enough data in the buffer to complete the field.
+     * @throws      std::runtime_error if data is invalid.
+     */
+    /// @{
+    bool LoadControlData(LineReader& reader);
+    bool LoadHeaders(LineReader& reader);
+    bool LoadBody(LineReader& reader);
+    /// @}
 };
 } // namespace http_bitcoin
 

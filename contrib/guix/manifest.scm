@@ -39,13 +39,29 @@ FILE-NAME found in ./patches relative to the current file."
 
 (define building-on (string-append "--build=" (list-ref (string-split (%current-system) #\-) 0) "-guix-linux-gnu"))
 
+;; A cross binutils with the Bison dependency removed.
+;; It's part of the base binutils, for profiling tools.
+(define (make-no-gprofng-binutils target)
+    (package
+      (inherit (cross-binutils target))
+      (arguments
+        (substitute-keyword-arguments (package-arguments (cross-binutils target))
+          ((#:configure-flags flags)
+            #~(append #$flags
+              (list "--enable-gprofng=no")))))
+      (native-inputs
+        (modify-inputs
+          (package-native-inputs (cross-binutils target))
+          (delete "bison")))
+))
+
 (define (make-cross-toolchain target
                               base-gcc-for-libc
                               base-kernel-headers
                               base-libc
                               base-gcc)
   "Create a cross-compilation toolchain package for TARGET"
-  (let* ((xbinutils (cross-binutils target))
+  (let* ((xbinutils (make-no-gprofng-binutils target))
          ;; 1. Build a cross-compiling gcc without targeting any libc, derived
          ;; from BASE-GCC-FOR-LIBC
          (xgcc-sans-libc (cross-gcc target
@@ -122,7 +138,7 @@ desirable for building Bitcoin Core release binaries."
 
 (define (make-mingw-pthreads-cross-toolchain target)
   "Create a cross-compilation toolchain package for TARGET"
-  (let* ((xbinutils (binutils-mingw-patches (cross-binutils target)))
+  (let* ((xbinutils (binutils-mingw-patches (make-no-gprofng-binutils target)))
          (machine (substring target 0 (string-index target #\-)))
          (pthreads-xlibc (winpthreads-patches (make-mingw-w64 machine
                                          #:xgcc (cross-gcc target #:xgcc (gcc-mingw-patches base-gcc))

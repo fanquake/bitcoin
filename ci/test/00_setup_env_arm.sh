@@ -13,6 +13,7 @@ export CONTAINER_NAME=ci_arm_linux
 export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:24.04"  # Check that https://packages.ubuntu.com/noble/g++-arm-linux-gnueabihf (version 13.x, similar to guix) can cross-compile
 export CI_IMAGE_PLATFORM="linux/arm64"
 export USE_BUSY_BOX=true
+export CI_LIMIT_STACK_SIZE=1
 export RUN_UNIT_TESTS=true
 export RUN_FUNCTIONAL_TESTS=false
 export GOAL="install"

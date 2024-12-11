@@ -489,7 +489,11 @@ inspecting signatures in Mach-O binaries.")
                    (("^\\$\\(inst_sysconfdir\\)/rpc(.*)$" _ suffix)
                     (string-append out "/etc/rpc" suffix "\n"))
                    (("^install-others =.*$")
-                    (string-append "install-others = " out "/etc/rpc\n")))))))))))))
+                    (string-append "install-others = " out "/etc/rpc\n"))))))
+           (add-after 'install 'delete-doc
+              (lambda* (#:key outputs #:allow-other-keys)
+                      (let ((share (assoc-ref outputs "out/share")))
+                        (delete-file-recursively share)))))))))))
 
 ;; The sponge tool from moreutils.
 (define-public sponge

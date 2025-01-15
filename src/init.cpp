@@ -145,10 +145,10 @@
 using common::InvalidPortErrMsg;
 using common::ResolveErrMsg;
 
-using http_libevent::InitHTTPServer;
-using http_libevent::InterruptHTTPServer;
-using http_libevent::StartHTTPServer;
-using http_libevent::StopHTTPServer;
+using http_bitcoin::InitHTTPServer;
+using http_bitcoin::InterruptHTTPServer;
+using http_bitcoin::StartHTTPServer;
+using http_bitcoin::StopHTTPServer;
 using node::ApplyArgsManOptions;
 using node::BlockManager;
 using node::CalculateCacheSizes;
@@ -775,7 +775,7 @@ static void StartupNotify(const ArgsManager& args)
 static bool AppInitServers(NodeContext& node)
 {
     const ArgsManager& args = *Assert(node.args);
-    if (!InitHTTPServer(*Assert(node.shutdown_signal))) {
+    if (!InitHTTPServer()) {
         return false;
     }
     StartRPC();

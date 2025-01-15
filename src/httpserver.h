@@ -75,22 +75,7 @@ void StopHTTPServer();
 void UpdateHTTPServerLogging(bool enable);
 } // namespace http_libevent
 
-/** Handler for requests to a certain HTTP path */
-typedef std::function<void(http_libevent::HTTPRequest* req, const std::string &)> HTTPRequestHandler;
-/** Register handler for prefix.
- * If multiple handlers match a prefix, the first-registered one will
- * be invoked.
- */
-void RegisterHTTPHandler(const std::string &prefix, bool exactMatch, const HTTPRequestHandler &handler);
-/** Unregister handler for prefix */
-void UnregisterHTTPHandler(const std::string &prefix, bool exactMatch);
-
 namespace http_libevent {
-/** Return evhttp event base. This can be used by submodules to
- * queue timers or custom events.
- */
-struct event_base* EventBase();
-
 /** In-flight HTTP request.
  * Thin C++ wrapper around evhttp_request.
  */
@@ -713,5 +698,17 @@ void InterruptHTTPServer();
 /** Stop HTTP server */
 void StopHTTPServer();
 } // namespace http_bitcoin
+
+/** Handler for requests to a certain HTTP path */
+using HTTPRequestHandler = std::function<void(http_bitcoin::HTTPRequest* req, const std::string&)>;
+
+/** Register handler for prefix.
+ * If multiple handlers match a prefix, the first-registered one will
+ * be invoked.
+ */
+void RegisterHTTPHandler(const std::string &prefix, bool exactMatch, const HTTPRequestHandler &handler);
+
+/** Unregister handler for prefix */
+void UnregisterHTTPHandler(const std::string &prefix, bool exactMatch);
 
 #endif // BITCOIN_HTTPSERVER_H

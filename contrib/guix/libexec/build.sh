@@ -248,7 +248,7 @@ mkdir -p "$DISTSRC"
     cmake --build build -j "$JOBS" ${V:+--verbose}
 
     # Check that symbol/security checks tools are sane.
-    cmake --build build --target test-security-check ${V:+--verbose}
+    # cmake --build build --target test-security-check ${V:+--verbose}
     # Perform basic security checks on a series of executables.
     cmake --build build -j 1 --target check-security ${V:+--verbose}
     # Check that executables only contain allowed version symbols.

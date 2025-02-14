@@ -80,7 +80,8 @@ ANY_COPYRIGHT_STYLE = '(%s|%s)' % (COPYRIGHT_WITH_C, COPYRIGHT_WITHOUT_C)
 YEAR = "20[0-9][0-9]"
 YEAR_RANGE = '(%s)(-%s)?' % (YEAR, YEAR)
 YEAR_LIST = '(%s)(, %s)+' % (YEAR, YEAR)
-ANY_YEAR_STYLE = '(%s|%s)' % (YEAR_RANGE, YEAR_LIST)
+YEAR_PRESENT = '(%s)-present' % (YEAR)
+ANY_YEAR_STYLE = '(%s|%s|%s)' % (YEAR_RANGE, YEAR_LIST, YEAR_PRESENT)
 ANY_COPYRIGHT_STYLE_OR_YEAR_STYLE = ("%s %s" % (ANY_COPYRIGHT_STYLE,
                                                 ANY_YEAR_STYLE))
 
@@ -104,12 +105,15 @@ EXPECTED_HOLDER_NAMES = [
 ]
 
 DOMINANT_STYLE_COMPILED = {}
+YEAR_PRESENT_STYLE_COMPILED = {}
 YEAR_LIST_STYLE_COMPILED = {}
 WITHOUT_C_STYLE_COMPILED = {}
 
 for holder_name in EXPECTED_HOLDER_NAMES:
     DOMINANT_STYLE_COMPILED[holder_name] = (
         compile_copyright_regex(COPYRIGHT_WITH_C, YEAR_RANGE, holder_name))
+    YEAR_PRESENT_STYLE_COMPILED[holder_name] = (
+        compile_copyright_regex(COPYRIGHT_WITH_C, YEAR_PRESENT, holder_name))
     YEAR_LIST_STYLE_COMPILED[holder_name] = (
         compile_copyright_regex(COPYRIGHT_WITH_C, YEAR_LIST, holder_name))
     WITHOUT_C_STYLE_COMPILED[holder_name] = (
@@ -125,6 +129,10 @@ def get_count_of_copyrights_of_any_style_any_holder(contents):
 
 def file_has_dominant_style_copyright_for_holder(contents, holder_name):
     match = DOMINANT_STYLE_COMPILED[holder_name].search(contents)
+    return match is not None
+
+def file_has_year_present_style_copyright_for_holder(contents, holder_name):
+    match = YEAR_PRESENT_STYLE_COMPILED[holder_name].search(contents)
     return match is not None
 
 def file_has_year_list_style_copyright_for_holder(contents, holder_name):
@@ -152,19 +160,23 @@ def gather_file_info(filename):
 
     info['classified_copyrights'] = 0
     info['dominant_style'] = {}
+    info['year_present_style'] = {}
     info['year_list_style'] = {}
     info['without_c_style'] = {}
     for holder_name in EXPECTED_HOLDER_NAMES:
         has_dominant_style = (
             file_has_dominant_style_copyright_for_holder(c, holder_name))
+        has_year_present_style = (
+            file_has_year_present_style_copyright_for_holder(c, holder_name))
         has_year_list_style = (
             file_has_year_list_style_copyright_for_holder(c, holder_name))
         has_without_c_style = (
             file_has_without_c_style_copyright_for_holder(c, holder_name))
         info['dominant_style'][holder_name] = has_dominant_style
+        info['year_present_style'][holder_name] = has_year_present_style
         info['year_list_style'][holder_name] = has_year_list_style
         info['without_c_style'][holder_name] = has_without_c_style
-        if has_dominant_style or has_year_list_style or has_without_c_style:
+        if has_dominant_style or has_year_present_style or has_year_list_style or has_without_c_style:
             info['classified_copyrights'] = info['classified_copyrights'] + 1
     return info
 
@@ -220,6 +232,17 @@ def print_report(file_infos, verbose):
             print("%4d with '%s'" % (len(dominant_style),
                                      holder_name.replace('\n', '\\n')))
             print_filenames(dominant_style, verbose)
+    print('')
+    print(SEPARATOR)
+    print('Copyrights with year-present style:\ne.g. "Copyright (c)'
+          ' <year>-present":\n')
+    for holder_name in EXPECTED_HOLDER_NAMES:
+        year_present_style = [i['filename'] for i in file_infos if
+                          i['year_present_style'][holder_name]]
+        if len(year_present_style) > 0:
+            print("%4d with '%s'" % (len(year_present_style),
+                                     holder_name.replace('\n', '\\n')))
+            print_filenames(year_present_style, verbose)
     print('')
     print(SEPARATOR)
     print('Copyrights with year list style:\ne.g. "Copyright (c)" and '

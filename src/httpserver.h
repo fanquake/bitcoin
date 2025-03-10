@@ -23,6 +23,7 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/threadinterrupt.h>
+#include <util/time.h>
 
 namespace util {
 class SignalInterrupt;
@@ -420,6 +421,10 @@ public:
      */
     void DisconnectAllClients() { m_disconnect_all_clients = true; }
 
+    /**
+     * Set the idle client timeout (-rpcservertimeout)
+     */
+    void SetServerTimeout(std::chrono::seconds seconds) { m_rpcservertimeout = seconds; }
 
     /**
      * Force-remove all remaining clients from m_connected without waiting for
@@ -510,6 +515,11 @@ private:
     mutable Mutex m_request_dispatcher_mutex;
     std::function<void(std::unique_ptr<HTTPRequest>&&)> m_request_dispatcher GUARDED_BY(m_request_dispatcher_mutex);
     /// @}
+
+    /**
+     * Idle timeout after which clients are disconnected
+     */
+    std::chrono::seconds m_rpcservertimeout{DEFAULT_HTTP_SERVER_TIMEOUT};
 
     /**
      * Accept a connection.
@@ -660,8 +670,13 @@ public:
     //! possibly overriding all other disconnect flags.
     std::atomic_bool m_disconnect{false};
 
+    //! Timestamp of last send or receive activity, used for -rpcservertimeout.
+    //! Due to optimistic sends it may be updated in either a worker thread or in the
+    //! I/O thread. It is checked in the I/O thread to disconnect idle clients.
+    std::atomic<SteadySeconds> m_idle_since;
+
     explicit HTTPRemoteClient(HTTPServer::Id id, const CService& addr, std::unique_ptr<Sock> socket)
-        : m_id(id), m_addr(addr), m_origin(addr.ToStringAddrPort()), m_sock{std::move(socket)} {};
+        : m_id(id), m_addr(addr), m_origin(addr.ToStringAddrPort()), m_sock{std::move(socket)}, m_idle_since{Now<SteadySeconds>()} {}
 
     // Disable copies (should only be used as shared pointers)
     HTTPRemoteClient(const HTTPRemoteClient&) = delete;

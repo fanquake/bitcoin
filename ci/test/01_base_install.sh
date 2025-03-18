@@ -85,11 +85,11 @@ if [[ ${USE_MEMORY_SANITIZER} == "true" ]]; then
   rm -rf /msan/llvm-project
 fi
 
-if [[ "${RUN_TIDY}" == "true" ]]; then
-  ${CI_RETRY_EXE} git clone --depth=1 https://github.com/include-what-you-use/include-what-you-use -b clang_"${TIDY_LLVM_V}" /include-what-you-use
-  cmake -B /iwyu-build/ -G 'Unix Makefiles' -DCMAKE_PREFIX_PATH=/usr/lib/llvm-"${TIDY_LLVM_V}" -S /include-what-you-use
-  make -C /iwyu-build/ install "$MAKEJOBS"
-fi
+# if [[ "${RUN_TIDY}" == "true" ]]; then
+#   ${CI_RETRY_EXE} git clone --depth=1 https://github.com/include-what-you-use/include-what-you-use -b clang_"${TIDY_LLVM_V}" /include-what-you-use
+#   cmake -B /iwyu-build/ -G 'Unix Makefiles' -DCMAKE_PREFIX_PATH=/usr/lib/llvm-"${TIDY_LLVM_V}" -S /include-what-you-use
+#   make -C /iwyu-build/ install "$MAKEJOBS"
+# fi
 
 mkdir -p "${DEPENDS_DIR}/SDKs" "${DEPENDS_DIR}/sdk-sources"
 

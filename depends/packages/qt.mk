@@ -16,7 +16,6 @@ $(package)_patches += qtbase_avoid_qmain.patch
 $(package)_patches += qtbase_platformsupport.patch
 $(package)_patches += qtbase_plugins_cocoa.patch
 $(package)_patches += rcc_hardcode_timestamp.patch
-$(package)_patches += utc_from_string_no_optimize.patch
 $(package)_patches += windows_lto.patch
 $(package)_patches += macos_skip_version_checks.patch
 $(package)_patches += qttools_skip_dependencies.patch
@@ -257,7 +256,6 @@ define $(package)_preprocess_cmds
   patch -p1 -i $($(package)_patch_dir)/qtbase_platformsupport.patch && \
   patch -p1 -i $($(package)_patch_dir)/qtbase_plugins_cocoa.patch && \
   patch -p1 -i $($(package)_patch_dir)/rcc_hardcode_timestamp.patch && \
-  patch -p1 -i $($(package)_patch_dir)/utc_from_string_no_optimize.patch && \
   patch -p1 -i $($(package)_patch_dir)/windows_lto.patch && \
   patch -p1 -i $($(package)_patch_dir)/macos_skip_version_checks.patch
 endef

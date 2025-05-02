@@ -29,9 +29,6 @@ static void SetThreadName(const char* name)
     pthread_set_name_np(pthread_self(), name);
 #elif defined(__APPLE__)
     pthread_setname_np(name);
-#else
-    // Prevent warnings for unused parameters...
-    (void)name;
 #endif
 }
 

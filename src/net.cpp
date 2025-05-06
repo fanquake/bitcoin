@@ -3,8 +3,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
-
 #include <net.h>
 
 #include <addrdb.h>
@@ -37,18 +35,11 @@
 #include <util/translation.h>
 #include <util/vector.h>
 
-#ifdef WIN32
-#include <string.h>
-#endif
-
-#if HAVE_DECL_GETIFADDRS && HAVE_DECL_FREEIFADDRS
-#include <ifaddrs.h>
-#endif
-
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <optional>
 #include <unordered_map>

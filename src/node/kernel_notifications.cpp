@@ -4,8 +4,6 @@
 
 #include <node/kernel_notifications.h>
 
-#include <bitcoin-build-config.h> // IWYU pragma: keep
-
 #include <chain.h>
 #include <common/args.h>
 #include <common/system.h>
@@ -29,7 +27,6 @@ using util::ReplaceAll;
 
 static void AlertNotify(const std::string& strMessage)
 {
-#if HAVE_SYSTEM
     std::string strCmd = gArgs.GetArg("-alertnotify", "");
     if (strCmd.empty()) return;
 
@@ -43,7 +40,6 @@ static void AlertNotify(const std::string& strMessage)
 
     std::thread t(runCommand, strCmd);
     t.detach(); // thread runs free
-#endif
 }
 
 namespace node {

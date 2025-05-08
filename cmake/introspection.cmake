@@ -22,12 +22,6 @@ endif()
 include(TestAppendRequiredLibraries)
 test_append_atomic_library(core_interface)
 
-check_cxx_symbol_exists(std::system "cstdlib" HAVE_STD_SYSTEM)
-check_cxx_symbol_exists(::_wsystem "stdlib.h" HAVE__WSYSTEM)
-if(HAVE_STD_SYSTEM OR HAVE__WSYSTEM)
-  set(HAVE_SYSTEM 1)
-endif()
-
 check_cxx_source_compiles("
   #include <string.h>
 

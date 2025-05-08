@@ -1120,7 +1120,6 @@ CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const TxState& state, const 
     // Notify UI of new or updated transaction
     NotifyTransactionChanged(hash, fInsertedNew ? CT_NEW : CT_UPDATED);
 
-#if HAVE_SYSTEM
     // notify an external script when a wallet transaction comes in or is updated
     std::string strCmd = m_notify_tx_changed_script;
 
@@ -1146,7 +1145,6 @@ CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const TxState& state, const 
         std::thread t(runCommand, strCmd);
         t.detach(); // thread runs free
     }
-#endif
 
     return &wtx;
 }

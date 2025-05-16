@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 The Bitcoin Core developers
+// Copyright (c) 2019-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
@@ -7,10 +7,10 @@
 #include <test/util/setup_common.h>
 #include <common/run_command.h>
 #include <univalue.h>
-
-#ifdef ENABLE_EXTERNAL_SIGNER
 #include <util/subprocess.h>
-#endif // ENABLE_EXTERNAL_SIGNER
+
+#include <stdexcept>
+#include <string>
 
 #include <boost/test/unit_test.hpp>
 

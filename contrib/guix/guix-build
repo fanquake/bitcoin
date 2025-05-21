@@ -455,6 +455,7 @@ EOF
                                  --container \
                                  --pure \
                                  --no-cwd \
+                                 --writable-root \
                                  --share="$PWD"=/bitcoin \
                                  --share="$DISTSRC_BASE"=/distsrc-base \
                                  --share="$OUTDIR_BASE"=/outdir-base \

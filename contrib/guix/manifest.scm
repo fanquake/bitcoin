@@ -178,7 +178,8 @@ chain for " target " development."))
                      (string-append m (number->string (parallel-job-count)))))))
               (sha256
                (base32
-                "1wq57xgnvpqpjnld03a095wb0fjl719sqrg51n80dv0lx0868n2z"))))
+                "1wq57xgnvpqpjnld03a095wb0fjl719sqrg51n80dv0lx0868n2z"))
+              (patches (search-our-patches "lief_restore_scikit_compat.patch"))))
     (build-system pyproject-build-system)
     (native-inputs (list cmake-minimal
                          python-scikit-build-core

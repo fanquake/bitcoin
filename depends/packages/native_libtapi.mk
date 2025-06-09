@@ -4,13 +4,15 @@ $(package)_download_path=https://github.com/tpoechtrager/apple-libtapi/archive
 $(package)_file_name=$($(package)_version).tar.gz
 $(package)_sha256_hash=d4d46c64622f13d6938cecf989046d9561011bb59e8ee835f8f39825d67f578f
 $(package)_patches=disable_zlib.patch
+$(package)_patches += fix_includes.patch
 
 ifeq ($(strip $(FORCE_USE_SYSTEM_CLANG)),)
 $(package)_dependencies=native_llvm
 endif
 
 define $(package)_preprocess_cmds
-  patch -p1 < $($(package)_patch_dir)/disable_zlib.patch
+  patch -p1 < $($(package)_patch_dir)/disable_zlib.patch && \
+  patch -p1 < $($(package)_patch_dir)/fix_includes.patch
 endef
 
 define $(package)_build_cmds

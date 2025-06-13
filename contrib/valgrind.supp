@@ -13,7 +13,7 @@
 #
 # Note that suppressions may depend on OS and/or library versions.
 # Tested on aarch64 and x86_64 with Ubuntu Noble system libs, using clang-16
-# and GCC, without gui.
+# and GCC.
 {
    Suppress uninitialized bytes warning in compat code
    Memcheck:Param
@@ -61,4 +61,16 @@
    Memcheck:Param
    ppoll(ufds.events)
    obj:/lib/ld-musl-aarch64.so.1
+}
+{
+   Suppress Qt dependencies
+   Memcheck:Addr16
+   obj:/usr/lib/aarch64-linux-gnu/libpcre2-16.so.0.11.2
+   obj:*
+}
+{
+   Suppress Qt dependencies
+   Memcheck:Cond
+   obj:/usr/lib/aarch64-linux-gnu/libpcre2-16.so.0.11.2
+   obj:*
 }

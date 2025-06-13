@@ -64,7 +64,6 @@
 }
 {
    Suppress Qt dependencies
-   Memcheck:Addr16
    obj:/usr/lib/aarch64-linux-gnu/libpcre2-16.so.0.11.2
    obj:*
 }

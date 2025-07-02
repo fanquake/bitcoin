@@ -11,3 +11,16 @@ index c0d0d39..f223f95 100644
  #include "llvm/Support/Casting.h"
  
  namespace llvm {
+diff --git a/src/tapi/include/tapi/LinkerInterfaceFile.h b/src/tapi/include/tapi/LinkerInterfaceFile.h
+index aed033d..8ef3cca 100644
+--- a/src/tapi/include/tapi/LinkerInterfaceFile.h
++++ b/src/tapi/include/tapi/LinkerInterfaceFile.h
+@@ -14,7 +14,7 @@
+ //===----------------------------------------------------------------------===//
+ #ifndef TAPI_LINKER_INTERFACE_FILE_H
+ #define TAPI_LINKER_INTERFACE_FILE_H
+-
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ #include <tapi/Defines.h>

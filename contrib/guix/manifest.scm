@@ -121,7 +121,8 @@ desirable for building Bitcoin Core release binaries."
 
 (define (winpthreads-patches mingw-w64-x86_64-winpthreads)
   (package-with-extra-patches mingw-w64-x86_64-winpthreads
-    (search-our-patches "winpthreads-remap-guix-store.patch")))
+    (search-our-patches "winpthreads-remap-guix-store.patch"
+                        "crt_strong.patch")))
 
 (define (make-mingw-pthreads-cross-toolchain target)
   "Create a cross-compilation toolchain package for TARGET"

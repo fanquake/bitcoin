@@ -55,10 +55,10 @@ namespace sha256_sse41 {
 
 namespace {
 
-uint32_t inline __attribute__((always_inline)) Ror(uint32_t x, int val) { return ((x >> val) | (x << (32 - val))); }
+uint32_t ALWAYS_INLINE Ror(uint32_t x, int val) { return ((x >> val) | (x << (32 - val))); }
 
 /** Compute one round of SHA256. */
-void inline __attribute__((always_inline)) Round(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d, uint32_t& e, uint32_t& f, uint32_t& g, uint32_t& h, uint32_t w)
+void ALWAYS_INLINE Round(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d, uint32_t& e, uint32_t& f, uint32_t& g, uint32_t& h, uint32_t w)
 {
     uint32_t t0, t1, t2;
     t0 = Ror(e, 25 - 11) ^ e;
@@ -87,7 +87,7 @@ void inline __attribute__((always_inline)) Round(uint32_t& a, uint32_t& b, uint3
  *                          to have the expansions for round r+16..r+19.
  *         W:               The round constants for r..r+3.
  */
-void inline __attribute__((always_inline)) QuadRoundSched(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d, uint32_t& e, uint32_t& f, uint32_t& g, uint32_t& h, __m128i& x0, __m128i x1, __m128i x2, __m128i x3, __m128i w)
+void ALWAYS_INLINE QuadRoundSched(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d, uint32_t& e, uint32_t& f, uint32_t& g, uint32_t& h, __m128i& x0, __m128i x1, __m128i x2, __m128i x3, __m128i w)
 {
     alignas(__m128i) uint32_t w32[4];
     __m128i t0, t1, t2, t3, t4;
@@ -130,7 +130,7 @@ void inline __attribute__((always_inline)) QuadRoundSched(uint32_t& a, uint32_t&
     x0 = _mm_add_epi32(_mm_shuffle_epi8(_mm_xor_si128(x0, t2), _mm_set_epi64x(0x0b0a090803020100ULL, 0xFFFFFFFFFFFFFFFFULL)), t0);
 }
 
-void inline __attribute__((always_inline)) QuadRound(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d, uint32_t& e, uint32_t& f, uint32_t& g, uint32_t& h, __m128i x0, __m128i w)
+void ALWAYS_INLINE QuadRound(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d, uint32_t& e, uint32_t& f, uint32_t& g, uint32_t& h, __m128i x0, __m128i w)
 {
     alignas(__m128i) uint32_t w32[32];
 
@@ -143,7 +143,7 @@ void inline __attribute__((always_inline)) QuadRound(uint32_t& a, uint32_t& b, u
     Round(f, g, h, a, b, c, d, e, w32[3]);
 }
 
-__m128i inline __attribute__((always_inline)) KK(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
+__m128i ALWAYS_INLINE KK(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
 {
     return _mm_set_epi32(d, c, b, a);
 }

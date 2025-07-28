@@ -14,7 +14,7 @@ export TSAN_OPTIONS="suppressions=${BASE_ROOT_DIR}/test/sanitizer_suppressions/t
 export UBSAN_OPTIONS="suppressions=${BASE_ROOT_DIR}/test/sanitizer_suppressions/ubsan:print_stacktrace=1:halt_on_error=1:report_error_type=1"
 
 if [ -n "${CI_LIMIT_STACK_SIZE}" ]; then
-  ulimit -s 524288
+  ulimit -s 131072
 fi
 
 echo "Number of available processing units: $(nproc)"

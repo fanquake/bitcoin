@@ -79,7 +79,7 @@ if [[ ${USE_MEMORY_SANITIZER} == "true" ]]; then
   cmake -G Ninja -B /msan/cxx_build/ \
     -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_USE_SANITIZER=MemoryWithOrigins \
+    -DLLVM_USE_SANITIZER=Thread \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DLLVM_TARGETS_TO_BUILD=Native \

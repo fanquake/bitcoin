@@ -46,10 +46,10 @@ darwin_STRIP=$(shell $(SHELL) $(.SHELLFLAGS) "command -v llvm-strip")
 #         Indicate to the linker the platform, the oldest supported version,
 #         and the SDK used.
 #
-#     -no_adhoc_codesign
+#     -no_uuid
 #
-#         Disable adhoc codesigning (for now) when using LLVM tooling, to avoid
-#         non-determinism issues with the Identifier field.
+#         Disable UUID generation to avoid non-determinism issues with the
+#         Identifier field, when codesigning.
 
 darwin_CC=$(clang_prog) --target=$(host) \
               -isysroot$(OSX_SDK) -nostdlibinc \
@@ -67,7 +67,7 @@ darwin_LDFLAGS=-Wl,-platform_version,macos,$(OSX_MIN_VERSION),$(OSX_SDK_VERSION)
 ifneq ($(build_os),darwin)
 darwin_CFLAGS += -mlinker-version=$(LLD_VERSION)
 darwin_CXXFLAGS += -mlinker-version=$(LLD_VERSION)
-darwin_LDFLAGS += -Wl,-no_adhoc_codesign -fuse-ld=lld
+darwin_LDFLAGS += -Wl,-no_uuid -fuse-ld=lld
 endif
 
 darwin_release_CFLAGS=-O2

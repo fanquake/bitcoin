@@ -562,8 +562,7 @@ inspecting signatures in Mach-O binaries.")
                  osslsigncode))
           ((string-contains target "x86_64-linux-")
            (list (list gcc-toolchain-13 "static")
-                 (make-bitcoin-cross-toolchain target
-                                               #:base-libc glibc-2.40)))
+                 (make-bitcoin-cross-toolchain target)))
           ((string-contains target "-linux-")
            (list bison
                  pkg-config

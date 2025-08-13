@@ -20,7 +20,11 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${BASE_CACHE+BASE_CACHE="$BASE_CACHE"} \
                                    ${build_CC+build_CC="$build_CC"} \
                                    ${build_CXX+build_CXX="$build_CXX"} \
-                                   NO_QT=1
+                                   NO_QT=1 \
+                                   LTO=1 \
+                                   CFLAGS="-O2 -flto" \
+                                   CXXFLAGS="-O2 -flto" \
+                                   LDFLAGS="-flto"
 
 # CFLAGS
 HOST_CFLAGS="-O2 -g"

@@ -22,12 +22,12 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${build_CXX+build_CXX="$build_CXX"} \
                                    NO_QT=1 \
                                    LTO=1 \
-                                   CFLAGS="-O2 -flto" \
-                                   CXXFLAGS="-O2 -flto" \
-                                   LDFLAGS="-flto"
+                                   CFLAGS="-O3 -flto -march=native" \
+                                   CXXFLAGS="-O3 -flto -march=native" \
+                                   LDFLAGS="-flto -march=native"
 
 # CFLAGS
-HOST_CFLAGS="-O2 -g"
+HOST_CFLAGS="-O3 -g -march=native"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 HOST_CFLAGS+=" -fdebug-prefix-map=${DISTSRC}/src=."
 

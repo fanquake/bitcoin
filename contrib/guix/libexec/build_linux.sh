@@ -18,10 +18,14 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${BASE_CACHE+BASE_CACHE="$BASE_CACHE"} \
                                    ${build_CC+build_CC="$build_CC"} \
                                    ${build_CXX+build_CXX="$build_CXX"} \
-                                   NO_QT=1
+                                   NO_QT=1 \
+                                   CFLAGS="-O3 -flto -march=native" \
+                                   CXXFLAGS="-O3 -flto -march=native" \
+                                   LDFLAGS="-flto -march=native" \
+                                   LTO=1
 
 # CFLAGS
-HOST_CFLAGS="-O2 -g"
+HOST_CFLAGS="-O3 -g"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 HOST_CFLAGS+=" -fdebug-prefix-map=${DISTSRC}/src=."
 

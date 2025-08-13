@@ -175,7 +175,6 @@ chain for " target " development."))
     (native-inputs (list cmake-3.30
                          ninja
                          python-scikit-build-core
-                         python-pydantic-core
                          python-pydantic-2))
     (arguments
      (list

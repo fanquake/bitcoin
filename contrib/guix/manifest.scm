@@ -2,7 +2,7 @@
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
              ((gnu packages certs) #:select (nss-certs))
-             ((gnu packages cmake) #:select (cmake-minimal))
+             ((gnu packages cmake) #:select (cmake-3.30))
              (gnu packages commencement)
              (gnu packages compression)
              (gnu packages cross-base)
@@ -172,7 +172,7 @@ chain for " target " development."))
                 "1pq9nagrnkl1x943bqnpiyxmkd9vk99znfxiwqp6vf012b50bz2a"))
               (patches (search-our-patches "lief-scikit-0-9.patch"))))
     (build-system pyproject-build-system)
-    (native-inputs (list cmake-minimal
+    (native-inputs (list cmake-3.30
                          ninja
                          python-scikit-build-core
                          python-pydantic-core
@@ -545,7 +545,7 @@ inspecting signatures in Mach-O binaries.")
         xz
         ;; Build tools
         gcc-toolchain-13
-        cmake-minimal
+        cmake-3.30
         gnu-make
         ninja
         ;; Scripting

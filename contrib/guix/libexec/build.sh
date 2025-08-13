@@ -250,6 +250,7 @@ mkdir -p "$DISTSRC"
     env CFLAGS="${HOST_CFLAGS}" CXXFLAGS="${HOST_CXXFLAGS}" LDFLAGS="${HOST_LDFLAGS}" \
     cmake -S . -B build \
           --toolchain "${BASEPREFIX}/${HOST}/toolchain.cmake" \
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
           -DWITH_CCACHE=OFF \
           -Werror=dev \
           ${CONFIGFLAGS} \

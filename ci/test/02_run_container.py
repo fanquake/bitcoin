@@ -20,7 +20,7 @@ def run(cmd, **kwargs):
 def main():
     print("Export only allowed settings:")
     settings = run(
-        ["bash", "-c", "grep export ./ci/test/00_setup_env*.sh"],
+        ["/bin/sh", "-c", "grep export ./ci/test/00_setup_env*.sh"],
         stdout=subprocess.PIPE,
         text=True,
         encoding="utf8",

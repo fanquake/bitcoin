@@ -93,7 +93,17 @@ chain for " target " development."))
       (home-page (package-home-page xgcc))
       (license (package-license xgcc)))))
 
-(define base-gcc gcc-13) ;; 13.3.0
+(define base-gcc
+  (package
+    (inherit gcc-13) ;; 13.3.0
+    (version "13.4.0")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append "mirror://gnu/gcc/gcc-"
+                                  version "/gcc-" version ".tar.xz"))
+              (sha256
+               (base32
+                "1xd8kjssyhq82y8a8yhcpy6mmjfbql1sr22makf8ymj0n3dyck4w"))))))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 

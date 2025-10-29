@@ -36,7 +36,7 @@ MAX_VERSIONS = {
 'GLIBC': {
     lief.ELF.ARCH.X86_64: (0,0),
     lief.ELF.ARCH.ARM:    (2,31),
-    lief.ELF.ARCH.AARCH64:(2,31),
+    lief.ELF.ARCH.AARCH64:(0,0),
     lief.ELF.ARCH.PPC64:  (2,31),
     lief.ELF.ARCH.RISCV:  (2,31),
 },
@@ -60,7 +60,7 @@ ELF_INTERPRETER_NAMES: dict[lief.ELF.ARCH, dict[lief.Header.ENDIANNESS, str]] = 
         lief.Header.ENDIANNESS.LITTLE: "/lib/ld-linux-armhf.so.3",
     },
     lief.ELF.ARCH.AARCH64: {
-        lief.Header.ENDIANNESS.LITTLE: "/lib/ld-linux-aarch64.so.1",
+        lief.Header.ENDIANNESS.LITTLE: "",
     },
     lief.ELF.ARCH.PPC64:   {
         lief.Header.ENDIANNESS.BIG: "/lib64/ld64.so.1",
@@ -99,7 +99,6 @@ ELF_ALLOWED_LIBRARIES = {
 'libm.so.6', # math library
 'libatomic.so.1',
 'ld-linux.so.2', # 32-bit dynamic linker
-'ld-linux-aarch64.so.1', # 64-bit ARM dynamic linker
 'ld-linux-armhf.so.3', # 32-bit ARM dynamic linker
 'ld64.so.1', # POWER64 ABIv1 dynamic linker
 'ld64.so.2', # POWER64 ABIv2 dynamic linker
@@ -232,7 +231,7 @@ def check_RUNPATH(binary) -> bool:
 def check_ELF_libraries(binary) -> bool:
     ok: bool = True
 
-    if binary.header.machine_type == lief.ELF.ARCH.X86_64:
+    if binary.header.machine_type in [lief.ELF.ARCH.X86_64, lief.ELF.ARCH.AARCH64]:
         return len(binary.libraries) == 0
 
     for library in binary.libraries:

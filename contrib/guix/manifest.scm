@@ -541,6 +541,40 @@ inspecting signatures in Mach-O binaries.")
                   "--disable-werror",
                   building-on))))))))
 
+;; For riscv64, where static-pie support landed in 2.39.
+;; Note that --enable-static-nss isn't used here, because it's
+;; broken in 2.33 and later.
+(define-public glibc-2.42
+  (let ((commit "71874f167aa5bb1538ff7e394beaacee28ebe65f"))
+  (package
+    (inherit glibc) ;; 2.39
+    (version "2.42")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://sourceware.org/git/glibc.git")
+                    (commit commit)))
+              (file-name (git-file-name "glibc" commit))
+              (sha256
+               (base32
+                "1pfbk907fkbavg7grbvb5zlhd3y47f8jj3d2v1s5w7xjnn0ypigq"))
+              (patches (search-our-patches "glibc-guix-2.42-prefix.patch"))))
+    (arguments
+      (substitute-keyword-arguments (package-arguments glibc)
+        ((#:configure-flags flags)
+          `(append ,flags
+            ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
+            (list "--enable-bind-now",
+                  "--enable-cet=yes",
+                  "--enable-fortify-source",
+                  "--enable-stack-protector=all",
+                  "--disable-nscd",
+                  "--disable-profile",
+                  "--disable-pt_chown",
+                  "--disable-timezone-tools",
+                  "--disable-werror",
+                  building-on))))))))
+
 ;; The sponge tool from moreutils.
 (define-public sponge
   (package
@@ -615,6 +649,10 @@ inspecting signatures in Mach-O binaries.")
            (list (list gcc-toolchain-13 "static")
                  (make-bitcoin-cross-toolchain target
                                                #:base-libc glibc-2.32)))
+          ((string-contains target "riscv64-linux-")
+           (list (list gcc-toolchain-13 "static")
+                 (make-bitcoin-cross-toolchain target
+                                               #:base-libc glibc-2.42)))
           ((string-contains target "-linux-")
            (list bison
                  pkg-config

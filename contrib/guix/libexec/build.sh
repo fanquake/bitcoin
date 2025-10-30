@@ -146,10 +146,10 @@ case "$HOST" in
     aarch64-linux-gnu) ;;
     arm-linux-gnueabihf) ;;
     powerpc64-linux-gnu) ;;
+    riscv64-linux-gnu) ;;
     *linux*)
         glibc_dynamic_linker=$(
             case "$HOST" in
-                riscv64-linux-gnu)     echo /lib/ld-linux-riscv64-lp64d.so.1 ;;
                 powerpc64le-linux-gnu) echo /lib64/ld64.so.2;;
                 *)                     exit 1 ;;
             esac
@@ -230,6 +230,7 @@ case "$HOST" in
     aarch64-linux-gnu) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
     arm-linux-gnueabihf) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
     powerpc64-linux-gnu) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
+    riscv64-linux-gnu) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
     *linux*)  HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -static-libstdc++ -Wl,-O2" ;;
     *mingw*)  HOST_LDFLAGS="-Wl,--no-insert-timestamp" ;;
 esac

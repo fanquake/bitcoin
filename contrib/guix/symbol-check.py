@@ -38,7 +38,7 @@ MAX_VERSIONS = {
     lief.ELF.ARCH.ARM:    (0,0),
     lief.ELF.ARCH.AARCH64:(0,0),
     lief.ELF.ARCH.PPC64:  (2,31),
-    lief.ELF.ARCH.RISCV:  (2,31),
+    lief.ELF.ARCH.RISCV:  (0,0),
 },
 'LIBATOMIC': (1,0),
 'V':         (0,5,0),  # xkb (bitcoin-qt only)
@@ -67,7 +67,7 @@ ELF_INTERPRETER_NAMES: dict[lief.ELF.ARCH, dict[lief.Header.ENDIANNESS, str]] = 
         lief.Header.ENDIANNESS.LITTLE: "/lib64/ld64.so.2",
     },
     lief.ELF.ARCH.RISCV:    {
-        lief.Header.ENDIANNESS.LITTLE: "/lib/ld-linux-riscv64-lp64d.so.1",
+        lief.Header.ENDIANNESS.LITTLE: "",
     },
 }
 
@@ -100,7 +100,6 @@ ELF_ALLOWED_LIBRARIES = {
 'libatomic.so.1',
 'ld-linux.so.2', # 32-bit dynamic linker
 'ld64.so.2', # POWER64 ABIv2 dynamic linker
-'ld-linux-riscv64-lp64d.so.1', # 64-bit RISC-V dynamic linker
 # bitcoin-qt only
 'libxcb.so.1', # part of X11
 'libxkbcommon.so.0', # keyboard keymapping
@@ -230,7 +229,8 @@ def check_ELF_libraries(binary) -> bool:
     ok: bool = True
 
     # Note that we can use lief.ELF.ARCH.PPC64 here, because we don't currently build for little endian
-    if binary.header.machine_type in [lief.ELF.ARCH.X86_64, lief.ELF.ARCH.AARCH64, lief.ELF.ARCH.ARM, lief.ELF.ARCH.PPC64]:
+    if binary.header.machine_type in [lief.ELF.ARCH.X86_64, lief.ELF.ARCH.AARCH64, lief.ELF.ARCH.ARM,
+                                        lief.ELF.ARCH.PPC64, lief.ELF.ARCH.RISCV]:
         return len(binary.libraries) == 0
 
     for library in binary.libraries:

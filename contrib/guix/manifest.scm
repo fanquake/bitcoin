@@ -112,7 +112,7 @@ chain for " target " development."))
                                        (base-gcc-for-libc linux-base-gcc)
                                        (base-kernel-headers base-linux-kernel-headers)
                                        (base-libc glibc-2.31)
-                                       (base-gcc linux-base-gcc))
+                                       (base-gcc (gcc-static-pie-patches linux-base-gcc)))
   "Convenience wrapper around MAKE-CROSS-TOOLCHAIN with default values
 desirable for building Bitcoin Core release binaries."
   (make-cross-toolchain target
@@ -120,6 +120,10 @@ desirable for building Bitcoin Core release binaries."
                         base-kernel-headers
                         base-libc
                         base-gcc))
+
+(define (gcc-static-pie-patches gcc)
+  (package-with-extra-patches gcc
+    (search-our-patches "arm_static_pie.patch")))
 
 (define (gcc-mingw-patches gcc)
   (package-with-extra-patches gcc
@@ -604,7 +608,8 @@ inspecting signatures in Mach-O binaries.")
                  nss-certs
                  osslsigncode))
           ((or (string-contains target "x86_64-linux-")
-               (string-contains target "aarch64-linux-"))
+               (string-contains target "aarch64-linux-")
+               (string-contains target "arm-linux-"))
            (list (list gcc-toolchain-13 "static")
                  (make-bitcoin-cross-toolchain target
                                                #:base-libc glibc-2.32)))

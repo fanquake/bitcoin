@@ -144,10 +144,10 @@ export GUIX_LD_WRAPPER_DISABLE_RPATH=yes
 case "$HOST" in
     x86_64-linux-gnu) ;;
     aarch64-linux-gnu) ;;
+    arm-linux-gnueabihf) ;;
     *linux*)
         glibc_dynamic_linker=$(
             case "$HOST" in
-                arm-linux-gnueabihf)   echo /lib/ld-linux-armhf.so.3 ;;
                 riscv64-linux-gnu)     echo /lib/ld-linux-riscv64-lp64d.so.1 ;;
                 powerpc64-linux-gnu)   echo /lib64/ld64.so.1;;
                 powerpc64le-linux-gnu) echo /lib64/ld64.so.2;;
@@ -228,6 +228,7 @@ esac
 case "$HOST" in
     x86_64-linux-gnu) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
     aarch64-linux-gnu) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
+    arm-linux-gnueabihf) HOST_LDFLAGS=" -static-pie -static-libgcc -Wl,-O2" ;;
     *linux*)  HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -static-libstdc++ -Wl,-O2" ;;
     *mingw*)  HOST_LDFLAGS="-Wl,--no-insert-timestamp" ;;
 esac

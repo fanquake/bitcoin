@@ -1,0 +1,40 @@
+From 4e122adfea2a6247f2da0c094f3203cbdf2a578c Mon Sep 17 00:00:00 2001
+From: lancethepants <lancethepants@gmail.com>
+Date: Tue, 19 Jul 2022 14:21:05 -0600
+Subject: [PATCH V2] arm: add -static-pie support
+
+This patch adds -static-pie support for the arm architecture. aarch64 
+had the appropriate code for handling -static-pie, so this just mirrors 
+the code found there.  Tested with uclibc-ng and musl c-standard 
+libraries to produce static-pie binaries.  Re-submitted with minor spell 
+check fix.
+
+The commit mirrors code from aarch64 to handle -static-pie.
+Tested with uclibc-ng and musl c-standard libraries.
+
+Signed-off-by: Lance Fredrickson <lancethepants@gmail.com>
+
+Taken from https://gcc.gnu.org/pipermail/gcc-patches/2022-July/598610.html.
+---
+ gcc/config/arm/linux-elf.h | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/config/arm/linux-elf.h b/gcc/config/arm/linux-elf.h
+index df3da67c4f0..70f71b051a3 100644
+--- a/gcc/config/arm/linux-elf.h
++++ b/gcc/config/arm/linux-elf.h
+@@ -66,9 +66,10 @@
+    %{static:-Bstatic} \
+    %{shared:-shared} \
+    %{symbolic:-Bsymbolic} \
+-   %{!static: \
++   %{!static:%{!static-pie: \
+      %{rdynamic:-export-dynamic} \
+-     %{!shared:-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}} \
++     %{!shared:-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}}} \
++   %{static-pie:-Bstatic -pie --no-dynamic-linker -z text} \
+    -X \
+    %{mbig-endian:-EB} %{mlittle-endian:-EL}" \
+    SUBTARGET_EXTRA_LINK_SPEC
+-- 
+2.20.1

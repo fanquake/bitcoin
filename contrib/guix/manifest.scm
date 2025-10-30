@@ -105,14 +105,26 @@ chain for " target " development."))
                (base32
                 "1xd8kjssyhq82y8a8yhcpy6mmjfbql1sr22makf8ymj0n3dyck4w"))))))
 
+(define base-gcc-14
+  (package
+    (inherit gcc-14) ;; 14.2.0
+    (version "14.3.0")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append "mirror://gnu/gcc/gcc-"
+                                  version "/gcc-" version ".tar.xz"))
+              (sha256
+               (base32
+                "0fna78ly417g69fdm4i5f3ms96g8xzzjza8gwp41lqr5fqlpgp70"))))))
+
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 
 (define* (make-bitcoin-cross-toolchain target
                                        #:key
-                                       (base-gcc-for-libc linux-base-gcc)
+                                       (base-gcc-for-libc (linux-base-gcc base-gcc))
                                        (base-kernel-headers base-linux-kernel-headers)
                                        (base-libc glibc-2.31)
-                                       (base-gcc (gcc-static-pie-patches linux-base-gcc)))
+                                       (base-gcc (gcc-static-pie-patches (linux-base-gcc base-gcc))))
   "Convenience wrapper around MAKE-CROSS-TOOLCHAIN with default values
 desirable for building Bitcoin Core release binaries."
   (make-cross-toolchain target
@@ -439,7 +451,7 @@ inspecting signatures in Mach-O binaries.")
                   "--disable-gcov",
                   building-on)))))))
 
-(define-public linux-base-gcc
+(define-public (linux-base-gcc base-gcc)
   (package
     (inherit base-gcc)
     (arguments
@@ -652,7 +664,9 @@ inspecting signatures in Mach-O binaries.")
           ((string-contains target "riscv64-linux-")
            (list (list gcc-toolchain-13 "static")
                  (make-bitcoin-cross-toolchain target
-                                               #:base-libc glibc-2.42)))
+                                               #:base-gcc-for-libc (linux-base-gcc base-gcc-14)
+                                               #:base-libc glibc-2.42
+                                               #:base-gcc (linux-base-gcc base-gcc-14))))
           ((string-contains target "-linux-")
            (list bison
                  pkg-config

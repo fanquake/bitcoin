@@ -63,7 +63,7 @@ ELF_INTERPRETER_NAMES: dict[lief.ELF.ARCH, dict[lief.Header.ENDIANNESS, str]] = 
         lief.Header.ENDIANNESS.LITTLE: "",
     },
     lief.ELF.ARCH.PPC64:   {
-        lief.Header.ENDIANNESS.BIG: "/lib64/ld64.so.1",
+        lief.Header.ENDIANNESS.BIG: "",
         lief.Header.ENDIANNESS.LITTLE: "/lib64/ld64.so.2",
     },
     lief.ELF.ARCH.RISCV:    {
@@ -99,7 +99,6 @@ ELF_ALLOWED_LIBRARIES = {
 'libm.so.6', # math library
 'libatomic.so.1',
 'ld-linux.so.2', # 32-bit dynamic linker
-'ld64.so.1', # POWER64 ABIv1 dynamic linker
 'ld64.so.2', # POWER64 ABIv2 dynamic linker
 'ld-linux-riscv64-lp64d.so.1', # 64-bit RISC-V dynamic linker
 # bitcoin-qt only
@@ -230,7 +229,8 @@ def check_RUNPATH(binary) -> bool:
 def check_ELF_libraries(binary) -> bool:
     ok: bool = True
 
-    if binary.header.machine_type in [lief.ELF.ARCH.X86_64, lief.ELF.ARCH.AARCH64, lief.ELF.ARCH.ARM]:
+    # Note that we can use lief.ELF.ARCH.PPC64 here, because we don't currently build for little endian
+    if binary.header.machine_type in [lief.ELF.ARCH.X86_64, lief.ELF.ARCH.AARCH64, lief.ELF.ARCH.ARM, lief.ELF.ARCH.PPC64]:
         return len(binary.libraries) == 0
 
     for library in binary.libraries:

@@ -124,7 +124,8 @@ def check_ELF_CONTROL_FLOW(binary) -> bool:
 def check_ELF_FORTIFY(binary) -> bool:
     # no imported fortified funcs if we are fully static
     # check could be changed to include all symbols
-    if binary.header.machine_type in [lief.ELF.ARCH.X86_64, lief.ELF.ARCH.AARCH64, lief.ELF.ARCH.ARM]:
+    # Note that we can use lief.ELF.ARCH.PPC64 here, because we don't currently build for little endian
+    if binary.header.machine_type in [lief.ELF.ARCH.X86_64, lief.ELF.ARCH.AARCH64, lief.ELF.ARCH.ARM, lief.ELF.ARCH.PPC64]:
         return True
 
     # bitcoin wrapper does not currently contain any fortified functions

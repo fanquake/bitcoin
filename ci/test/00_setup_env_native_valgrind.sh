@@ -8,7 +8,8 @@ export LC_ALL=C.UTF-8
 
 export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:24.04"
 export CONTAINER_NAME=ci_native_valgrind
-export PACKAGES="python3-zmq libevent-dev libboost-dev libzmq3-dev libsqlite3-dev libcapnp-dev capnproto python3-pip"
+export APT_LLVM_V="21"
+export PACKAGES="clang-${APT_LLVM_V} llvm-${APT_LLVM_V} llvm-${APT_LLVM_V}-dev libclang-${APT_LLVM_V}-dev libclang-rt-${APT_LLVM_V}-dev python3-zmq libevent-dev libboost-dev libzmq3-dev libsqlite3-dev libcapnp-dev capnproto python3-pip"
 export PIP_PACKAGES="--break-system-packages pycapnp"
 export BUILD_VALGRIND=1
 export USE_VALGRIND=1
@@ -19,4 +20,6 @@ export GOAL="install"
 # TODO enable GUI
 export BITCOIN_CONFIG="\
  -DWITH_ZMQ=ON -DBUILD_GUI=OFF \
+ -DCMAKE_C_COMPILER=clang \
+ -DCMAKE_CXX_COMPILER=clang++
 "

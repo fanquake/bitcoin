@@ -84,6 +84,18 @@ if [[ -n "${USE_INSTRUMENTED_LIBCPP}" ]]; then
   rm -rf /llvm-project
 fi
 
+if [ -n "$BUILD_VALGRIND" ]; then
+  ${CI_RETRY_EXE} apt-get install --no-install-recommends --no-upgrade -y automake libc6-dbg
+  ${CI_RETRY_EXE} git clone --depth=1 https://sourceware.org/git/valgrind.git -b VALGRIND_3_26_0
+  cd valgrind
+  ./autogen.sh
+  ./configure
+  make install "$MAKEJOBS"
+  cd ..
+  rm -rf valgrind
+  valgrind --version
+fi
+
 if [[ "${RUN_IWYU}" == true ]]; then
   ${CI_RETRY_EXE} git clone --depth=1 https://github.com/include-what-you-use/include-what-you-use -b clang_"${TIDY_LLVM_V}" /include-what-you-use
   (cd /include-what-you-use && patch -p1 < /ci_container_base/ci/test/01_iwyu.patch)

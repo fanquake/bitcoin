@@ -14,7 +14,7 @@
   #:use-module (guix packages)
   #:use-module ((guix utils) #:select (substitute-keyword-arguments))
   #:export (building-on
-            glibc-2.31
+            glibc-2.44
             make-bitcoin-cross-toolchain
             make-mingw-pthreads-cross-toolchain))
 
@@ -245,3 +245,39 @@ chain for " target " development."))
                     (string-append out "/etc/rpc" suffix "\n"))
                    (("^install-others =.*$")
                     (string-append "install-others = " out "/etc/rpc\n")))))))))))))
+
+;; --enable-static-nss isn't used, because it has been broken since
+;; 2.33: https://sourceware.org/bugzilla/show_bug.cgi?id=27959.
+;; It also no-longer seems to have any effect on the build.
+;; This package points at glibc master, but will switch to 2.44 when branched.
+(define glibc-2.44
+  (let ((commit "a3b1faddafc0d46653693546658b5955f8d2dfd7"))
+  (package
+    (inherit glibc) ;; 2.39
+    (version "2.44")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://sourceware.org/git/glibc.git")
+                    (commit commit)))
+              (file-name (git-file-name "glibc" commit))
+              (sha256
+               (base32
+                "1nn4wblnr9zbifrgw0d0b31xz52i636nv3zyv9f50384s8m401qc"))
+              (patches (search-our-patches "glibc-guix-2.44-prefix.patch"
+                                           "glibc-nss-nodlopen.patch"))))
+    (arguments
+      (substitute-keyword-arguments (package-arguments glibc)
+        ((#:configure-flags flags)
+          `(append ,flags
+            ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
+            (list "--enable-bind-now",
+                  "--enable-cet=yes",
+                  "--enable-fortify-source",
+                  "--enable-stack-protector=all",
+                  "--disable-nscd",
+                  "--disable-profile",
+                  "--disable-pt_chown",
+                  "--disable-timezone-tools",
+                  "--disable-werror",
+                  building-on))))))))

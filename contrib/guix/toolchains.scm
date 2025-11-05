@@ -14,7 +14,7 @@
   #:use-module (guix packages)
   #:use-module ((guix utils) #:select (substitute-keyword-arguments))
   #:export (building-on
-            glibc-2.31
+            glibc-2.44
             make-bitcoin-cross-toolchain
             make-mingw-pthreads-cross-toolchain))
 
@@ -247,3 +247,36 @@ chain for " target " development."))
                     (string-append out "/etc/rpc" suffix "\n"))
                    (("^install-others =.*$")
                     (string-append "install-others = " out "/etc/rpc\n")))))))))))))
+
+;; This package currently points at glibc master.
+(define glibc-2.44
+  (let ((commit "ccd4cd5324caaaea1bb12bc8cef073170da51a19"))
+  (package
+    (inherit glibc) ;; 2.39
+    (version "2.44")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://sourceware.org/git/glibc.git")
+                    (commit commit)))
+              (file-name (git-file-name "glibc" commit))
+              (sha256
+               (base32
+                "1x2ygpmzcm8wc9klk3rymm68i36allxfg4f78jmrgw6ska0ki5r2"))
+              (patches (search-our-patches "glibc-guix-2.44-prefix.patch"
+                                           "glibc-nss-nodlopen.patch"))))
+    (arguments
+      (substitute-keyword-arguments (package-arguments glibc)
+        ((#:configure-flags flags)
+          `(append ,flags
+            ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
+            (list "--enable-bind-now",
+                  "--enable-cet=yes",
+                  "--enable-fortify-source",
+                  "--enable-stack-protector=all",
+                  "--disable-nscd",
+                  "--disable-profile",
+                  "--disable-pt_chown",
+                  "--disable-timezone-tools",
+                  "--disable-werror",
+                  building-on))))))))

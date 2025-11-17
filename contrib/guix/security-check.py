@@ -127,6 +127,10 @@ def check_ELF_FORTIFY(binary) -> bool:
     if '--monolithic' in binary.strings:
         return True
 
+    # bitcoin-util does not currently contain any fortified functions
+    if './bitcoin-util.cpp' in binary.strings:
+        return True
+
     # The glibc used for static builds is compiled with fortify source
     if binary.concrete.interpreter == "":
         return True

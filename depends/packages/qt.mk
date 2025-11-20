@@ -148,6 +148,7 @@ $(package)_config_opts_freebsd := $$($(package)_config_opts_linux)
 $(package)_config_opts_mingw32 := -no-dbus
 $(package)_config_opts_mingw32 += -no-freetype
 $(package)_config_opts_mingw32 += -no-pkg-config
+$(package)_config_opts_mingw32 += -no-stack-clash-protection
 
 # CMake build options.
 $(package)_config_env := CC="$$($(package)_cc)"

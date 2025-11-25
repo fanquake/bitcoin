@@ -1,4 +1,5 @@
 (use-modules (gnu packages bison)
+             ((gnu packages build-tools) #:select (meson))
              ((gnu packages compression) #:select (xz zip))
              (gnu packages gawk)
              ((gnu packages installers) #:select (nsis-x86_64))
@@ -21,6 +22,7 @@
           ((string-contains target "-linux-")
            (list bison
                  gawk
+                 meson
                  pkg-config))
           ((string-contains target "darwin")
            (list zip))

@@ -1,6 +1,7 @@
 (use-modules (gnu packages)
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
+             ((gnu packages build-tools) #:select (meson))
              ((gnu packages certs) #:select (nss-certs))
              ((gnu packages check) #:select (libfaketime))
              ((gnu packages cmake) #:select (cmake-minimal))
@@ -590,6 +591,7 @@ inspecting signatures in Mach-O binaries.")
                  osslsigncode))
           ((string-contains target "-linux-")
            (list bison
+                 meson
                  pkg-config
                  (list gcc-toolchain-14 "static")
                  (make-bitcoin-cross-toolchain target)))

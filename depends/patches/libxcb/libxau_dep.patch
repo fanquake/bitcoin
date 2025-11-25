@@ -1,0 +1,15 @@
+Add libXau to pkgconfig libs.
+
+Related upstream thread:
+https://gitlab.freedesktop.org/xorg/lib/libxcb/-/merge_requests/25
+
+--- a/xcb.pc.in
++++ b/xcb.pc.in
+@@ -8,6 +8,6 @@ Name: XCB
+ Description: X-protocol C Binding
+ Version: @PACKAGE_VERSION@
+ Requires.private: @NEEDED@
+-Libs: -L${libdir} -lxcb
++Libs: -L${libdir} -lxcb -lXau
+ Libs.private: @LIBS@
+ Cflags: -I${includedir}

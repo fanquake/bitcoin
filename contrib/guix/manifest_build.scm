@@ -1,6 +1,7 @@
 (use-modules (gnu packages)
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
+             ((gnu packages build-tools) #:select (meson))
              ((gnu packages cmake) #:select (cmake-minimal))
              (gnu packages commencement)
              ((gnu packages compression) #:select (gzip xz zip))
@@ -290,6 +291,7 @@ chain for " target " development."))
                  zip))
           ((string-contains target "-linux-")
            (list bison
+                 meson
                  pkg-config
                  (list gcc-toolchain-14 "static")
                  (make-bitcoin-cross-toolchain target)))

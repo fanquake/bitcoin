@@ -12,7 +12,7 @@ as well as [packages.md](packages.md) for how to add packages.
 
 Skip the following packages if you don't intend to use the GUI and will build with [`NO_QT=1`](#dependency-options):
 
-    apt install bison g++ ninja-build pkgconf python3 xz-utils
+    apt install bison g++ meson ninja-build pkgconf python3 xz-utils
 
 To build dependencies for the current arch+OS:
 
@@ -35,7 +35,7 @@ To build dependencies for the current arch+OS:
 
 Skip the following packages if you don't intend to use the GUI and will build with [`NO_QT=1`](#dependency-options):
 
-    pkg install bison ninja pkgconf python3
+    pkg install bison meson ninja pkgconf python3
 
 To build dependencies for the current arch+OS:
 
@@ -63,7 +63,7 @@ To build dependencies for the current arch+OS:
 
 Skip the following packages if you don't intend to use the GUI and will build with [`NO_QT=1`](#dependency-options):
 
-    apk add bison linux-headers samurai pkgconf python3
+    apk add bison linux-headers meson samurai pkgconf python3
 
 To build dependencies for the current arch+OS:
 

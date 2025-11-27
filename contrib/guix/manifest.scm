@@ -43,13 +43,25 @@ FILE-NAME found in ./patches relative to the current file."
 
 (define building-on (string-append "--build=" (list-ref (string-split (%current-system) #\-) 0) "-guix-linux-gnu"))
 
+(define (base-binutils target)
+  (package
+    (inherit (cross-binutils target)) ;; 2.41
+    (version "2.45.1")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append "mirror://gnu/binutils/binutils-"
+                          version ".tar.bz2"))
+              (sha256
+               (base32
+                "0902y0cds5zmyx555ms6jhz57sr9mp46y4vr280v8p08r7gas3c6"))))))
+
 (define (make-cross-toolchain target
                               base-gcc-for-libc
                               base-kernel-headers
                               base-libc
                               base-gcc)
   "Create a cross-compilation toolchain package for TARGET"
-  (let* ((xbinutils (cross-binutils target))
+  (let* ((xbinutils (base-binutils target))
          ;; 1. Build a cross-compiling gcc without targeting any libc, derived
          ;; from BASE-GCC-FOR-LIBC
          (xgcc-sans-libc (cross-gcc target

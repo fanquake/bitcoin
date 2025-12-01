@@ -249,10 +249,12 @@ mkdir -p "$DISTSRC"
           -DWITH_CCACHE=OFF \
           -Werror=dev \
           ${CONFIGFLAGS} \
-          "${CMAKE_EXE_LINKER_FLAGS}"
+          "${CMAKE_EXE_LINKER_FLAGS}" -DAPPEND_CXXFLAGS="-da -dp -fdump-tree-all-raw-lineno"
 
     # Build Bitcoin Core
-    cmake --build build -j "$JOBS" ${V:+--verbose}
+    make -C build/src/wallet db.cpp.obj V=1
+
+    exit 1
 
     mkdir -p "$OUTDIR"
 

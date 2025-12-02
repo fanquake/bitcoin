@@ -104,7 +104,7 @@ chain for " target " development."))
                                   version "/gcc-" version ".tar.xz"))
               (sha256
                (base32
-                "0fna78ly417g69fdm4i5f3ms96g8xzzjza8gwp41lqr5fqlpgp70"))))))
+                "1xd8kjssyhq82y8a8yhcpy6mmjfbql1sr22makf8ymj0n3dyck4w"))))))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 

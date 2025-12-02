@@ -96,8 +96,8 @@ chain for " target " development."))
 
 (define base-gcc
   (package
-    (inherit gcc-14) ;; 14.2.0
-    (version "14.3.0")
+    (inherit gcc-13) ;; 13.3.0
+    (version "13.4.0")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://gnu/gcc/gcc-"
@@ -561,7 +561,7 @@ inspecting signatures in Mach-O binaries.")
         gzip
         xz
         ;; Build tools
-        gcc-toolchain-14
+        gcc-toolchain-13
         cmake-minimal
         gnu-make
         ninja
@@ -582,7 +582,7 @@ inspecting signatures in Mach-O binaries.")
           ((string-contains target "-linux-")
            (list bison
                  pkg-config
-                 (list gcc-toolchain-14 "static")
+                 (list gcc-toolchain-13 "static")
                  (make-bitcoin-cross-toolchain target)))
           ((string-contains target "darwin")
            (list clang-toolchain-19

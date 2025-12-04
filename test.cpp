@@ -33,20 +33,16 @@ std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wall
 
         if (func()) {
             if (func()) {
-                paths.emplace_back(path, "bdb");
-            } else if (func()) {
-                paths.emplace_back(path, "sqlite");
+                paths.emplace_back(path, "aaa");
+                paths.emplace_back(path, "aaaaaa");
             }
         }
         if (func()) {
             if (func()) {
-                paths.emplace_back(fs::path(), "bdb");
-            } else if (func()) {
-                paths.emplace_back(fs::path(), "sqlite");
+                paths.emplace_back(fs::path(), "aaa");
+                paths.emplace_back(fs::path(), "aaaaaa");
+                paths.emplace_back(path, "aaaaaaaaaaaaa");
             }
-        } else if (func()) {
-            paths.emplace_back(path, "bdb");
-            paths.emplace_back(path, "wallet.dat");
         }
     }
 

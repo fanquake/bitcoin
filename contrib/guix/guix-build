@@ -222,7 +222,7 @@ fi
 
 # Determine the maximum number of jobs to run simultaneously (overridable by
 # environment)
-JOBS="${JOBS:-$(nproc)}"
+JOBS=1
 
 # Usage: host_to_commonname HOST
 #

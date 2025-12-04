@@ -22,19 +22,9 @@ public:
 
 }
 
-bool IsBDBFile(const fs::path& path)
-{
-    // Removing this condition makes it deterministic.
-    if (!fs::exists(path)) return false;
-    return true;
-}
+bool IsBDBFile(const fs::path& path);
 
-bool IsSQLiteFile(const fs::path& path)
-{
-    // Removing this condition makes it deterministic.
-    if (!fs::exists(path)) return false;
-    return true;
-}
+bool IsSQLiteFile(const fs::path& path);
 
 std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wallet_dir)
 {

@@ -40,7 +40,7 @@ std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wall
             } else if (IsSQLiteFile(it->path())) {
                 paths.emplace_back(path, "sqlite");
             }
-        } else if (it.depth() == 0 && it->symlink_status().type() == fs::file_type::regular && it->path().extension() != ".bak") {
+        } else if (it.depth() == 0 && it->symlink_status().type() == fs::file_type::regular) {
             if (it->path().filename() == "wallet.dat") {
                 if (IsBDBFile(it->path())) {
                     paths.emplace_back(fs::path(), "bdb");

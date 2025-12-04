@@ -90,6 +90,6 @@ x86_64-w64-mingw32-g++ -DNOMINMAX -DWIN32 -DWIN32_LEAN_AND_MEAN -D_MT -D_WIN32_I
 ${HOST_CXXFLAGS} \
 ${EXTRA_CXXFLAGS} \
 -O2 -g -fvisibility=hidden -fstack-reuse=none -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -std=c++20 \
--MD -MT ${OUT_OBJ} -MF ${OUT_OBJ} -o ${OUT_OBJ} -c \
+-MD -MT ${OUT_OBJ} -MF ${OUT_OBJ} -save-temps -o ${OUT_OBJ} -c \
 /bitcoin/test.cpp && \
 sha256sum ${OUT_OBJ}

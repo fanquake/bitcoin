@@ -52,8 +52,8 @@ public:
 
 bool func();
 
-std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wallet_dir)
-{
+std::vector<std::pair<fs::path, std::string>> Func(const fs::path& wallet_dir) {
+
     std::vector<std::pair<fs::path, std::string>> paths;
     std::error_code ec;
 
@@ -61,17 +61,11 @@ std::vector<std::pair<fs::path, std::string>> ListDatabases(const fs::path& wall
         const fs::path path{it->path().lexically_relative(wallet_dir)};
 
         if (func()) {
-            if (func()) {
-                paths.emplace_back(path, "aaa");
-                paths.emplace_back(path, "aaaaaa");
-            }
-        }
-        if (func()) {
-            if (func()) {
-                paths.emplace_back(fs::path(), "aaa");
-                paths.emplace_back(fs::path(), "aaaaaa");
-                paths.emplace_back(path, "aaaaaaaaaaaaa");
-            }
+            paths.emplace_back(path, "aaa");
+            paths.emplace_back(path, "aaaaaa");
+            paths.emplace_back(fs::path(), "aaa");
+            paths.emplace_back(fs::path(), "aaaaaa");
+            paths.emplace_back(path, "aaaaaaaaaaaaa");
         }
     }
 

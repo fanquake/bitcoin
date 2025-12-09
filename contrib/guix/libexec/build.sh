@@ -406,6 +406,5 @@ mv --no-target-directory "$OUTDIR" "$ACTUAL_OUTDIR" \
         find "$ACTUAL_OUTDIR" -type f
     } | xargs realpath --relative-base="$PWD" \
       | xargs sha256sum \
-      | sort -k2 \
-      | sponge "$ACTUAL_OUTDIR"/SHA256SUMS.part
+      | sort -k2 -o "$ACTUAL_OUTDIR"/SHA256SUMS.part
 )

@@ -198,7 +198,7 @@ and abstract ELF, PE and MachO formats.")
 (define osslsigncode
   (package
     (name "osslsigncode")
-    (version "2.5")
+    (version "2.10")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -206,9 +206,9 @@ and abstract ELF, PE and MachO formats.")
                     (commit version)))
               (sha256
                (base32
-                "1j47vwq4caxfv0xw68kw5yh00qcpbd56d7rq6c483ma3y7s96yyz"))))
+                "1fizcrcgavw5zkzws62pgz8ly5jnmrpv33whryabqgg9q5fwsf2j"))))
     (build-system cmake-build-system)
-    (inputs (list openssl))
+    (inputs (list openssl zlib))
     (home-page "https://github.com/mtrojnar/osslsigncode")
     (synopsis "Authenticode signing and timestamping tool")
     (description "osslsigncode is a small tool that implements part of the

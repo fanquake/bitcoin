@@ -1,9 +1,9 @@
-v30.2 Release Notes
+v30.x Release Notes
 ===================
 
-Bitcoin Core version v30.2 is now available from:
+Bitcoin Core version v30.x is now available from:
 
-  <https://bitcoincore.org/bin/bitcoin-core-30.2/>
+  <https://bitcoincore.org/bin/bitcoin-core-30.x/>
 
 This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
@@ -40,52 +40,28 @@ unsupported systems.
 Notable changes
 ===============
 
-### Wallet
+### PSBT
 
-- #34156 wallet: fix unnamed legacy wallet migration failure
-- #34215 wallettool: fix unnamed createfromdump failure walletsdir deletion
-- #34221 test: migration, avoid backup name mismatch in default_wallet_failure
-
-### IPC
-
-- #33511 init: Fix Ctrl-C shutdown hangs during wait calls
-
-### Build
-
-- #33950 guix: reduce allowed exported symbols
-- #34107 build: Update minimum required Boost version
-- #34227 guix: Fix osslsigncode tests
+- #34272 psbt: Fix PSBTInputSignedAndVerified bounds assert
 
 ### Test
 
-- #34137 test: Avoid hard time.sleep(1) in feature_init.py
-- #34226 wallet: test: Relative wallet failed migration cleanup
-
-### Fuzz
-
-- #34091 fuzz: doc: remove any mention to address_deserialize_v2
+- #34185 test: fix feature_pruning when built without wallet
+- #34282 qa: Fix Windows logging bug
 
 ### Doc
 
-- #34182 doc: Update OpenBSD Build Guide
-
-### Misc
-
-- #34174 doc: update copyright year to 2026
+- #34252 doc: add 433 (Pay to Anchor) to bips.md
 
 Credits
 =======
 
 Thanks to everyone who directly contributed to this release:
 
-- Ava Chow
 - brunoerg
-- davidgumberg
-- fanquake
-- furszy
 - Hennadii Stepanov
-- MarcoFalke
-- Ryan Ofsky
+- Lőrinc
+- Sebastian Falbesoner
 
 As well as to everyone that helped with translations on
 [Transifex](https://explore.transifex.com/bitcoin/bitcoin/).

@@ -7,7 +7,7 @@ import asyncio
 import time
 from contextlib import AsyncExitStack
 from io import BytesIO
-import re
+import os
 from test_framework.blocktools import NULL_OUTPOINT
 from test_framework.messages import (
     MAX_BLOCK_WEIGHT,
@@ -285,17 +285,19 @@ class IPCMiningTest(BitcoinTestFramework):
                 await mining.createNewBlock(ctx, opts)
                 raise AssertionError("createNewBlock unexpectedly succeeded")
             except capnp.lib.capnp.KjException as e:
-                if e.type == "DISCONNECTED":
-                    # The remote exception isn't caught currently and leads to a
-                    # std::terminate call. Just detect and restart in this case.
-                    # This bug is fixed with
-                    # https://github.com/bitcoin-core/libmultiprocess/pull/218
-                    assert_equal(e.description, "Peer disconnected.")
-                    self.nodes[0].wait_until_stopped(expected_ret_code=(-11, -6, 1, 66), expected_stderr=re.compile(""))
-                    self.start_node(0)
+                if os.environ.get("CONTAINER_NAME") == "ci_mac_native":
+                    # Current macos CI job throws a different, vague error.
+                    # This seems to be a problem specific to the CI job and does
+                    # not happen in other macos environments
+                    # (https://github.com/bitcoin/bitcoin/pull/34422#issuecomment-3937218580)
+                    # It seems to be related to the REDUCE_EXPORTS build option
+                    # (https://github.com/bitcoin/bitcoin/pull/34422#discussion_r2842708928).
+                    # Just add a workaround for now that can be removed when the
+                    # bug is fixed.
+                    assert_equal(e.description, "remote exception: unknown non-KJ exception of type: kj::Exception")
                 else:
                     assert_equal(e.description, "remote exception: std::exception: block_reserved_weight (0) must be at least 2000 weight units")
-                    assert_equal(e.type, "FAILED")
+                assert_equal(e.type, "FAILED")
 
         asyncio.run(capnp.run(async_routine()))
 

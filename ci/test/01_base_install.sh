@@ -104,4 +104,17 @@ if [ -n "$XCODE_VERSION" ] && [ ! -d "${DEPENDS_DIR}/SDKs/${OSX_SDK_BASENAME}" ]
   tar -C "${DEPENDS_DIR}/SDKs" -xf "$OSX_SDK_PATH"
 fi
 
+mkdir -p "${DEPENDS_DIR}/SDKs/openbsd-cross-${OPENBSD_VERSION}"
+
+OPENBSD_SDK_BASENAME="openbsd-cross-${XCODE_VERSION}"
+
+if [ -n "$OPENBSD_VERSION" ] && [ ! -d "${DEPENDS_DIR}/SDKs/${OPENBSD_SDK_BASENAME}" ]; then
+  OPENBSD_SDK_FILENAME="comp78.tgz"
+  OPENBSD_SDK_PATH="${DEPENDS_DIR}/sdk-sources/${OPENBSD_SDK_FILENAME}"
+  if [ ! -f "$OSX_SDK_PATH" ]; then
+    ${CI_RETRY_EXE} curl --location --fail "https://cdn.openbsd.org/pub/OpenBSD/${OPENBSD_VERSION}/amd64/${OPENBSD_SDK_FILENAME}" -o "$OPENBSD_SDK_PATH"
+  fi
+  tar -C "${DEPENDS_DIR}/SDKs/openbsd-cross-${OPENBSD_VERSION}" -xf "$OPENBSD_SDK_PATH"
+fi
+
 echo -n "done" > "${CFG_DONE}"

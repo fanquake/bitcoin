@@ -569,6 +569,13 @@ jobs:
             timeout-minutes: 120
             file-env: './ci/test/00_setup_env_native_msan.sh'
 
+
+          - name: 'OpenBSD Cross'
+            cirrus-runner: 'ghcr.io/cirruslabs/ubuntu-runner-amd64:24.04-md'
+            fallback-runner: 'ubuntu-24.04'
+            timeout-minutes: 120
+            file-env: './ci/test/00_setup_env_openbsd_cross.sh'
+
     steps:
       - *ANNOTATION_PR_NUMBER
 

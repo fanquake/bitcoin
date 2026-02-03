@@ -99,4 +99,17 @@ if [ -n "$XCODE_VERSION" ] && [ ! -d "${DEPENDS_DIR}/SDKs/${OSX_SDK_BASENAME}" ]
   tar -C "${DEPENDS_DIR}/SDKs" -xf "$OSX_SDK_PATH"
 fi
 
+mkdir -p "${DEPENDS_DIR}/SDKs/freebsd-cross-${FREEBSD_VERSION}"
+
+FREEBSD_SDK_BASENAME="freebsd-cross-${XCODE_VERSION}"
+
+if [ -n "$FREEBSD_VERSION" ] && [ ! -d "${DEPENDS_DIR}/SDKs/${FREEBSD_SDK_BASENAME}" ]; then
+  FREEBSD_SDK_FILENAME="base-${FREEBSD_VERSION}.txz"
+  FREEBSD_SDK_PATH="${DEPENDS_DIR}/sdk-sources/${FREEBSD_SDK_FILENAME}"
+  if [ ! -f "$OSX_SDK_PATH" ]; then
+    ${CI_RETRY_EXE} curl --location --fail "https://download.freebsd.org/releases/amd64/${FREEBSD_VERSION}-RELEASE/base.txz" -o "$FREEBSD_SDK_PATH"
+  fi
+  tar -C "${DEPENDS_DIR}/SDKs/freebsd-cross-${FREEBSD_VERSION}" -xf "$FREEBSD_SDK_PATH"
+fi
+
 echo -n "done" > "${CFG_DONE}"

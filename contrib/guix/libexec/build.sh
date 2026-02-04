@@ -240,7 +240,7 @@ mkdir -p "$DISTSRC"
     cd "$DISTSRC"
 
     # Extract the source tarball
-    tar --strip-components=1 -xf "${GIT_ARCHIVE}"
+    tar --no-same-owner --strip-components=1 -xf "${GIT_ARCHIVE}"
 
     # Configure this DISTSRC for $HOST
     # shellcheck disable=SC2086

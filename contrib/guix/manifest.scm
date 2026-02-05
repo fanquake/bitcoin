@@ -93,7 +93,26 @@ chain for " target " development."))
       (home-page (package-home-page xgcc))
       (license (package-license xgcc)))))
 
-(define base-gcc gcc-14)
+(define base-gcc
+  (package
+    (inherit gcc-15) ;; 15.2.0
+    (version "15.2.0")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append "mirror://gnu/gcc/gcc-"
+                                  version "/gcc-" version ".tar.xz"))
+              (sha256
+               (base32
+                "0knj4ph6y7r7yhnp1v4339af7mki5nkh7ni9b948433bhabdk3s3"))))
+    (arguments
+      (list
+        #:phases
+        #~(modify-phases %standard-phases
+            (delete 'adjust-modules-file))
+      )
+    )
+  )
+)
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 
@@ -560,7 +579,7 @@ inspecting signatures in Mach-O binaries.")
         gzip
         xz
         ;; Build tools
-        gcc-toolchain-14
+        gcc-toolchain-15
         cmake-minimal
         gnu-make
         ninja

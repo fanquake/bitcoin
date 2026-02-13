@@ -178,29 +178,21 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    x86_64_linux_AR=x86_64-linux-gnu-gcc-ar \
                                    x86_64_linux_RANLIB=x86_64-linux-gnu-gcc-ranlib \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
-                                   x86_64_linux_STRIP=x86_64-linux-gnu-strip \
-                                   NO_QT=1
+                                   x86_64_linux_STRIP=x86_64-linux-gnu-strip
 
-###########################
-# Source Tarball Building #
-###########################
-
-GIT_ARCHIVE="${DIST_ARCHIVE_BASE}/${DISTNAME}.tar.gz"
-
-# Create the source tarball if not already there
-if [ ! -e "$GIT_ARCHIVE" ]; then
-    mkdir -p "$(dirname "$GIT_ARCHIVE")"
-    git archive --prefix="${DISTNAME}/" --output="$GIT_ARCHIVE" HEAD
-fi
-
-mkdir -p "$OUTDIR"
+case "$HOST" in
+    *darwin*)
+        # Unset now that Qt is built
+        unset LIBRARY_PATH
+        ;;
+esac
 
 ###########################
 # Binary Tarball Building #
 ###########################
 
 # CONFIGFLAGS
-CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_GUI=OFF -DBUILD_FUZZ_BINARY=OFF -DCMAKE_SKIP_RPATH=TRUE"
+CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_GUI=ON -DBUILD_FUZZ_BINARY=OFF -DCMAKE_SKIP_RPATH=TRUE"
 
 # CFLAGS
 HOST_CFLAGS="-O2 -g"
@@ -229,13 +221,7 @@ case "$HOST" in
     *linux*)  CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=${HOST_LDFLAGS} -static-libstdc++ -static-libgcc" ;;
 esac
 
-mkdir -p "$DISTSRC"
 (
-    cd "$DISTSRC"
-
-    # Extract the source tarball
-    tar --strip-components=1 -xf "${GIT_ARCHIVE}"
-
     # Configure this DISTSRC for $HOST
     # shellcheck disable=SC2086
     env CFLAGS="${HOST_CFLAGS}" CXXFLAGS="${HOST_CXXFLAGS}" LDFLAGS="${HOST_LDFLAGS}" \
@@ -246,14 +232,19 @@ mkdir -p "$DISTSRC"
           ${CONFIGFLAGS} \
           "${CMAKE_EXE_LINKER_FLAGS}"
 
-    # Build bitcoin and utils
-    cmake --build build -j "$JOBS" ${V:+--verbose}
+    # Build Bitcoin Core
+    cmake --build build -j "$JOBS" ${V:+--verbose} --target bitcoin-gui
+    cmake --build build -j "$JOBS" ${V:+--verbose} --target bitcoin-qt
 
-    # Setup the directory where our Bitcoin Core build for HOST will be
-    # installed. This directory will also later serve as the input for our
-    # binary tarballs.
-    INSTALLPATH="${PWD}/installed/${DISTNAME}"
-    mkdir -p "${INSTALLPATH}"
+    mkdir -p "$OUTDIR"
+
+    # Make the os-specific installers
+    case "$HOST" in
+        *mingw*)
+            cmake --build build -j "$JOBS" -t deploy ${V:+--verbose}
+            mv build/bitcoin-win64-setup.exe "${OUTDIR}/${DISTNAME}-win64-setup-unsigned.exe"
+            ;;
+    esac
 
     # Install built Bitcoin Core to $INSTALLPATH
     case "$HOST" in
@@ -268,6 +259,130 @@ mkdir -p "$DISTSRC"
             cmake --install build --prefix "${INSTALLPATH}" ${V:+--verbose}
             ;;
     esac
-)
 
-exit 0
+    # Perform basic security checks on installed executables.
+    echo "Checking binary security on installed executables..."
+    python3 "${DISTSRC}/contrib/guix/security-check.py" "${INSTALLPATH}/bin/"* "${INSTALLPATH}/libexec/"*
+    # Check that executables only contain allowed version symbols.
+    echo "Running symbol and dynamic library checks on installed executables..."
+    python3 "${DISTSRC}/contrib/guix/symbol-check.py" "${INSTALLPATH}/bin/"* "${INSTALLPATH}/libexec/"*
+
+    (
+        cd installed
+
+        case "$HOST" in
+            *darwin*) ;;
+            *)
+                # Split binaries from their debug symbols
+                {
+                    find "${DISTNAME}/bin" "${DISTNAME}/libexec" -type f -executable -print0
+                } | xargs -0 -P"$JOBS" -I{} "${DISTSRC}/build/split-debug.sh" {} {} {}.dbg
+                ;;
+        esac
+
+        case "$HOST" in
+            *mingw*)
+                cp "${DISTSRC}/doc/README_windows.txt" "${DISTNAME}/readme.txt"
+                ;;
+            *linux*)
+                cp "${DISTSRC}/README.md" "${DISTNAME}/"
+                ;;
+        esac
+
+        # copy over the example bitcoin.conf file. if contrib/devtools/gen-bitcoin-conf.sh
+        # has not been run before buildling, this file will be a stub
+        cp "${DISTSRC}/share/examples/bitcoin.conf" "${DISTNAME}/"
+
+        cp -r "${DISTSRC}/share/rpcauth" "${DISTNAME}/share/"
+
+        # Deterministically produce {non-,}debug binary tarballs ready
+        # for release
+        case "$HOST" in
+            *mingw*)
+                find "${DISTNAME}" -not -name "*.dbg" -print0 \
+                    | xargs -0r touch --no-dereference --date="@${SOURCE_DATE_EPOCH}"
+                find "${DISTNAME}" -not -name "*.dbg" \
+                    | sort \
+                    | zip -X@ "${OUTDIR}/${DISTNAME}-${HOST//x86_64-w64-mingw32/win64}-unsigned.zip" \
+                    || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST//x86_64-w64-mingw32/win64}-unsigned.zip" && exit 1 )
+                find "${DISTNAME}" -name "*.dbg" -print0 \
+                    | xargs -0r touch --no-dereference --date="@${SOURCE_DATE_EPOCH}"
+                find "${DISTNAME}" -name "*.dbg" \
+                    | sort \
+                    | zip -X@ "${OUTDIR}/${DISTNAME}-${HOST//x86_64-w64-mingw32/win64}-debug.zip" \
+                    || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST//x86_64-w64-mingw32/win64}-debug.zip" && exit 1 )
+                ;;
+            *linux*)
+                find "${DISTNAME}" -not -name "*.dbg" -print0 \
+                    | sort --zero-terminated \
+                    | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
+                    | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}.tar.gz" \
+                    || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST}.tar.gz" && exit 1 )
+                find "${DISTNAME}" -name "*.dbg" -print0 \
+                    | sort --zero-terminated \
+                    | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
+                    | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}-debug.tar.gz" \
+                    || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST}-debug.tar.gz" && exit 1 )
+                ;;
+            *darwin*)
+                find "${DISTNAME}" -print0 \
+                    | sort --zero-terminated \
+                    | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
+                    | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.tar.gz" \
+                    || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.tar.gz" && exit 1 )
+                ;;
+        esac
+    )  # $DISTSRC/installed
+
+    # Finally make tarballs for codesigning
+    case "$HOST" in
+        *mingw*)
+            cp -rf --target-directory=. contrib/windeploy
+            (
+                cd ./windeploy
+                mkdir -p unsigned
+                cp --target-directory=unsigned/ "${OUTDIR}/${DISTNAME}-win64-setup-unsigned.exe"
+                cp -r --target-directory=unsigned/ "${INSTALLPATH}"
+                find unsigned/ -name "*.dbg" -print0 \
+                    | xargs -0r rm
+                find . -print0 \
+                    | sort --zero-terminated \
+                    | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
+                    | gzip -9n > "${OUTDIR}/${DISTNAME}-win64-codesigning.tar.gz" \
+                    || ( rm -f "${OUTDIR}/${DISTNAME}-win64-codesigning.tar.gz" && exit 1 )
+            )
+            ;;
+        *darwin*)
+            cmake --build build --target deploy ${V:+--verbose}
+            mv build/dist/bitcoin-macos-app.zip "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.zip"
+            mkdir -p "unsigned-app-${HOST}"
+            cp  --target-directory="unsigned-app-${HOST}" \
+                contrib/macdeploy/detached-sig-create.sh
+            mv --target-directory="unsigned-app-${HOST}" build/dist
+            cp -r --target-directory="unsigned-app-${HOST}" "${INSTALLPATH}"
+            (
+                cd "unsigned-app-${HOST}"
+                find . -print0 \
+                    | sort --zero-terminated \
+                    | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
+                    | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}-codesigning.tar.gz" \
+                    || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST}-codesigning.tar.gz" && exit 1 )
+            )
+            ;;
+    esac
+)  # $DISTSRC
+
+rm -rf "$ACTUAL_OUTDIR"
+mv --no-target-directory "$OUTDIR" "$ACTUAL_OUTDIR" \
+    || ( rm -rf "$ACTUAL_OUTDIR" && exit 1 )
+
+(
+    cd /outdir-base
+    {
+        echo "$GIT_ARCHIVE"
+        find "$ACTUAL_OUTDIR" -type f
+    } | xargs realpath --relative-base="$PWD" \
+      | xargs sha256sum \
+      | sort -k2 \
+      | sponge "$ACTUAL_OUTDIR"/SHA256SUMS.part
+)

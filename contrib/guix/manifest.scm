@@ -565,7 +565,6 @@ inspecting signatures in Mach-O binaries.")
         patch
         gawk
         sed
-        sponge
         ;; Compression and archiving
         tar
         gzip
@@ -581,6 +580,11 @@ inspecting signatures in Mach-O binaries.")
         git-minimal
         ;; Tests
         python-lief)
+
+  (if (getenv "BUILD_GUI")
+                  (list sponge)
+                  '())
+
   (let ((target (getenv "HOST")))
     (cond ((string-suffix? "-mingw32" target)
            (list zip
@@ -589,10 +593,12 @@ inspecting signatures in Mach-O binaries.")
                  nss-certs
                  osslsigncode))
           ((string-contains target "-linux-")
-           (list bison
-                 pkg-config
-                 (list gcc-toolchain-14 "static")
-                 (make-bitcoin-cross-toolchain target)))
+           (append (list (list gcc-toolchain-14 "static")
+                 (make-bitcoin-cross-toolchain target))
+           (if (getenv "BUILD_GUI")
+                  (list bison
+                        pkg-config)
+                  '())))
           ((string-contains target "darwin")
            (list clang-toolchain-19
                  lld-19

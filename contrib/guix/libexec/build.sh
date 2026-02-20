@@ -400,11 +400,11 @@ mv --no-target-directory "$OUTDIR" "$ACTUAL_OUTDIR" \
     || ( rm -rf "$ACTUAL_OUTDIR" && exit 1 )
 
 (
+    tmp="$(mktemp)"
     cd /outdir-base
-    tmp="$(mktemp "${ACTUAL_OUTDIR}/tmp.XXX")"
     {
         echo "$GIT_ARCHIVE"
-        find "$ACTUAL_OUTDIR" -type f -not -name "tmp.*"
+        find "$ACTUAL_OUTDIR" -type f
     } | xargs realpath --relative-base="$PWD" \
         | xargs sha256sum \
         | sort -k2 \

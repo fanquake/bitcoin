@@ -46,7 +46,7 @@ MAX_VERSIONS = {
 
 # Ignore symbols that are exported as part of every executable
 IGNORE_EXPORTS = {
-'stdin', 'stdout', 'stderr',
+'in6addr_any', 'stderr', 'stdin', 'stdout',
 }
 
 # Expected linker-loader names can be found here:
@@ -241,7 +241,7 @@ def check_MACHO_sdk(binary) -> bool:
     return False
 
 def check_MACHO_lld(binary) -> bool:
-    if binary.build_version.tools[0].version == [19, 1, 4]:
+    if binary.build_version.tools[0].version == [19, 1, 7]:
         return True
     return False
 

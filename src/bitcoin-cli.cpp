@@ -8,7 +8,7 @@
 #include <chainparamsbase.h>
 #include <clientversion.h>
 #include <common/args.h>
-#include <common/http.h>
+#include <httpserver.h>
 #include <common/system.h>
 #include <common/url.h>
 #include <compat/compat.h>
@@ -966,18 +966,18 @@ HTTPReply HttpClient::ReadResponse(Sock& sock)
     reply.status = *status_code;
 
     // Parse headers
-    HTTPHeaders headers;
+    http_bitcoin::HTTPHeaders headers;
     headers.Read(reader);
 
     // Determine body length
     size_t content_length = 0;
     bool chunked = false;
 
-    auto transfer_encoding = headers.Find("transfer-encoding");
+    auto transfer_encoding = headers.FindFirst("transfer-encoding");
     if (transfer_encoding && ToLower(*transfer_encoding).find("chunked") != std::string::npos) {
         chunked = true;
     } else {
-        auto content_length_header = headers.Find("content-length");
+        auto content_length_header = headers.FindFirst("content-length");
         if (content_length_header) {
             auto len = ToIntegral<size_t>(*content_length_header);
             if (!len) {

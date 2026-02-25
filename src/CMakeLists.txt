@@ -354,6 +354,7 @@ if(BUILD_CLI)
     core_interface
     bitcoin_cli
     bitcoin_common
+    bitcoin_node
     bitcoin_util
     libevent::core
     libevent::extra

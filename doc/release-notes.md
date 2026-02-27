@@ -46,6 +46,7 @@ Notable changes
 
 ### Net
 
+- #34093 netif: fix compilation warning in QueryDefaultGatewayImpl()
 - #34549 net: reduce log level for PCP/NAT-PMP NOT_AUTHORIZED failures
 
 ### PSBT
@@ -70,6 +71,10 @@ Notable changes
 - #34409 test: use ModuleNotFoundError in interface_ipc.py
 - #34445 fuzz: Use AFL_SHM_ID for naming test directories
 - #34608 test: Fix broken --valgrind handling after bitcoin wrapper
+
+### Util
+
+- #34597 util: Fix UB in SetStdinEcho when ENOTTY
 
 ### Doc
 

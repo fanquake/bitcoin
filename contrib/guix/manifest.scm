@@ -541,6 +541,7 @@ inspecting signatures in Mach-O binaries.")
         xz
         ;; Build tools
         gcc-toolchain-14
+        (list gcc-toolchain-14 "static")
         cmake-minimal
         gnu-make
         ninja
@@ -560,7 +561,6 @@ inspecting signatures in Mach-O binaries.")
           ((string-contains target "-linux-")
            (list bison
                  pkg-config
-                 (list gcc-toolchain-14 "static")
                  (make-bitcoin-cross-toolchain target)))
           ((string-contains target "darwin")
            (list clang-toolchain-19

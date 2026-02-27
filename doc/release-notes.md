@@ -46,11 +46,13 @@ Notable changes
 
 ### Net
 
+- #34093 netif: fix compilation warning in QueryDefaultGatewayImpl()
 - #34549 net: reduce log level for PCP/NAT-PMP NOT_AUTHORIZED failures
 
 ### PSBT
 
 - #34272 psbt: Fix PSBTInputSignedAndVerified bounds assert
+- #34219 psbt: validate pubkeys in MuSig2 pubnonce/partial sig deserialization
 
 ### Miniscript
 
@@ -61,6 +63,7 @@ Notable changes
 - #34281 build: Temporarily remove confusing and brittle -fdebug-prefix-map
 - #34554 build: avoid exporting secp256k1 symbols
 - #34627 guix: use a temporary file over sponge, drop moreutils
+- #34713 depends: Allow building Qt packages after interruption
 
 ### Test
 
@@ -70,6 +73,11 @@ Notable changes
 - #34409 test: use ModuleNotFoundError in interface_ipc.py
 - #34445 fuzz: Use AFL_SHM_ID for naming test directories
 - #34608 test: Fix broken --valgrind handling after bitcoin wrapper
+- #34690 test: Add missing timeout_factor to zmq socket
+
+### Util
+
+- #34597 util: Fix UB in SetStdinEcho when ENOTTY
 
 ### Doc
 
@@ -78,6 +86,7 @@ Notable changes
 - #34510 doc: fix broken bpftrace installation link
 - #34561 wallet: rpc: manpage: fix example missing `fee_rate` argument
 - #34671 doc: Update Guix install for Debian/Ubuntu
+- #34706 doc: Improve dependencies.md IPC documentation
 
 ### CI
 
@@ -103,8 +112,10 @@ Thanks to everyone who directly contributed to this release:
 - MarcoFalke
 - mzumsande
 - Padraic Slattery
+- ryanofsky
 - Sebastian Falbesoner
 - SomberNight
+- tboy1337
 - theuni
 - ToRyVand
 - willcl-ark

@@ -1,4 +1,5 @@
-(use-modules (gnu packages)
+(use-modules (ice-9 ftw)
+             (gnu packages)
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
              ((gnu packages cmake) #:select (cmake-minimal))
@@ -93,8 +94,26 @@ chain for " target " development."))
       (license (package-license xgcc)))))
 
 (define base-gcc
-  (package-with-extra-patches gcc-14
-    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
+  (package-with-extra-patches
+    (package
+      (inherit gcc-14) ;; 14.3.0
+      (arguments
+        (substitute-keyword-arguments (package-arguments gcc-14)
+          ((#:phases phases)
+           #~(modify-phases #$phases
+               (add-before 'configure 'set-cflags-for-target
+                 (lambda _
+                   (use-modules (ice-9 ftw))
+                   (let* ((store-dirs (scandir "/gnu/store"
+                                               (lambda (d) (not (member d '("." ".."))))
+                                               string<?))
+                          (prefix-maps (map (lambda (d)
+                                              (string-append "-ffile-prefix-map=/gnu/store/"
+                                                             d "=/usr"))
+                                            store-dirs))
+                          (flags (string-join prefix-maps " ")))
+                     (setenv "CFLAGS_FOR_TARGET" flags)))))))))
+    (search-our-patches "gcc-ssa-generation.patch")))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 

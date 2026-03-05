@@ -367,8 +367,7 @@ inspecting signatures in Mach-O binaries.")
               (sha256
                (base32
                 "07arjrc1smqy8wrhg38apr1s9ji7xv1rpzdapk4k2ps2n07irp58"))
-              (patches (search-our-patches "glibc-guix-prefix.patch"
-                                           "glibc-riscv-jumptarget.patch"))))
+              (patches (search-our-patches "glibc-riscv-jumptarget.patch"))))
     (arguments
       (substitute-keyword-arguments (package-arguments glibc)
         ((#:configure-flags flags)
@@ -380,7 +379,16 @@ inspecting signatures in Mach-O binaries.")
                   "--disable-werror",
                   "--disable-timezone-tools",
                   "--disable-profile",
-                  building-on)))
+                  building-on
+                  (string-append "CFLAGS=-g -O2 "
+                    (string-join
+                      (map (lambda (d)
+                            (string-append "-ffile-prefix-map=/gnu/store/"
+                                           d "=/usr"))
+                          (scandir "/gnu/store"
+                                   (lambda (d) (not (member d '("." ".."))))
+                                   string<?))
+                      " ")))))
     ((#:phases phases)
         `(modify-phases ,phases
            (add-before 'configure 'set-etc-rpc-installation-directory

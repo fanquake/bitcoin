@@ -127,9 +127,13 @@ def check_ELF_FORTIFY(binary) -> bool:
     if '--monolithic' in binary.strings:
         return True
 
+    # bitcoin-util does not currently contain any fortified functions
+    if './bitcoin-util.cpp' in binary.strings:
+        return True
+
     chk_funcs = set()
 
-    for sym in binary.imported_symbols:
+    for sym in binary.symbols:
         match = re.search(r'__[a-z]*_chk', sym.name)
         if match:
             chk_funcs.add(match.group(0))

@@ -9,6 +9,7 @@
 #include <consensus/validation.h>
 #include <kernel/chainstatemanager_opts.h>
 #include <policy/policy.h>
+#include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/interpreter.h>
 #include <test/fuzz/FuzzedDataProvider.h>
@@ -92,8 +93,41 @@ Mutex g_thread_pool_mutex;
 void StartPoolIfNeeded() EXCLUSIVE_LOCKS_REQUIRED(!g_thread_pool_mutex)
 {
     LOCK(g_thread_pool_mutex);
-    if (g_thread_pool->WorkersCount() == DEFAULT_PREVOUTFETCH_THREADS) return;
-    g_thread_pool->Start(DEFAULT_PREVOUTFETCH_THREADS);
+    if (!g_thread_pool->WorkersCount()) g_thread_pool->Start(DEFAULT_PREVOUTFETCH_THREADS);
+}
+
+//! Build a random block and seed a view with utxos for its inputs.
+CBlock BuildRandomBlock(FuzzedDataProvider& fuzzed_data_provider, CCoinsView& view)
+{
+    CBlock block;
+    CMutableTransaction coinbase;
+    coinbase.vin.emplace_back();
+    block.vtx.push_back(MakeTransactionRef(coinbase));
+
+    CCoinsViewCache seed_cache{&view, /*deterministic=*/true};
+    seed_cache.SetBestBlock(uint256::ONE);
+
+    Txid prevhash{Txid::FromUint256(ConsumeUInt256(fuzzed_data_provider))};
+    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 100)
+    {
+        CMutableTransaction tx;
+        LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 100)
+        {
+            const Txid txid{fuzzed_data_provider.ConsumeBool()
+                                ? Txid::FromUint256(ConsumeUInt256(fuzzed_data_provider))
+                                : prevhash};
+            const COutPoint outpoint{txid, fuzzed_data_provider.ConsumeIntegral<uint32_t>()};
+            if (auto coin{ConsumeDeserializable<Coin>(fuzzed_data_provider)}; coin && !coin->IsSpent()) {
+                seed_cache.AddCoin(outpoint, std::move(*coin), /*possible_overwrite=*/true);
+            }
+            tx.vin.emplace_back(outpoint);
+        }
+        prevhash = tx.GetHash();
+        block.vtx.push_back(MakeTransactionRef(tx));
+    }
+
+    seed_cache.Flush();
+    return block;
 }
 
 } // namespace
@@ -346,11 +380,20 @@ void TestCoinsView(FuzzedDataProvider& fuzzed_data_provider, CCoinsViewCache& co
             assert(!exists_using_access_coin && !exists_using_have_coin_in_cache && !exists_using_have_coin);
         }
         // If HaveCoin on the backend is true, it must also be on the cache if the coin wasn't spent.
-        const bool exists_using_have_coin_in_backend = backend_coins_view->HaveCoin(random_out_point);
+        std::optional<Coin> coin_in_backend;
+        bool exists_using_have_coin_in_backend;
+        if (dynamic_cast<CoinsViewOverlay*>(&coins_view_cache)) {
+            // PeekCoin does not mutate cacheCoins, so async workers can keep running.
+            coin_in_backend = backend_coins_view->PeekCoin(random_out_point);
+            exists_using_have_coin_in_backend = coin_in_backend.has_value();
+        } else {
+            exists_using_have_coin_in_backend = backend_coins_view->HaveCoin(random_out_point);
+            coin_in_backend = backend_coins_view->GetCoin(random_out_point);
+        }
         if (!coin_using_access_coin.IsSpent() && exists_using_have_coin_in_backend) {
             assert(exists_using_have_coin);
         }
-        if (auto coin{backend_coins_view->GetCoin(random_out_point)}) {
+        if (coin_in_backend) {
             assert(exists_using_have_coin_in_backend);
             // Note we can't assert that `coin_using_get_coin == *coin` because the coin in
             // the cache may have been modified but not yet flushed.
@@ -387,8 +430,11 @@ FUZZ_TARGET(coins_view_db, .init = initialize_coins_view)
 FUZZ_TARGET(coins_view_overlay, .init = initialize_coins_view) EXCLUSIVE_LOCKS_REQUIRED(!g_thread_pool_mutex)
 {
     SeedRandomStateForTest(SeedRand::ZEROS);
+    StartPoolIfNeeded();
     FuzzedDataProvider fuzzed_data_provider{buffer.data(), buffer.size()};
     MutationGuardCoinsViewCache backend_cache{&CoinsViewEmpty::Get(), /*deterministic=*/true};
     CoinsViewOverlay coins_view_cache{&backend_cache, g_thread_pool, /*deterministic=*/true};
+    CBlock block{BuildRandomBlock(fuzzed_data_provider, backend_cache)};
+    const auto reset_guard{coins_view_cache.StartFetching(block)};
     TestCoinsView(fuzzed_data_provider, coins_view_cache, &backend_cache);
 }

@@ -386,7 +386,7 @@ protected:
 public:
     explicit CCoinsViewBacked(CCoinsView* in_view) : base{Assert(in_view)} {}
 
-    void SetBackend(CCoinsView& in_view) { base = &in_view; }
+    virtual void SetBackend(CCoinsView& in_view) { base = &in_view; }
 
     std::optional<Coin> GetCoin(const COutPoint& outpoint) const override { return base->GetCoin(outpoint); }
     std::optional<Coin> PeekCoin(const COutPoint& outpoint) const override { return base->PeekCoin(outpoint); }
@@ -497,7 +497,7 @@ public:
      * If reallocate_cache is false, the cache will retain the same memory footprint
      * after flushing and should be destroyed to deallocate.
      */
-    void Flush(bool reallocate_cache = true);
+    virtual void Flush(bool reallocate_cache = true);
 
     /**
      * Push the modifications applied to this cache to its base while retaining
@@ -505,7 +505,7 @@ public:
      * Failure to call this method or Flush() before destruction will cause the changes
      * to be forgotten.
      */
-    void Sync();
+    virtual void Sync();
 
     /**
      * Removes the UTXO with the given outpoint from the cache, if it is
@@ -691,6 +691,24 @@ public:
 
     //! Verify that all parallel fetched input prevouts have been consumed.
     bool AllInputsConsumed() const noexcept { return m_input_tail == m_inputs.size(); }
+
+    void SetBackend(CCoinsView& view) override
+    {
+        StopFetching();
+        CCoinsViewCache::SetBackend(view);
+    }
+
+    void Flush(bool reallocate_cache = true) override
+    {
+        StopFetching();
+        CCoinsViewCache::Flush(reallocate_cache);
+    }
+
+    void Sync() override
+    {
+        StopFetching();
+        CCoinsViewCache::Sync();
+    }
 };
 
 //! Utility function to add all of a transaction's outputs to a cache.

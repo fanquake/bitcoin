@@ -19,12 +19,14 @@
 #include <util/check.h>
 #include <util/overflow.h>
 #include <util/hasher.h>
+#include <util/threadpool.h>
 
 #include <cassert>
 #include <cstdint>
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <unordered_map>
@@ -600,7 +602,7 @@ private:
     std::vector<InputToFetch> m_inputs{};
 
     /**
-     * Claim and fetch the next input in the queue.
+     * Claim and fetch the next input in the queue. Safe to call from any thread.
      *
      * @return true if an input prevout was fetched
      * @return false if there are no more input prevouts in the queue to fetch
@@ -639,9 +641,12 @@ private:
             return std::move(input.coin);
         }
 
-        // We will only get here for BIP30 checks.
+        // We will only get here for BIP30 checks or when parallel fetching is disabled.
         return base->PeekCoin(outpoint);
     }
+
+    //! Non-null.
+    std::shared_ptr<ThreadPool> m_thread_pool;
 
 protected:
     void Reset() noexcept override
@@ -651,7 +656,12 @@ protected:
     }
 
 public:
-    using CCoinsViewCache::CCoinsViewCache;
+    explicit CoinsViewOverlay(CCoinsView* in_base, std::shared_ptr<ThreadPool> thread_pool,
+                              bool deterministic = false) noexcept
+        : CCoinsViewCache{in_base, deterministic}, m_thread_pool{std::move(thread_pool)}
+    {
+        Assert(m_thread_pool);
+    }
 
     //! Start fetching inputs from block.
     [[nodiscard]] ResetGuard StartFetching(const CBlock& block LIFETIMEBOUND) noexcept

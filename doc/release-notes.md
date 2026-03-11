@@ -97,6 +97,8 @@ Notable changes
 - #34344 ci: update GitHub Actions versions
 - #34453 ci: Always print low ccache hit rate notice
 - #34461 ci: Print verbose build error message in test-each-commit
+- #34802 ci: Bump GHA actions versions
+- #34815 ci: bump cirruslabs actions versions
 
 Credits
 =======

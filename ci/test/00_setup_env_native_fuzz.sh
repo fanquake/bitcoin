@@ -9,7 +9,7 @@ export LC_ALL=C.UTF-8
 export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:24.04"
 export CONTAINER_NAME=ci_native_fuzz
 export APT_LLVM_V="22"
-export PACKAGES="clang-${APT_LLVM_V} llvm-${APT_LLVM_V} libclang-rt-${APT_LLVM_V}-dev libevent-dev libboost-dev libsqlite3-dev libcapnp-dev capnproto"
+export PACKAGES="clang-${APT_LLVM_V} lld llvm-${APT_LLVM_V} libclang-rt-${APT_LLVM_V}-dev libevent-dev libboost-dev libsqlite3-dev libcapnp-dev capnproto"
 export NO_DEPENDS=1
 export RUN_UNIT_TESTS=false
 export RUN_FUNCTIONAL_TESTS=false
@@ -23,4 +23,8 @@ export BITCOIN_CONFIG="\
  -DCMAKE_CXX_COMPILER=clang++ \
  -DCMAKE_C_FLAGS='-ftrivial-auto-var-init=pattern' \
  -DCMAKE_CXX_FLAGS='-ftrivial-auto-var-init=pattern' \
+ -DCMAKE_EXE_LINKER_FLAGS='-fuse-ld=lld' \
+ -DCMAKE_AR=llvm-ar \
+ -DCMAKE_NM=llvm-nm \
+ -DCMAKE_RANLIB=llvm-ranlib \
 "

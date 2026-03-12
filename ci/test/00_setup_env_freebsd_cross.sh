@@ -10,7 +10,7 @@ export CONTAINER_NAME=ci_freebsd_cross
 export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:26.04"
 export APT_LLVM_V="22"
 export FREEBSD_VERSION=15.0
-export PACKAGES="clang-${APT_LLVM_V} llvm-${APT_LLVM_V} lld"
+export PACKAGES="clang-${APT_LLVM_V} llvm-${APT_LLVM_V} lld-${APT_LLVM_V}"
 export HOST=x86_64-unknown-freebsd
 export DEP_OPTS="build_CC=clang build_CXX=clang++ AR=llvm-ar-${APT_LLVM_V} STRIP=llvm-strip-${APT_LLVM_V} NM=llvm-nm-${APT_LLVM_V} RANLIB=llvm-ranlib-${APT_LLVM_V}"
 export GOAL="install"

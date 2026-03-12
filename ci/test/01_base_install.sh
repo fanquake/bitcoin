@@ -53,6 +53,7 @@ fi
 if [ -n "${APT_LLVM_V}" ]; then
   update-alternatives --install /usr/bin/clang++ clang++ "/usr/bin/clang++-${APT_LLVM_V}" 100
   update-alternatives --install /usr/bin/clang clang "/usr/bin/clang-${APT_LLVM_V}" 100
+  update-alternatives --install /usr/bin/lld lld "/usr/bin/lld-${APT_LLVM_V}" 100
   update-alternatives --install /usr/bin/llvm-symbolizer llvm-symbolizer "/usr/bin/llvm-symbolizer-${APT_LLVM_V}" 100
 fi
 

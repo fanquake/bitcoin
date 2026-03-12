@@ -8,7 +8,7 @@ export LC_ALL=C.UTF-8
 
 export CI_IMAGE_NAME_TAG="mirror.gcr.io/ubuntu:26.04"
 export APT_LLVM_V="23"
-export PACKAGES="clang-${APT_LLVM_V} llvm-${APT_LLVM_V} libclang-rt-${APT_LLVM_V}-dev libboost-dev libsqlite3-dev libcapnp-dev capnproto"
+export PACKAGES="clang-${APT_LLVM_V} lld-${APT_LLVM_V} llvm-${APT_LLVM_V} libclang-rt-${APT_LLVM_V}-dev libboost-dev libsqlite3-dev libcapnp-dev capnproto"
 export NO_DEPENDS=1
 export RUN_UNIT_TESTS=false
 export RUN_FUNCTIONAL_TESTS=false
@@ -22,4 +22,8 @@ printf -v BITCOIN_CONFIG "%q " \
  -DCMAKE_CXX_COMPILER=clang++ \
  -DCMAKE_C_FLAGS=-ftrivial-auto-var-init=pattern \
  -DCMAKE_CXX_FLAGS=-ftrivial-auto-var-init=pattern
-export BITCOIN_CONFIG
+ -DCMAKE_LINKER_TYPE=LLD \
+ -DCMAKE_AR=llvm-ar-${APT_LLVM_V} \
+ -DCMAKE_NM=llvm-nm-${APT_LLVM_V} \
+ -DCMAKE_RANLIB=llvm-ranlib-${APT_LLVM_V} \
+"

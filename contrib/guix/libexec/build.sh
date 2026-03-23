@@ -79,7 +79,7 @@ case "$HOST" in
             -stdlib=libc++ \
             -isystem ${LIBCXX}/include/c++/v1 \
             -isystem ${CLANG_TOOLCHAIN}/include"
-        build_LDFLAGS="-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -L${LIBCXX}/lib -Wl,-rpath,${LIBCXX}/lib"
+        build_LDFLAGS="-fuse-ld=lld -static -static-libgcc -nostdlib++ ${LIBCXX}/lib/libc++.a ${LIBCXX}/lib/libc++abi.a"
         build_AR="${CLANG_TOOLCHAIN}/bin/llvm-ar"
         build_RANLIB="${CLANG_TOOLCHAIN}/bin/llvm-ranlib"
         build_OBJDUMP="${CLANG_TOOLCHAIN}/bin/llvm-objdump"

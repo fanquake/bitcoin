@@ -178,6 +178,7 @@ chain for " target " development."))
                   "--enable-host-bind-now=yes"
                   "--disable-gcov"
                   "--disable-libgomp"
+                  "--disable-lto"
                   #$building-on)))))))
 
 (define-public linux-base-gcc
@@ -199,6 +200,7 @@ chain for " target " development."))
                   "--disable-libgomp"
                   "--disable-libquadmath"
                   "--disable-libsanitizer"
+                  "--disable-lto"
                   #$building-on)))
         ((#:phases phases)
           #~(modify-phases #$phases

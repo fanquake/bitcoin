@@ -12,6 +12,7 @@
 #include <memusage.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
+#include <primitives/transaction_identifier.h>
 #include <serialize.h>
 #include <support/allocators/pool.h>
 #include <uint256.h>
@@ -29,6 +30,7 @@
 #include <optional>
 #include <ranges>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -617,13 +619,9 @@ private:
     {
         // This assumes ConnectBlock accesses all inputs in the same order as
         // they are added to m_inputs in StartFetching.
-        for (auto i{m_input_tail}; i < m_inputs.size(); ++i) {
-            auto& input{m_inputs[i]};
-            // Outputs from earlier txs in the same block are created directly in the cache, so won't be fetched
-            // from base. We skip those by scanning for the input prevout that matches the outpoint we are looking for.
-            if (input.outpoint != outpoint) continue;
+        if (m_input_tail < m_inputs.size() && m_inputs[m_input_tail].outpoint == outpoint) {
             // We advance the tail since the input is cached and not accessed through this method again.
-            m_input_tail = ++i;
+            auto& input{m_inputs[m_input_tail++]};
             // We can move the coin since we won't access this input again.
             return std::move(input.coin);
         }
@@ -658,10 +656,15 @@ public:
         Assert(m_input_tail == 0);
         if (const auto workers_count{m_thread_pool->WorkersCount()}; workers_count > 0) {
             // Loop through the block inputs and set their prevouts in the queue.
+            // Filter inputs that spend outputs created earlier in the same block. These outputs will be created
+            // directly in the cache from the tx that creates them, so they will not be requested from a base view.
+            std::unordered_set<Txid, SaltedTxidHasher> earlier_txids;
+            earlier_txids.reserve(block.vtx.size());
             for (const auto& tx : block.vtx | std::views::drop(1)) {
                 for (const auto& input : tx->vin) {
-                    m_inputs.emplace_back(input.prevout);
+                    if (!earlier_txids.contains(input.prevout.hash)) m_inputs.emplace_back(input.prevout);
                 }
+                earlier_txids.emplace(tx->GetHash());
             }
             // Only process inputs if we have something to fetch.
             if (m_inputs.size()) {
@@ -670,6 +673,9 @@ public:
         }
         return CreateResetGuard();
     }
+
+    //! Verify that all parallel fetched input prevouts have been consumed.
+    bool AllInputsConsumed() const noexcept { return m_input_tail == m_inputs.size(); }
 };
 
 //! Utility function to add all of a transaction's outputs to a cache.

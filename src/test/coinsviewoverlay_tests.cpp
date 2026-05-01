@@ -107,6 +107,7 @@ BOOST_AUTO_TEST_CASE(fetch_inputs_from_db)
     BOOST_CHECK(!main_cache.HaveCoinInCache(outpoint));
 
     CheckCache(block, view);
+    BOOST_CHECK(view.AllInputsConsumed());
     // Check that no coins have been moved up to main cache from db
     for (const auto& tx : block.vtx) {
         for (const auto& in : tx->vin) {
@@ -128,6 +129,7 @@ BOOST_AUTO_TEST_CASE(fetch_inputs_from_cache)
     PopulateView(block, main_cache);
     CoinsViewOverlay view{&main_cache, m_thread_pool};
     CheckCache(block, view);
+    BOOST_CHECK(view.AllInputsConsumed());
 
     const auto& outpoint{block.vtx[1]->vin[0].prevout};
     view.SetBestBlock(uint256::ONE);

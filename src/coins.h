@@ -17,6 +17,7 @@
 #include <support/allocators/pool.h>
 #include <uint256.h>
 #include <util/check.h>
+#include <util/log.h>
 #include <util/overflow.h>
 #include <util/hasher.h>
 #include <util/threadpool.h>
@@ -26,6 +27,7 @@
 
 #include <atomic>
 #include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -599,6 +601,7 @@ private:
             Assert(!other.ready.test(std::memory_order_relaxed));
         }
     };
+    //! Must only be mutated when m_futures is empty. Elements may be mutated when m_futures is not empty.
     std::vector<InputToFetch> m_inputs{};
 
     /**
@@ -620,9 +623,21 @@ private:
         return true;
     }
 
-    //! Clear fetching data.
+    //! Stop all worker threads and clear fetching data.
+    //! Calling this is idempotent, and may safely be called if not fetching.
     void StopFetching() noexcept
     {
+        if (m_futures.empty()) {
+            Assert(m_inputs.empty());
+            Assert(m_input_head.load(std::memory_order_relaxed) == 0);
+            Assert(m_input_tail == 0);
+            return;
+        }
+        // Skip fetching the rest of the inputs by moving the head to the end.
+        m_input_head.store(m_inputs.size(), std::memory_order_relaxed);
+        // Wait for all threads to stop.
+        for (auto& future : m_futures) future.wait();
+        m_futures.clear();
         m_inputs.clear();
         m_input_head.store(0, std::memory_order_relaxed);
         m_input_tail = 0;
@@ -645,8 +660,9 @@ private:
         return base->PeekCoin(outpoint);
     }
 
-    //! Non-null.
+    //! Non-null. May have zero workers when input fetching is disabled.
     std::shared_ptr<ThreadPool> m_thread_pool;
+    std::vector<std::future<void>> m_futures{};
 
 protected:
     void Reset() noexcept override
@@ -663,24 +679,43 @@ public:
         Assert(m_thread_pool);
     }
 
-    //! Start fetching inputs from block.
+    ~CoinsViewOverlay() noexcept override { StopFetching(); }
+
+    //! Start fetching inputs from block in background.
     [[nodiscard]] ResetGuard StartFetching(const CBlock& block LIFETIMEBOUND) noexcept
     {
+        Assert(m_futures.empty());
         Assert(m_inputs.empty());
         Assert(m_input_head.load(std::memory_order_relaxed) == 0);
         Assert(m_input_tail == 0);
-        // Loop through the block inputs and set their prevouts in the queue.
-        // Filter inputs that spend outputs created earlier in the same block. These outputs will be created
-        // directly in the cache from the tx that creates them, so they will not be requested from a base view.
-        std::unordered_set<Txid, SaltedTxidHasher> earlier_txids;
-        earlier_txids.reserve(block.vtx.size());
-        for (const auto& tx : block.vtx | std::views::drop(1)) {
-            for (const auto& input : tx->vin) {
-                if (!earlier_txids.contains(input.prevout.hash)) m_inputs.emplace_back(input.prevout);
+        if (const auto workers_count{m_thread_pool->WorkersCount()}; workers_count > 0) {
+            // Loop through the block inputs and set their prevouts in the queue.
+            // Filter inputs that spend outputs created earlier in the same block. These outputs will be created
+            // directly in the cache from the tx that creates them, so they will not be requested from a base view.
+            std::unordered_set<Txid, SaltedTxidHasher> earlier_txids;
+            earlier_txids.reserve(block.vtx.size());
+            for (const auto& tx : block.vtx | std::views::drop(1)) {
+                for (const auto& input : tx->vin) {
+                    if (!earlier_txids.contains(input.prevout.hash)) m_inputs.emplace_back(input.prevout);
+                }
+                earlier_txids.emplace(tx->GetHash());
             }
-            earlier_txids.emplace(tx->GetHash());
+            // Only submit tasks if we have something to fetch.
+            if (m_inputs.size()) {
+                std::vector<std::function<void()>> tasks(workers_count, [this] {
+                    while (ProcessInput()) {}
+                });
+                if (auto futures{m_thread_pool->Submit(std::move(tasks))}) {
+                    m_futures = std::move(*futures);
+                } else {
+                    // Submit can fail if a shared owner of the thread pool outside of this class calls Stop() or
+                    // Interrupt() on a different thread after we call WorkersCount() above. In that case parallel
+                    // fetching will not make progress, so we clear the inputs to fall back to single threaded fetching.
+                    LogWarning("Failed to submit prevout fetch tasks; falling back to single-threaded fetching for this block.");
+                    m_inputs.clear();
+                }
+            }
         }
-        while (ProcessInput()) {}
         return CreateResetGuard();
     }
 

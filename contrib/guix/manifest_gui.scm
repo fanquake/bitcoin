@@ -7,7 +7,8 @@
              ((gnu packages python-xyz) #:select (python-lief))
              (guix build-system python)
              (guix git-download)
-             (guix packages))
+             (guix packages)
+             (toolchains))
 
 (packages->manifest
  (append
@@ -27,6 +28,7 @@
                  nsis-x86_64))
           ((string-contains target "-linux-")
            (list bison
+                 (make-bitcoin-cross-toolchain target) ;; glibc 2.31 based
                  pkg-config))
           ((string-contains target "darwin")
            (list zip))

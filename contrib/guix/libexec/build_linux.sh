@@ -40,6 +40,12 @@ case "$HOST" in
     *) CMAKE_FLAGS="-DCMAKE_LINK_WARNING_AS_ERROR=ON" ;;
 esac
 
+# EXE FLAGS
+case "$HOST" in
+    x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O2" ;;
+    *linux*)  CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=${HOST_LDFLAGS} -static-libstdc++ -static-libgcc" ;;
+esac
+
 mkdir -p "$DISTSRC"
 (
     cd "$DISTSRC"
@@ -60,7 +66,8 @@ mkdir -p "$DISTSRC"
           -DCMAKE_SKIP_RPATH=TRUE \
           -DREDUCE_EXPORTS=ON \
           -DWITH_CCACHE=OFF \
-          "${CMAKE_FLAGS}"
+          "${CMAKE_FLAGS}" \
+          ${CMAKE_EXE_LINKER_FLAGS+"$CMAKE_EXE_LINKER_FLAGS"}
 
     # Build Bitcoin Core
     cmake --build build -j "$JOBS"

@@ -204,10 +204,10 @@ endif()
 # Check and set PIC/PIE
 #=============================
 set(configure_warnings)
-include(CheckLinkerSupportsPIE)
+#include(CheckLinkerSupportsPIE)
 # Set CMAKE_POSITION_INDEPENDENT_CODE early so it applies to all
 # subsequent checks, including dependency packages and tool flags.
-check_linker_supports_pie(configure_warnings)
+#check_linker_supports_pie(configure_warnings)
 
 #=============================
 # Find dependencies

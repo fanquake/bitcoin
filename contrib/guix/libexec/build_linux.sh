@@ -38,9 +38,8 @@ check_cross_paths "${CROSS_C_INCLUDE_PATH}:${CROSS_CPLUS_INCLUDE_PATH}:${CROSS_L
 # Determine the correct value for -Wl,--dynamic-linker for the current $HOST
 glibc_dynamic_linker=$(
     case "$HOST" in
-        x86_64-linux-gnu)      ;;
+        aarch64-linux-gnu|x86_64-linux-gnu)      ;;
         arm-linux-gnueabihf)   echo /lib/ld-linux-armhf.so.3 ;;
-        aarch64-linux-gnu)     echo /lib/ld-linux-aarch64.so.1 ;;
         riscv64-linux-gnu)     echo /lib/ld-linux-riscv64-lp64d.so.1 ;;
         powerpc64-linux-gnu)   echo /lib64/ld64.so.1;;
         powerpc64le-linux-gnu) echo /lib64/ld64.so.2;;
@@ -80,7 +79,7 @@ HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O2
 
 # EXE FLAGS
 case "$HOST" in
-    x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O2" ;;
+    aarch64-linux-gnu|x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O2" ;;
     *linux*)  CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=${HOST_LDFLAGS} -static-libstdc++ -static-libgcc" ;;
 esac
 

@@ -103,7 +103,7 @@ chain for " target " development."))
 
 (define base-gcc
   (package-with-extra-patches gcc-14
-    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
+    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch" "gcc-arm-static-pie.patch")))
 
 (define* (make-bitcoin-cross-toolchain target
                                        #:key

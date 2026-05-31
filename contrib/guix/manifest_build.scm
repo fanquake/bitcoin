@@ -273,7 +273,7 @@ chain for " target " development."))
         cmake-minimal
         gnu-make
         ;; Scripting
-        python-minimal ;; (3.11)
+        python-minimal ;; (3.12)
         ;; Git
         git-minimal)
   (let ((target (getenv "HOST")))

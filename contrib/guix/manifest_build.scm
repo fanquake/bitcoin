@@ -203,6 +203,7 @@ chain for " target " development."))
                   "--disable-libsanitizer"
                   "--disable-lto"
                   "--disable-nls"
+                  "--disable-tm-clone-registry"
                   #$building-on)))
         ((#:phases phases)
           #~(modify-phases #$phases

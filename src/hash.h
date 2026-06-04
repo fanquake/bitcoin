@@ -25,7 +25,7 @@ class CHash256 {
 private:
     CSHA256 sha;
 public:
-    static const size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
+    static constexpr size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
 
     void Finalize(std::span<unsigned char> output) {
         assert(output.size() == OUTPUT_SIZE);
@@ -50,7 +50,7 @@ class CHash160 {
 private:
     CSHA256 sha;
 public:
-    static const size_t OUTPUT_SIZE = CRIPEMD160::OUTPUT_SIZE;
+    static constexpr size_t OUTPUT_SIZE = CRIPEMD160::OUTPUT_SIZE;
 
     void Finalize(std::span<unsigned char> output) {
         assert(output.size() == OUTPUT_SIZE);

@@ -21,8 +21,8 @@
 namespace bech32
 {
 
-static constexpr size_t CHECKSUM_SIZE = 6;
-static constexpr char SEPARATOR = '1';
+constexpr size_t CHECKSUM_SIZE{6};
+constexpr char SEPARATOR{'1'};
 
 enum class Encoding {
     INVALID, //!< Failed decoding

@@ -21,7 +21,7 @@
 class CChainParams;
 class ValidationSignals;
 
-static constexpr auto DEFAULT_MAX_TIP_AGE{24h};
+inline constexpr auto DEFAULT_MAX_TIP_AGE{24h};
 
 namespace kernel {
 

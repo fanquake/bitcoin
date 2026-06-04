@@ -25,7 +25,7 @@
 #include <string_view>
 
 // UTXO set snapshot magic bytes
-static constexpr std::array<uint8_t, 5> SNAPSHOT_MAGIC_BYTES = {'u', 't', 'x', 'o', 0xff};
+inline constexpr std::array<uint8_t, 5> SNAPSHOT_MAGIC_BYTES = {'u', 't', 'x', 'o', 0xff};
 
 class Chainstate;
 
@@ -36,7 +36,7 @@ namespace node {
 //! before being used. Thus, new fields should be added only if needed.
 class SnapshotMetadata
 {
-    inline static const uint16_t VERSION{2};
+    inline static constexpr uint16_t VERSION{2};
     const std::set<uint16_t> m_supported_versions{VERSION};
     const MessageStartChars m_network_magic;
 public:

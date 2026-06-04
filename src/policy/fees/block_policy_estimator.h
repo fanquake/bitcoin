@@ -23,16 +23,16 @@
 
 
 // How often to flush fee estimates to fee_estimates.dat.
-static constexpr std::chrono::hours FEE_FLUSH_INTERVAL{1};
+inline constexpr std::chrono::hours FEE_FLUSH_INTERVAL{1};
 
 /** fee_estimates.dat that are more than 60 hours (2.5 days) old will not be read,
  * as fee estimates are based on historical data and may be inaccurate if
  * network activity has changed.
  */
-static constexpr std::chrono::hours MAX_FILE_AGE{60};
+inline constexpr std::chrono::hours MAX_FILE_AGE{60};
 
 // Whether we allow importing a fee_estimates file older than MAX_FILE_AGE.
-static constexpr bool DEFAULT_ACCEPT_STALE_FEE_ESTIMATES{false};
+inline constexpr bool DEFAULT_ACCEPT_STALE_FEE_ESTIMATES{false};
 
 class AutoFile;
 class TxConfirmStats;
@@ -157,7 +157,7 @@ private:
     static constexpr unsigned int LONG_BLOCK_PERIODS = 42;
     static constexpr unsigned int LONG_SCALE = 24;
     /** Historical estimates that are older than this aren't valid */
-    static const unsigned int OLDEST_ESTIMATE_HISTORY = 6 * 1008;
+    static constexpr unsigned int OLDEST_ESTIMATE_HISTORY = 6 * 1008;
 
     /** Decay of .962 is a half-life of 18 blocks or about 3 hours */
     static constexpr double SHORT_DECAY = .962;

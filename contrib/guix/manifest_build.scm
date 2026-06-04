@@ -193,6 +193,7 @@ chain for " target " development."))
            #~(append #$flags
             ;; https://gcc.gnu.org/install/configure.html
             (list "--enable-cet=yes"
+                  "--enable-clocale=generic"
                   "--enable-default-ssp=yes"
                   "--enable-default-pie=yes"
                   "--enable-gprofng=no"

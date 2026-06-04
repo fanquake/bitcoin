@@ -48,7 +48,19 @@ FILE-NAME found in ./patches relative to the current file."
       (substitute-keyword-arguments (package-arguments (cross-binutils target))
         ((#:configure-flags flags)
           #~(append #$flags
-            (list "--enable-gprofng=no")))))
+            (list "--enable-gprofng=no")))
+        ((#:phases phases)
+          #~(modify-phases #$phases
+           (delete 'install-license-files)
+           (add-after 'install 'delete-extra-files
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let ((out (assoc-ref outputs "out")))
+                (for-each (lambda (dir)
+                            (let ((path (string-append out "/" dir)))
+                              (when (file-exists? path)
+                                (delete-file-recursively path))))
+                                '("etc"
+                                  "share")))))))))
     (native-inputs
       (modify-inputs
         (package-native-inputs (cross-binutils target))
@@ -218,7 +230,17 @@ chain for " target " development."))
                                   (find-files "gcc/config"
                                               "^gnu-user.*\\.h$"))
                  (("-rpath=") "-rpath-link="))
-               #t))))))))
+               #t))
+           (delete 'install-license-files)
+           (add-after 'install 'delete-extra-files
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let ((out (assoc-ref outputs "out")))
+                (for-each (lambda (dir)
+                            (let ((path (string-append out "/" dir)))
+                              (when (file-exists? path)
+                                (delete-file-recursively path))))
+                                '("etc"
+                                  "share")))))))))))
 
 (define-public glibc-2.31
   (let ((commit "28eb5caf895ced5d895cb02757e109004a2d33e5"))
@@ -263,10 +285,16 @@ chain for " target " development."))
                    (("^install-others =.*$")
                     (string-append "install-others = " out "/etc/rpc\n"))))))
            (delete 'install-license-files)
-           (add-after 'compress-documentation 'delete-doc
-              (lambda* (#:key outputs #:allow-other-keys)
-                      (let ((out (assoc-ref outputs "out")))
-                        (delete-file-recursively (string-append out "/share"))))))))))))
+           (add-after 'install 'delete-extra-files
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let ((out (assoc-ref outputs "out")))
+                (for-each (lambda (dir)
+                            (let ((path (string-append out "/" dir)))
+                              (when (file-exists? path)
+                                (delete-file-recursively path))))
+                                '("etc"
+                                  "sbin"
+                                  "share"))))))))))))
 
 (packages->manifest
  (append

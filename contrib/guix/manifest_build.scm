@@ -241,12 +241,13 @@ chain for " target " development."))
         ((#:configure-flags flags)
           `(append ,flags
             ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
-            (list "--enable-stack-protector=all",
+            (list "--enable-bind-now",
                   "--enable-cet",
-                  "--enable-bind-now",
-                  "--disable-werror",
-                  "--disable-timezone-tools",
+                  "--enable-stack-protector=all",
+                  "--disable-multi-arch",
                   "--disable-profile",
+                  "--disable-timezone-tools",
+                  "--disable-werror",
                   building-on)))
     ((#:phases phases)
         `(modify-phases ,phases

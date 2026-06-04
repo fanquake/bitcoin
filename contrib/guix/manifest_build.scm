@@ -261,7 +261,12 @@ chain for " target " development."))
                    (("^\\$\\(inst_sysconfdir\\)/rpc(.*)$" _ suffix)
                     (string-append out "/etc/rpc" suffix "\n"))
                    (("^install-others =.*$")
-                    (string-append "install-others = " out "/etc/rpc\n")))))))))))))
+                    (string-append "install-others = " out "/etc/rpc\n"))))))
+           (delete 'install-license-files)
+           (add-after 'compress-documentation 'delete-doc
+              (lambda* (#:key outputs #:allow-other-keys)
+                      (let ((out (assoc-ref outputs "out")))
+                        (delete-file-recursively (string-append out "/share"))))))))))))
 
 (packages->manifest
  (append

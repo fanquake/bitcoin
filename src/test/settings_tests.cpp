@@ -115,8 +115,8 @@ static void CheckValues(const common::Settings& settings, const std::string& sin
     for (const auto& item : GetSettingsList(settings, "section", "name", false)) {
         list_value.push_back(item);
     }
-    BOOST_CHECK_EQUAL(single_value.write().c_str(), single_val);
-    BOOST_CHECK_EQUAL(list_value.write().c_str(), list_val);
+    BOOST_CHECK_EQUAL(single_value.write(), single_val);
+    BOOST_CHECK_EQUAL(list_value.write(), list_val);
 };
 
 // Simple settings merge test case.
@@ -146,9 +146,9 @@ BOOST_AUTO_TEST_CASE(NullOverride)
 {
     common::Settings settings;
     settings.command_line_options["name"].emplace_back("value");
-    BOOST_CHECK_EQUAL(R"("value")", GetSetting(settings, "section", "name", false, false, false).write().c_str());
+    BOOST_CHECK_EQUAL(std::string{R"("value")"}, GetSetting(settings, "section", "name", false, false, false).write());
     settings.forced_settings["name"] = {};
-    BOOST_CHECK_EQUAL(R"(null)", GetSetting(settings, "section", "name", false, false, false).write().c_str());
+    BOOST_CHECK_EQUAL(std::string{R"(null)"}, GetSetting(settings, "section", "name", false, false, false).write());
 }
 
 // Test different ways settings can be merged, and verify results. This test can

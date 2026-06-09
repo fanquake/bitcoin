@@ -384,7 +384,7 @@ BOOST_AUTO_TEST_CASE(start_mid_stop_does_not_deadlock)
     try {
         threadPool.Start(NUM_WORKERS_DEFAULT);
     } catch (std::exception& e) {
-        BOOST_CHECK_EQUAL(e.what(), "Thread pool has been interrupted or is stopping");
+        BOOST_CHECK_EQUAL(e.what(), std::string{"Thread pool has been interrupted or is stopping"});
     }
     workers_blocker.release(NUM_WORKERS_DEFAULT);
     WAIT_FOR(blocking_tasks);

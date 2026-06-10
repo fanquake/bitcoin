@@ -27,7 +27,7 @@ namespace index_util {
  */
 
 static constexpr uint8_t DB_BLOCK_HASH{'s'};
-static constexpr uint8_t DB_BLOCK_HEIGHT{'t'};
+inline constexpr uint8_t DB_BLOCK_HEIGHT{'t'};
 
 struct DBHeightKey {
     int height;

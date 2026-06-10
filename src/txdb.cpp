@@ -22,7 +22,7 @@
 #include <utility>
 
 static constexpr uint8_t DB_COIN{'C'};
-static constexpr uint8_t DB_BEST_BLOCK{'B'};
+inline constexpr uint8_t DB_BEST_BLOCK{'B'};
 static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
 // Keys used in previous version that might still be found in the DB:
 static constexpr uint8_t DB_COINS{'c'};

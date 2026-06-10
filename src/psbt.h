@@ -29,7 +29,7 @@ enum class TransactionError;
 using common::PSBTError;
 
 // Magic bytes
-static constexpr uint8_t PSBT_MAGIC_BYTES[5] = {'p', 's', 'b', 't', 0xff};
+inline constexpr uint8_t PSBT_MAGIC_BYTES[5] = {'p', 's', 'b', 't', 0xff};
 
 // Global types
 static constexpr uint8_t PSBT_GLOBAL_UNSIGNED_TX = 0x00;
@@ -61,12 +61,12 @@ static constexpr uint8_t PSBT_IN_OUTPUT_INDEX = 0x0f;
 static constexpr uint8_t PSBT_IN_SEQUENCE = 0x10;
 static constexpr uint8_t PSBT_IN_REQUIRED_TIME_LOCKTIME = 0x11;
 static constexpr uint8_t PSBT_IN_REQUIRED_HEIGHT_LOCKTIME = 0x12;
-static constexpr uint8_t PSBT_IN_TAP_KEY_SIG = 0x13;
+inline constexpr uint8_t PSBT_IN_TAP_KEY_SIG{0x13};
 static constexpr uint8_t PSBT_IN_TAP_SCRIPT_SIG = 0x14;
 static constexpr uint8_t PSBT_IN_TAP_LEAF_SCRIPT = 0x15;
 static constexpr uint8_t PSBT_IN_TAP_BIP32_DERIVATION = 0x16;
-static constexpr uint8_t PSBT_IN_TAP_INTERNAL_KEY = 0x17;
-static constexpr uint8_t PSBT_IN_TAP_MERKLE_ROOT = 0x18;
+inline constexpr uint8_t PSBT_IN_TAP_INTERNAL_KEY{0x17};
+inline constexpr uint8_t PSBT_IN_TAP_MERKLE_ROOT{0x18};
 static constexpr uint8_t PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS = 0x1a;
 static constexpr uint8_t PSBT_IN_MUSIG2_PUB_NONCE = 0x1b;
 static constexpr uint8_t PSBT_IN_MUSIG2_PARTIAL_SIG = 0x1c;

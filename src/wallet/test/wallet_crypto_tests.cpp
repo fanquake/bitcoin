@@ -14,7 +14,6 @@
 using namespace util::hex_literals;
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(wallet_crypto_tests, BasicTestingSetup)
 
 class TestCrypter
 {
@@ -79,6 +78,8 @@ static void TestEncrypt(const CCrypter& crypt, const std::span<const unsigned ch
 }
 
 };
+
+BOOST_FIXTURE_TEST_SUITE(wallet_crypto_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(passphrase) {
     // These are expensive.

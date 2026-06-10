@@ -62,15 +62,12 @@ public:
 
 typedef std::vector<unsigned char, secure_allocator<unsigned char> > CKeyingMaterial;
 
-namespace wallet_crypto_tests
-{
-    class TestCrypter;
-}
+class TestCrypter;
 
 /** Encryption/decryption context with key information */
 class CCrypter
 {
-friend class wallet_crypto_tests::TestCrypter; // for test access to chKey/chIV
+friend class TestCrypter; // for test access to chKey/chIV
 private:
     std::vector<unsigned char, secure_allocator<unsigned char>> vchKey;
     std::vector<unsigned char, secure_allocator<unsigned char>> vchIV;

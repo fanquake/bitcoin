@@ -30,11 +30,13 @@ static_assert(ipc::capnp::messages::DEFAULT_BLOCK_RESERVED_WEIGHT == DEFAULT_BLO
 static_assert(ipc::capnp::messages::DEFAULT_COINBASE_OUTPUT_MAX_ADDITIONAL_SIGOPS == DEFAULT_COINBASE_OUTPUT_MAX_ADDITIONAL_SIGOPS);
 
 //! Remote init class.
+namespace {
 class TestInit : public interfaces::Init
 {
 public:
     std::unique_ptr<interfaces::Echo> makeEcho() override { return interfaces::MakeEcho(); }
 };
+}
 
 //! Generate a temporary path with temp_directory_path and mkstemp
 static std::string TempPath(std::string_view pattern)

@@ -31,11 +31,11 @@ static constexpr unsigned int DEFAULT_COINBASE_OUTPUT_MAX_ADDITIONAL_SIGOPS{400}
  * coinbase transaction. It adds an additional safety margin, because even with a thorough understanding
  * of block serialization, it's easy to make a costly mistake when trying to squeeze every last byte.
  * Setting a lower value is prevented at startup. */
-static constexpr unsigned int MINIMUM_BLOCK_RESERVED_WEIGHT{2000};
+inline constexpr unsigned int MINIMUM_BLOCK_RESERVED_WEIGHT{2000};
 /** Default for -blockmintxfee, which sets the minimum feerate for a transaction in blocks created by mining code **/
 static constexpr unsigned int DEFAULT_BLOCK_MIN_TX_FEE{1};
 /** The maximum weight for transactions we're willing to relay/mine */
-static constexpr int32_t MAX_STANDARD_TX_WEIGHT{400000};
+inline constexpr int32_t MAX_STANDARD_TX_WEIGHT{400000};
 /** The minimum non-witness size for transactions we're willing to relay/mine: one larger than 64  */
 static constexpr unsigned int MIN_STANDARD_TX_NONWITNESS_SIZE{65};
 /** Maximum number of signature check operations in an IsStandard() P2SH script */

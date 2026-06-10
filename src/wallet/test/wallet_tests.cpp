@@ -479,7 +479,7 @@ BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
     BOOST_CHECK_EQUAL(list.begin()->second.size(), 2U);
 }
 
-void TestCoinsResult(ListCoinsTest& context, OutputType out_type, CAmount amount,
+void TestCoinsResult(ListCoinsTestingSetup& context, OutputType out_type, CAmount amount,
                      std::map<OutputType, size_t>& expected_coins_sizes)
 {
     LOCK(context.wallet->cs_wallet);
@@ -493,7 +493,7 @@ void TestCoinsResult(ListCoinsTest& context, OutputType out_type, CAmount amount
     for (const auto& [type, size] : expected_coins_sizes) BOOST_CHECK_EQUAL(size, available_coins.coins[type].size());
 }
 
-BOOST_FIXTURE_TEST_CASE(BasicOutputTypesTest, ListCoinsTest)
+BOOST_FIXTURE_TEST_CASE(BasicOutputTypesTest, ListCoinsTestingSetup)
 {
     std::map<OutputType, size_t> expected_coins_sizes;
     for (const auto& out_type : OUTPUT_TYPES) { expected_coins_sizes[out_type] = 0U; }

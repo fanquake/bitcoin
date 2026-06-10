@@ -1,7 +1,7 @@
 (use-modules (gnu packages bison)
+             ((gnu packages build-tools) #:select (ninja))
              ((gnu packages compression) #:select (xz zip))
              ((gnu packages installers) #:select (nsis-x86_64))
-             (gnu packages ninja)
              (gnu packages pkg-config)
              ((gnu packages python-xyz) #:select (python-lief))
              (guix build-system python)

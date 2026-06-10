@@ -26,13 +26,13 @@
 #include <vector>
 
 // Maximum number of bytes pushable to the stack
-static const unsigned int MAX_SCRIPT_ELEMENT_SIZE = 520;
+inline constexpr unsigned int MAX_SCRIPT_ELEMENT_SIZE{520};
 
 // Maximum number of non-push operations per script
 static const int MAX_OPS_PER_SCRIPT = 201;
 
 // Maximum number of public keys per multisig
-static const int MAX_PUBKEYS_PER_MULTISIG = 20;
+inline constexpr int MAX_PUBKEYS_PER_MULTISIG{20};
 
 /** The limit of keys in OP_CHECKSIGADD-based scripts. It is due to the stack limit in BIP342. */
 static constexpr unsigned int MAX_PUBKEYS_PER_MULTI_A = 999;

@@ -72,7 +72,10 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${BASE_CACHE+BASE_CACHE="$BASE_CACHE"} \
                                    ${SDK_PATH+SDK_PATH="$SDK_PATH"} \
                                    ${build_CC+build_CC="$build_CC"} \
-                                   ${build_CXX+build_CXX="$build_CXX"}
+                                   ${build_CXX+build_CXX="$build_CXX"} \
+                                   CFLAGS="-O2 -flto" \
+                                   CXXFLAGS="-O2 -flto" \
+                                   LDFLAGS="-flto"
 
 case "$HOST" in
     *darwin*)

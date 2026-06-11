@@ -4,7 +4,7 @@
   #:use-module (gnu packages commencement)
   #:use-module (gnu packages cross-base)
   #:use-module (gnu packages gcc)
-  #:use-module ((gnu packages linux) #:select (linux-libre-headers-6.1))
+  #:use-module ((gnu packages linux) #:select (linux-libre-headers-6.12))
   #:use-module (gnu packages mingw)
   #:use-module (guix build-system trivial)
   #:use-module (guix download)
@@ -105,7 +105,7 @@ chain for " target " development."))
   (package-with-extra-patches gcc-14
     (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
 
-(define base-linux-kernel-headers linux-libre-headers-6.1)
+(define base-linux-kernel-headers linux-libre-headers-6.12)
 
 (define* (make-bitcoin-cross-toolchain target
                                        #:key

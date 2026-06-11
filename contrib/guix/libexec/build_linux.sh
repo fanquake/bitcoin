@@ -88,7 +88,7 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
 CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DCMAKE_SKIP_RPATH=TRUE -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EXTERNAL_SIGNER=OFF"
 
 # CFLAGS
-HOST_CFLAGS="-O2 -g -flto -march=native"
+HOST_CFLAGS="-O2 -g -flto -march=native -frecord-gcc-switches"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 HOST_CFLAGS+=" -fdebug-prefix-map=${DISTSRC}/src=."
 

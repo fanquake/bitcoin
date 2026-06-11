@@ -78,14 +78,14 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    x86_64_linux_RANLIB=x86_64-linux-gnu-gcc-ranlib \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
                                    x86_64_linux_STRIP=x86_64-linux-gnu-strip \
-                                   NO_QT=1
+                                   NO_QT=1 NO_ZMQ=1 NO_WALLET=1 NO_IPC=1 NO_USDT=1
 
 ###########################
 # Binary Tarball Building #
 ###########################
 
 # CONFIGFLAGS
-CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DCMAKE_SKIP_RPATH=TRUE"
+CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DCMAKE_SKIP_RPATH=TRUE -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EXTERNAL_SIGNER=OFF"
 
 # CFLAGS
 HOST_CFLAGS="-O2 -g"
@@ -125,7 +125,7 @@ mkdir -p "$DISTSRC"
           "${CMAKE_EXE_LINKER_FLAGS}"
 
     # Build Bitcoin Core
-    cmake --build build -j "$JOBS" ${V:+--verbose}
+    cmake --build build -j "$JOBS" ${V:+--verbose} --target bitcoind
 
     # Setup the directory where our Bitcoin Core build for HOST will be
     # installed. This directory will also later serve as the input for our

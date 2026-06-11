@@ -88,7 +88,7 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
 CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DCMAKE_SKIP_RPATH=TRUE -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EXTERNAL_SIGNER=OFF"
 
 # CFLAGS
-HOST_CFLAGS="-O2 -g -flto -march=native -frecord-gcc-switches"
+HOST_CFLAGS="-O3 -g -flto -march=native -frecord-gcc-switches"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 HOST_CFLAGS+=" -fdebug-prefix-map=${DISTSRC}/src=."
 
@@ -100,7 +100,7 @@ case "$HOST" in
 esac
 
 # LDFLAGS
-HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O2 -flto -march=native"
+HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O3 -flto -march=native"
 
 # EXE FLAGS
 case "$HOST" in
@@ -122,7 +122,10 @@ mkdir -p "$DISTSRC"
           --toolchain "${BASEPREFIX}/${HOST}/toolchain.cmake" \
           -DWITH_CCACHE=OFF \
           ${CONFIGFLAGS} \
-          "${CMAKE_EXE_LINKER_FLAGS}"
+          "${CMAKE_EXE_LINKER_FLAGS}" \
+          -DAPPEND_CFLAGS="-O3" \
+          -DAPPEND_CXXFLAGS="-O3" \
+          -DAPPEND_LDFLAGS="-Wl,-O3"
 
     # Build Bitcoin Core
     cmake --build build -j "$JOBS" ${V:+--verbose} --target bitcoind

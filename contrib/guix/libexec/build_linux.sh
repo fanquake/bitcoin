@@ -77,7 +77,11 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    x86_64_linux_RANLIB=x86_64-linux-gnu-gcc-ranlib \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
                                    x86_64_linux_STRIP=x86_64-linux-gnu-strip \
-                                   NO_QT=1 NO_ZMQ=1 NO_WALLET=1 NO_IPC=1 NO_USDT=1
+                                   NO_QT=1 NO_ZMQ=1 NO_WALLET=1 NO_IPC=1 NO_USDT=1 \
+                                   CFLAGS="-O2 -flto" \
+                                   CXXFLAGS="-O2 -flto" \
+                                   LDFLAGS="-O2 -flto" \
+                                   LTO=1
 
 ###########################
 # Binary Tarball Building #
@@ -87,9 +91,14 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
 CONFIGFLAGS="-DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_FUZZ_BINARY=OFF -DCMAKE_SKIP_RPATH=TRUE -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EXTERNAL_SIGNER=OFF"
 
 # CFLAGS
-HOST_CFLAGS="-O2 -g"
+HOST_CFLAGS="-O2 -g -flto"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 HOST_CFLAGS+=" -fdebug-prefix-map=${DISTSRC}/src=."
+
+case "$HOST" in
+    aarch64-linux-gnu) HOST_CFLAGS+="${HOST_CFLAGS} -mcpu=native" ;;
+    x86_64-linux-gnu)  HOST_CFLAGS+="${HOST_CFLAGS} -march=native" ;;
+esac
 
 # CXXFLAGS
 HOST_CXXFLAGS="$HOST_CFLAGS"
@@ -99,7 +108,12 @@ case "$HOST" in
 esac
 
 # LDFLAGS
-HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O2"
+HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O2 -flto"
+
+case "$HOST" in
+    aarch64-linux-gnu) HOST_LDFLAGS+="${HOST_LDFLAGS} -mcpu=native" ;;
+    x86_64-linux-gnu)  HOST_LDFLAGS+="${HOST_LDFLAGS} -march=native" ;;
+esac
 
 # EXE FLAGS
 case "$HOST" in

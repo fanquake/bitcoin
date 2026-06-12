@@ -883,8 +883,8 @@ BOOST_AUTO_TEST_CASE(test_ToIntegralHex)
     BOOST_CHECK_EQUAL(*n, 0);
     n = ToIntegral<uint64_t>("FfFfFfFfFfFfFfFf", 16);
     BOOST_CHECK_EQUAL(*n, 0xFfFfFfFfFfFfFfFfULL);
-    n = ToIntegral<int64_t>("-1", 16);
-    BOOST_CHECK_EQUAL(*n, -1);
+    auto signed_n = ToIntegral<int64_t>("-1", 16);
+    BOOST_CHECK_EQUAL(*signed_n, -1);
     // Invalid values
     BOOST_CHECK(!ToIntegral<uint64_t>("", 16));
     BOOST_CHECK(!ToIntegral<uint64_t>("-1", 16));

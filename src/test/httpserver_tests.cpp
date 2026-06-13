@@ -215,7 +215,7 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
         BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Content-Type"), "application/json");
         BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Authorization"), "Basic X19jb29raWVfXzo5OGQ5ODQ3MWNmNjg0NzAzYTkzN2EzNzk0ZDFlODQ1NjZmYTRkZjJiMzFkYjhhODI4ZGY4MjVjOTg5ZGI4OTVl");
         BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Content-Length"), "46");
-        BOOST_CHECK_EQUAL(req.m_body.size(), 46);
+        BOOST_CHECK_EQUAL(req.m_body.size(), 46U);
         BOOST_CHECK_EQUAL(req.m_body, R"({"method":"getblockcount","params":[],"id":1})""\n");
     }
     {
@@ -317,7 +317,7 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
         BOOST_CHECK_EQUAL(req.m_version.minor, 0);
         BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Host"), "127.0.0.1");
         // no body is OK
-        BOOST_CHECK_EQUAL(req.m_body.size(), 0);
+        BOOST_CHECK_EQUAL(req.m_body.size(), 0U);
     }
     {
         // Malformed: missing colon
@@ -343,7 +343,7 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
         BOOST_CHECK(req.LoadHeaders(reader));
         BOOST_CHECK(req.LoadBody(reader));
         // Don't try to read request body if Content-Length is missing
-        BOOST_CHECK_EQUAL(req.m_body.size(), 0);
+        BOOST_CHECK_EQUAL(req.m_body.size(), 0U);
     }
     {
         // Malformed: Content-Length is not a number
@@ -445,7 +445,7 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
         BOOST_CHECK(req.LoadBody(reader));
         BOOST_CHECK_EQUAL(req.m_body, R"({"method":"getblockcount"})");
         // Chunk Trailer was cleared
-        BOOST_CHECK_EQUAL(reader.Remaining(), 0);
+        BOOST_CHECK_EQUAL(reader.Remaining(), 0U);
     }
     {
         // Invalid "chunked" transfer, using roman numerals instead of hex for chunk length
@@ -533,17 +533,17 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
     CService addr_bind{Lookup("0.0.0.0", /*portDefault=*/0, /*fAllowLookup=*/false).value()};
 
     // Init state
-    BOOST_REQUIRE_EQUAL(server.GetListeningSocketCount(), 0);
+    BOOST_REQUIRE_EQUAL(server.GetListeningSocketCount(), 0U);
     // Bind to mock Listening Socket
     BOOST_REQUIRE(server.BindAndStartListening(addr_bind));
     // We are bound and listening
-    BOOST_REQUIRE_EQUAL(server.GetListeningSocketCount(), 1);
+    BOOST_REQUIRE_EQUAL(server.GetListeningSocketCount(), 1U);
 
     // Start the I/O loop
     server.StartSocketsThreads();
 
     // No connections yet
-    BOOST_CHECK_EQUAL(server.GetConnectionsCount(), 0);
+    BOOST_CHECK_EQUAL(server.GetConnectionsCount(), 0U);
 
     // Create a mock client with pre-loaded request data and add it to the local CreateSock queue.
     // Keep a handle for the mock client's send and receive pipes so we can examine
@@ -552,7 +552,7 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
 
     // Wait up to a minute to find and connect the client in the I/O loop
     int attempts{6000};
-    while (server.GetConnectionsCount() < 1) {
+    while (server.GetConnectionsCount() < 1U) {
         std::this_thread::sleep_for(10ms);
         BOOST_REQUIRE(--attempts > 0);
     }
@@ -568,7 +568,7 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
         {
             LOCK(requests_mutex);
             // Connected client should have one request already from the static content.
-            if (requests.size() == 1) {
+            if (requests.size() == 1U) {
                 // Check the received request
                 BOOST_CHECK_EQUAL(requests.front()->m_body, R"({"method":"getblockcount","params":[],"id":1})""\n");
                 BOOST_CHECK_EQUAL(requests.front()->GetPeer().ToStringAddrPort(), "5.5.5.5:6789");

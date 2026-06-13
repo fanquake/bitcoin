@@ -1168,7 +1168,7 @@ static TxoutType GetTxoutType(const CScript& output_script)
     do {                                                                  \
         BOOST_CHECK_EQUAL((script).size(), (expected_size));              \
         BOOST_CHECK_EQUAL((script).capacity(), CScriptBase::STATIC_SIZE); \
-        BOOST_CHECK_EQUAL((script).allocated_memory(), 0);                \
+        BOOST_CHECK_EQUAL((script).allocated_memory(), 0U);               \
     } while (0)
 
 #define CHECK_SCRIPT_DYNAMIC_SIZE(script, expected_size, expected_extra)                 \
@@ -1180,11 +1180,11 @@ static TxoutType GetTxoutType(const CScript& output_script)
 
 BOOST_AUTO_TEST_CASE(script_size_and_capacity_test)
 {
-    BOOST_CHECK_EQUAL(sizeof(CompressedScript), 40);
-    BOOST_CHECK_EQUAL(sizeof(CScriptBase), 40);
+    BOOST_CHECK_EQUAL(sizeof(CompressedScript), 40U);
+    BOOST_CHECK_EQUAL(sizeof(CScriptBase), 40U);
     BOOST_CHECK_NE(sizeof(CScriptBase), sizeof(prevector<CScriptBase::STATIC_SIZE + 1, uint8_t>)); // CScriptBase size should be set to avoid wasting space in padding
-    BOOST_CHECK_EQUAL(sizeof(CScript), 40);
-    BOOST_CHECK_EQUAL(sizeof(CTxOut), 48);
+    BOOST_CHECK_EQUAL(sizeof(CScript), 40U);
+    BOOST_CHECK_EQUAL(sizeof(CTxOut), 48U);
 
     CKey dummy_key;
     dummy_key.MakeNewKey(/*fCompressed=*/true);
@@ -1194,49 +1194,49 @@ BOOST_AUTO_TEST_CASE(script_size_and_capacity_test)
     {
         const auto script{CScript() << OP_RETURN << std::vector<uint8_t>(10, 0xaa)};
         BOOST_CHECK_EQUAL(GetTxoutType(script), TxoutType::NULL_DATA);
-        CHECK_SCRIPT_STATIC_SIZE(script, 12);
+        CHECK_SCRIPT_STATIC_SIZE(script, 12U);
     }
 
     // P2WPKH has direct allocation
     {
         const auto script{GetScriptForDestination(WitnessV0KeyHash{PKHash{dummy_pubkey}})};
         BOOST_CHECK_EQUAL(GetTxoutType(script), TxoutType::WITNESS_V0_KEYHASH);
-        CHECK_SCRIPT_STATIC_SIZE(script, 22);
+        CHECK_SCRIPT_STATIC_SIZE(script, 22U);
     }
 
     // P2SH has direct allocation
     {
         const auto script{GetScriptForDestination(ScriptHash{CScript{} << OP_TRUE})};
         BOOST_CHECK(script.IsPayToScriptHash());
-        CHECK_SCRIPT_STATIC_SIZE(script, 23);
+        CHECK_SCRIPT_STATIC_SIZE(script, 23U);
     }
 
     // P2PKH has direct allocation
     {
         const auto script{GetScriptForDestination(PKHash{dummy_pubkey})};
         BOOST_CHECK_EQUAL(GetTxoutType(script), TxoutType::PUBKEYHASH);
-        CHECK_SCRIPT_STATIC_SIZE(script, 25);
+        CHECK_SCRIPT_STATIC_SIZE(script, 25U);
     }
 
     // P2WSH has direct allocation
     {
         const auto script{GetScriptForDestination(WitnessV0ScriptHash{CScript{} << OP_TRUE})};
         BOOST_CHECK(script.IsPayToWitnessScriptHash());
-        CHECK_SCRIPT_STATIC_SIZE(script, 34);
+        CHECK_SCRIPT_STATIC_SIZE(script, 34U);
     }
 
     // P2TR has direct allocation
     {
         const auto script{GetScriptForDestination(WitnessV1Taproot{XOnlyPubKey{dummy_pubkey}})};
         BOOST_CHECK_EQUAL(GetTxoutType(script), TxoutType::WITNESS_V1_TAPROOT);
-        CHECK_SCRIPT_STATIC_SIZE(script, 34);
+        CHECK_SCRIPT_STATIC_SIZE(script, 34U);
     }
 
     // Compressed P2PK has direct allocation
     {
         const auto script{GetScriptForRawPubKey(dummy_pubkey)};
         BOOST_CHECK_EQUAL(GetTxoutType(script), TxoutType::PUBKEY);
-        CHECK_SCRIPT_STATIC_SIZE(script, 35);
+        CHECK_SCRIPT_STATIC_SIZE(script, 35U);
     }
 
     // Uncompressed P2PK needs extra allocation
@@ -1247,14 +1247,14 @@ BOOST_AUTO_TEST_CASE(script_size_and_capacity_test)
 
         const auto script{GetScriptForRawPubKey(uncompressed_pubkey)};
         BOOST_CHECK_EQUAL(GetTxoutType(script), TxoutType::PUBKEY);
-        CHECK_SCRIPT_DYNAMIC_SIZE(script, 67, 67);
+        CHECK_SCRIPT_DYNAMIC_SIZE(script, 67U, 67U);
     }
 
     // Bare multisig needs extra allocation
     {
         const auto script{GetScriptForMultisig(1, std::vector{2, dummy_pubkey})};
         BOOST_CHECK_EQUAL(GetTxoutType(script), TxoutType::MULTISIG);
-        CHECK_SCRIPT_DYNAMIC_SIZE(script, 71, 103);
+        CHECK_SCRIPT_DYNAMIC_SIZE(script, 71U, 103U);
     }
 }
 

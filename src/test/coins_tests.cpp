@@ -1167,15 +1167,15 @@ BOOST_AUTO_TEST_CASE(ccoins_reset_guard)
         const auto reset_guard{cache.CreateResetGuard()};
         BOOST_CHECK(cache.AccessCoin(outpoint) == coin);
         BOOST_CHECK(!cache.AccessCoin(outpoint).IsSpent());
-        BOOST_CHECK_EQUAL(cache.GetCacheSize(), 1);
-        BOOST_CHECK_EQUAL(cache.GetDirtyCount(), 1);
+        BOOST_CHECK_EQUAL(cache.GetCacheSize(), 1U);
+        BOOST_CHECK_EQUAL(cache.GetDirtyCount(), 1U);
         BOOST_CHECK_EQUAL(cache.GetBestBlock(), cache_best_block);
         BOOST_CHECK(!root_cache.HaveCoinInCache(outpoint));
     }
 
     BOOST_CHECK(cache.AccessCoin(outpoint).IsSpent());
-    BOOST_CHECK_EQUAL(cache.GetCacheSize(), 0);
-    BOOST_CHECK_EQUAL(cache.GetDirtyCount(), 0);
+    BOOST_CHECK_EQUAL(cache.GetCacheSize(), 0U);
+    BOOST_CHECK_EQUAL(cache.GetDirtyCount(), 0U);
     BOOST_CHECK_EQUAL(cache.GetBestBlock(), base_best_block);
     BOOST_CHECK(!root_cache.HaveCoinInCache(outpoint));
 
@@ -1185,7 +1185,7 @@ BOOST_AUTO_TEST_CASE(ccoins_reset_guard)
     }
 
     BOOST_CHECK(cache.AccessCoin(outpoint).IsSpent());
-    BOOST_CHECK_EQUAL(cache.GetCacheSize(), 0);
+    BOOST_CHECK_EQUAL(cache.GetCacheSize(), 0U);
     BOOST_CHECK_EQUAL(cache.GetDirtyCount(), 0U);
     BOOST_CHECK_EQUAL(cache.GetBestBlock(), base_best_block);
     BOOST_CHECK(!root_cache.HaveCoinInCache(outpoint));

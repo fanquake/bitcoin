@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(script_assets_test)
     file.read(data.data(), data.size());
     UniValue tests = read_json(data);
     BOOST_CHECK(tests.isArray());
-    BOOST_CHECK(tests.size() > 0);
+    BOOST_CHECK(tests.size() > 0U);
 
     for (size_t i = 0; i < tests.size(); i++) {
         AssetTest(tests[i], signature_cache);

@@ -164,7 +164,7 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_block_data_part, TestChain100Setup)
 
     auto block{blockman.ReadRawBlock(tip_block_pos)};
     BOOST_REQUIRE(block);
-    BOOST_REQUIRE_GE(block->size(), 200);
+    BOOST_REQUIRE_GE(block->size(), 200U);
 
     const auto expect_part{[&](size_t offset, size_t size) {
         auto res{blockman.ReadRawBlock(tip_block_pos, std::pair{offset, size})};
@@ -192,7 +192,7 @@ BOOST_FIXTURE_TEST_CASE(blockmanager_block_data_part_error, TestChain100Setup)
 
     auto block{blockman.ReadRawBlock(tip_block_pos)};
     BOOST_REQUIRE(block);
-    BOOST_REQUIRE_GE(block->size(), 200);
+    BOOST_REQUIRE_GE(block->size(), 200U);
 
     const auto expect_part_error{[&](size_t offset, size_t size) {
         auto res{blockman.ReadRawBlock(tip_block_pos, std::pair{offset, size})};
@@ -259,7 +259,7 @@ BOOST_AUTO_TEST_CASE(blockmanager_flush_block_file)
 
     // Blockstore is empty
     LOCK(::cs_main);
-    BOOST_CHECK_EQUAL(blockman.CalculateCurrentUsage(), 0);
+    BOOST_CHECK_EQUAL(blockman.CalculateCurrentUsage(), 0U);
 
     // Write the first block to a new location.
     FlatFilePos pos1{blockman.WriteBlock(block1, /*nHeight=*/1)};
@@ -290,10 +290,10 @@ BOOST_AUTO_TEST_CASE(blockmanager_flush_block_file)
     // Verify this behavior by attempting (and failing) to write block 3 data
     // to block 2 location.
     CBlockFileInfo* block_data = blockman.GetBlockFileInfo(0);
-    BOOST_CHECK_EQUAL(block_data->nBlocks, 2);
+    BOOST_CHECK_EQUAL(block_data->nBlocks, 2U);
     blockman.UpdateBlockInfo(block3, /*nHeight=*/3, /*pos=*/pos2);
     // Metadata is updated...
-    BOOST_CHECK_EQUAL(block_data->nBlocks, 3);
+    BOOST_CHECK_EQUAL(block_data->nBlocks, 3U);
     // ...but there are still only two blocks in the file
     BOOST_CHECK_EQUAL(blockman.CalculateCurrentUsage(), (TEST_BLOCK_SIZE + STORAGE_HEADER_BYTES) * 2);
 

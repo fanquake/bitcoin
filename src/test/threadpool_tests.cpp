@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(submit_tasks_complete_successfully)
     WAIT_FOR(futures);
     int expected_value = (num_tasks * (num_tasks + 1)) / 2; // Gauss sum.
     BOOST_CHECK_EQUAL(counter.load(), expected_value);
-    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 0);
+    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 0U);
 }
 
 // Test 2, maintain all threads busy except one
@@ -167,7 +167,7 @@ BOOST_AUTO_TEST_CASE(single_available_worker_executes_all_tasks)
     blocker.release(NUM_WORKERS_DEFAULT - 1);
     WAIT_FOR(blocking_tasks);
     threadPool.Stop();
-    BOOST_CHECK_EQUAL(threadPool.WorkersCount(), 0);
+    BOOST_CHECK_EQUAL(threadPool.WorkersCount(), 0U);
 }
 
 // Test 3, wait for work to finish
@@ -227,9 +227,9 @@ BOOST_AUTO_TEST_CASE(process_tasks_manually_when_workers_busy)
     const auto& blocking_tasks = BlockWorkers(threadPool, blocker, NUM_WORKERS_DEFAULT);
 
     // Now submit tasks and check that none of them are executed.
-    int num_tasks = 20;
-    std::atomic<int> counter = 0;
-    for (int i = 0; i < num_tasks; i++) {
+    size_t num_tasks = 20;
+    std::atomic<size_t> counter = 0;
+    for (size_t i = 0; i < num_tasks; i++) {
         (void)Submit(threadPool, [&counter]() {
             counter.fetch_add(1, std::memory_order_relaxed);
         });
@@ -238,11 +238,11 @@ BOOST_AUTO_TEST_CASE(process_tasks_manually_when_workers_busy)
     BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), num_tasks);
 
     // Now process manually
-    for (int i = 0; i < num_tasks; i++) {
+    for (size_t i = 0; i < num_tasks; i++) {
         threadPool.ProcessTask();
     }
     BOOST_CHECK_EQUAL(counter.load(), num_tasks);
-    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 0);
+    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 0U);
     blocker.release(NUM_WORKERS_DEFAULT);
     threadPool.Stop();
     WAIT_FOR(blocking_tasks);
@@ -278,7 +278,7 @@ BOOST_AUTO_TEST_CASE(task_submitted_while_busy_completes)
     std::future<bool> future = Submit(threadPool, []() { return true; });
 
     // At this point, all workers are blocked, and the extra task is queued
-    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 1);
+    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 1U);
 
     // Wait a short moment before unblocking the threads to mimic a concurrent shutdown
     std::thread thread_unblocker([&blocker]() {
@@ -297,7 +297,7 @@ BOOST_AUTO_TEST_CASE(task_submitted_while_busy_completes)
     WAIT_FOR(blocking_tasks);
 
     // Pool should be stopped and no workers remaining
-    BOOST_CHECK_EQUAL(threadPool.WorkersCount(), 0);
+    BOOST_CHECK_EQUAL(threadPool.WorkersCount(), 0U);
 }
 
 // Test 9, more workers than available cores (congestion test)
@@ -356,7 +356,7 @@ BOOST_AUTO_TEST_CASE(interrupt_blocks_new_submissions)
     BOOST_CHECK_EQUAL(counter.load(), 1);
     threadPool.Stop();
     WAIT_FOR(blocking_tasks);
-    BOOST_CHECK_EQUAL(threadPool.WorkersCount(), 0);
+    BOOST_CHECK_EQUAL(threadPool.WorkersCount(), 0U);
 }
 
 // Test 11, Start() must not cause a deadlock when called during Stop()
@@ -431,7 +431,7 @@ BOOST_AUTO_TEST_CASE(stop_active_wait_drains_queue)
     const auto blocking_tasks = BlockWorkers(threadPool, blocker, NUM_WORKERS_DEFAULT);
 
     auto main_thread_id = std::this_thread::get_id();
-    std::atomic<int> main_thread_tasks{0};
+    std::atomic<size_t> main_thread_tasks{0};
     const size_t num_tasks = 20;
     for (size_t i = 0; i < num_tasks; i++) {
         (void)Submit(threadPool, [&main_thread_tasks, main_thread_id]() {
@@ -493,7 +493,7 @@ BOOST_AUTO_TEST_CASE(submit_range_of_tasks_complete_successfully)
     const auto expected_squares_sum{2 * ((num_tasks * (num_tasks + 1) * ((num_tasks * 2) + 1)) / 6)};
     BOOST_CHECK_EQUAL(sum, expected_sum);
     BOOST_CHECK_EQUAL(squares_sum, expected_squares_sum);
-    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 0);
+    BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

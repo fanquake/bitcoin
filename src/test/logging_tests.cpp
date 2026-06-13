@@ -262,7 +262,7 @@ BOOST_FIXTURE_TEST_CASE(logging_Conf, LogSetup)
         BOOST_CHECK_EQUAL(LogInstance().LogLevel(), BCLog::Level::Debug);
 
         const auto& category_levels{LogInstance().CategoryLevels()};
-        BOOST_CHECK_EQUAL(category_levels.size(), 2);
+        BOOST_CHECK_EQUAL(category_levels.size(), 2U);
 
         const auto net_it{category_levels.find(BCLog::LogFlags::NET)};
         BOOST_CHECK(net_it != category_levels.end());
@@ -412,16 +412,16 @@ void TestLogFromLocation(Location location, const std::string& message,
         source.file_name(), source.line(), log_lines.size(), util::Join(log_lines, "\n"))};
 
     if (status == Status::STILL_SUPPRESSED) {
-        BOOST_CHECK_MESSAGE(log_lines.size() == 0, ctx);
+        BOOST_CHECK_MESSAGE(log_lines.size() == 0U, ctx);
         return;
     }
 
     if (status == Status::NEWLY_SUPPRESSED) {
-        BOOST_REQUIRE_MESSAGE(log_lines.size() == 2, ctx);
+        BOOST_REQUIRE_MESSAGE(log_lines.size() == 2U, ctx);
         BOOST_CHECK_MESSAGE(log_lines[0].starts_with("[*] [warning] Excessive logging detected"), ctx);
         log_lines.erase(log_lines.begin());
     }
-    BOOST_REQUIRE_MESSAGE(log_lines.size() == 1, ctx);
+    BOOST_REQUIRE_MESSAGE(log_lines.size() == 1U, ctx);
     auto& payload{log_lines.back()};
     BOOST_CHECK_MESSAGE(suppressions_active == payload.starts_with("[*]"), ctx);
     BOOST_CHECK_MESSAGE(payload.ends_with(message), ctx);

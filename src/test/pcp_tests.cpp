@@ -301,7 +301,7 @@ BOOST_AUTO_TEST_CASE(natpmp_ipv4)
     BOOST_CHECK_EQUAL(mapping->version, 0);
     BOOST_CHECK_EQUAL(mapping->internal.ToStringAddrPort(), "192.168.0.6:1234");
     BOOST_CHECK_EQUAL(mapping->external.ToStringAddrPort(), "1.2.3.4:1234");
-    BOOST_CHECK_EQUAL(mapping->lifetime, 500);
+    BOOST_CHECK_EQUAL(mapping->lifetime, 500U);
 }
 
 // PCP IPv4 good-weather scenario.
@@ -345,7 +345,7 @@ BOOST_AUTO_TEST_CASE(pcp_ipv4)
     BOOST_CHECK_EQUAL(mapping->version, 2);
     BOOST_CHECK_EQUAL(mapping->internal.ToStringAddrPort(), "192.168.0.6:1234");
     BOOST_CHECK_EQUAL(mapping->external.ToStringAddrPort(), "1.2.3.4:1234");
-    BOOST_CHECK_EQUAL(mapping->lifetime, 500);
+    BOOST_CHECK_EQUAL(mapping->lifetime, 500U);
 }
 
 // PCP IPv6 good-weather scenario.
@@ -389,7 +389,7 @@ BOOST_AUTO_TEST_CASE(pcp_ipv6)
     BOOST_CHECK_EQUAL(mapping->version, 2);
     BOOST_CHECK_EQUAL(mapping->internal.ToStringAddrPort(), "[2a10:1234:5678:9abc:def0:1234:5678:9abc]:1234");
     BOOST_CHECK_EQUAL(mapping->external.ToStringAddrPort(), "[2a10:1234:5678:9abc:def0:1234:5678:9abc]:1234");
-    BOOST_CHECK_EQUAL(mapping->lifetime, 500);
+    BOOST_CHECK_EQUAL(mapping->lifetime, 500U);
 }
 
 // PCP timeout.

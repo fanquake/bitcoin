@@ -335,7 +335,7 @@ BOOST_AUTO_TEST_CASE(bnb_sffo_restriction)
     auto result = WITH_LOCK(wallet->cs_wallet, return SelectCoins(*wallet, available_coins, /*pre_set_inputs=*/{}, COIN, /*coin_control=*/{}, params));
     BOOST_CHECK(result.has_value());
     BOOST_CHECK_NE(result->GetAlgo(), SelectionAlgorithm::BNB);
-    BOOST_CHECK(result->GetInputSet().size() == 2);
+    BOOST_CHECK(result->GetInputSet().size() == 2U);
     // We have only considered BnB, SRD, and Knapsack. Test needs to be reevaluated if new algo is added
     BOOST_CHECK((result->GetAlgo() == SelectionAlgorithm::SRD || result->GetAlgo() == SelectionAlgorithm::KNAPSACK));
 }
@@ -581,7 +581,7 @@ BOOST_AUTO_TEST_CASE(knapsack_solver_test)
                 uint16_t returnSize = std::ceil((2000.0 + CENT)/amt);
                 CAmount returnValue = amt * returnSize;
                 BOOST_CHECK_EQUAL(result24->GetSelectedValue(), returnValue);
-                BOOST_CHECK_EQUAL(result24->GetInputSet().size(), returnSize);
+                BOOST_CHECK_EQUAL(result24->GetInputSet().size(), static_cast<size_t>(returnSize));
             } else {
                 // one input is sufficient:
                 BOOST_CHECK_EQUAL(result24->GetSelectedValue(), amt);
@@ -1203,7 +1203,7 @@ static util::Result<SelectionResult> select_coins(const CAmount& target, const C
     auto result = SelectCoins(*wallet, available_coins, /*pre_set_inputs=*/ {}, target, cc, cs_params);
     if (result) {
         const auto signedTxSize = 10 + 34 + 68 * result->GetInputSet().size(); // static header size + output size + inputs size (P2WPKH)
-        BOOST_CHECK_LE(signedTxSize * WITNESS_SCALE_FACTOR, MAX_STANDARD_TX_WEIGHT);
+        BOOST_CHECK_LE(static_cast<int>(signedTxSize * WITNESS_SCALE_FACTOR), MAX_STANDARD_TX_WEIGHT);
 
         BOOST_CHECK_GE(result->GetSelectedValue(), target);
     }
@@ -1384,7 +1384,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_coinsresult_test, BasicTestingSetup)
             BOOST_CHECK(it == updated_coins.end());
         }
         // And verify that no extra element were removed
-        BOOST_CHECK_EQUAL(available_coins.Size(), 8);
+        BOOST_CHECK_EQUAL(available_coins.Size(), 8U);
     }
 }
 

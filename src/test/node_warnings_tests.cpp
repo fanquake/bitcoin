@@ -24,7 +24,7 @@ BOOST_AUTO_TEST_CASE(warnings)
     const auto warning_2{node::Warning::FATAL_INTERNAL_ERROR};
 
     // Ensure we start without any warnings
-    BOOST_CHECK(warnings.GetMessages().size() == 0);
+    BOOST_CHECK(warnings.GetMessages().size() == 0U);
     // Add two warnings
     BOOST_CHECK(warnings.Set(warning_1, _("warning 1")));
     BOOST_CHECK(warnings.Set(warning_2, _("warning 2")));
@@ -39,14 +39,14 @@ BOOST_AUTO_TEST_CASE(warnings)
 
     // Verify messages are correct
     const auto messages{warnings.GetMessages()};
-    BOOST_CHECK(messages.size() == 2);
+    BOOST_CHECK(messages.size() == 2U);
     BOOST_CHECK(messages[0].original == "warning 1");
     BOOST_CHECK(messages[1].original == "warning 2 - revision 1");
 
     // Clearing all warnings should also clear all messages
     BOOST_CHECK(warnings.Unset(warning_1));
     BOOST_CHECK(warnings.Unset(warning_2));
-    BOOST_CHECK(warnings.GetMessages().size() == 0);
+    BOOST_CHECK(warnings.GetMessages().size() == 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

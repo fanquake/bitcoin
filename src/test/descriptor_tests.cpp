@@ -38,7 +38,7 @@ void CheckInferRaw(const CScript& script)
 {
     FlatSigningProvider dummy_provider;
     std::unique_ptr<Descriptor> desc = InferDescriptor(script, dummy_provider);
-    BOOST_CHECK(desc->ToString().rfind("raw(", 0) == 0);
+    BOOST_CHECK(desc->ToString().rfind("raw(", 0) == 0U);
 }
 
 constexpr int DEFAULT = 0;
@@ -127,7 +127,7 @@ std::set<CPubKey> GetKeyData(const FlatSigningProvider& provider, int flags) {
     for (const auto& [_, pubkey] : provider.pubkeys) {
         if (flags & XONLY_KEYS) {
             unsigned char bytes[33];
-            BOOST_CHECK_EQUAL(pubkey.size(), 33);
+            BOOST_CHECK_EQUAL(pubkey.size(), 33U);
             std::copy(pubkey.begin(), pubkey.end(), bytes);
             bytes[0] = 0x02;
             CPubKey norm_pubkey{bytes};
@@ -154,7 +154,7 @@ std::set<std::pair<CPubKey, KeyOriginInfo>> GetKeyOriginData(const FlatSigningPr
         if (ignored.contains(keyid)) continue;
         if (flags & XONLY_KEYS) {
             unsigned char bytes[33];
-            BOOST_CHECK_EQUAL(data.first.size(), 33);
+            BOOST_CHECK_EQUAL(data.first.size(), 33U);
             std::copy(data.first.begin(), data.first.end(), bytes);
             bytes[0] = 0x02;
             CPubKey norm_pubkey{bytes};
@@ -338,7 +338,7 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
                 // For ranged, unhardened derivation, None of the keys in origins should appear in the cache but the cache should have parent keys
                 // But we can derive one level from each of those parent keys and find them all
                 BOOST_CHECK(der_xpub_cache.empty());
-                BOOST_CHECK(parent_xpub_cache.size() > 0);
+                BOOST_CHECK(parent_xpub_cache.size() > 0U);
                 std::set<CPubKey> pubkeys;
                 for (const auto& xpub_pair : parent_xpub_cache) {
                     const CExtPubKey& xpub = xpub_pair.second;
@@ -346,14 +346,14 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
                     BOOST_CHECK(xpub.Derive(der, i));
                     pubkeys.insert(der.pubkey);
                 }
-                int count_pks = 0;
+                size_t count_pks = 0;
                 for (const auto& origin_pair : script_provider_cached.origins) {
                     const CPubKey& pk = origin_pair.second.first;
                     count_pks += pubkeys.count(pk);
                 }
                 if (flags & MUSIG_DERIVATION) {
                     if (!(flags & MIXED_MUSIG)) {
-                        BOOST_CHECK_EQUAL(count_pks, 1);
+                        BOOST_CHECK_EQUAL(count_pks, 1U);
                     }
                     BOOST_CHECK_EQUAL(num_xpubs, pubkeys.size());
                 } else {
@@ -390,14 +390,14 @@ void DoCheck(std::string prv, std::string pub, const std::string& norm_pub, int 
                     BOOST_CHECK(xpub.Derive(der, i));
                     pubkeys.insert(der.pubkey);
                 }
-                int count_pks = 0;
+                size_t count_pks = 0;
                 for (const auto& origin_pair : script_provider_cached.origins) {
                     const CPubKey& pk = origin_pair.second.first;
                     count_pks += pubkeys.count(pk);
                 }
                 if (flags & MUSIG_DERIVATION && !(flags & MIXED_PUBKEYS)) {
                     // pubkeys is one key per xpub + one derived key per xpub
-                    BOOST_CHECK_EQUAL(2 * count_pks, pubkeys.size());
+                    BOOST_CHECK_EQUAL(2U * count_pks, pubkeys.size());
                     if (flags & UNIQUE_XPUBS) {
                         BOOST_CHECK_EQUAL(2 * num_unique_xpubs, pubkeys.size());
                     } else {
@@ -1371,11 +1371,11 @@ void CheckUnused(const std::string& prv, const std::string& pub)
     std::set<CPubKey> prv_pubkeys;
     std::set<CExtPubKey> prv_extpubs;
     parse_pub->GetPubKeys(prv_pubkeys, prv_extpubs);
-    BOOST_CHECK_EQUAL(prv_pubkeys.size() + prv_extpubs.size(), 1);
+    BOOST_CHECK_EQUAL(prv_pubkeys.size() + prv_extpubs.size(), 1U);
     std::set<CPubKey> pub_pubkeys;
     std::set<CExtPubKey> pub_extpubs;
     parse_pub->GetPubKeys(pub_pubkeys, pub_extpubs);
-    BOOST_CHECK_EQUAL(pub_pubkeys.size() + pub_extpubs.size(), 1);
+    BOOST_CHECK_EQUAL(pub_pubkeys.size() + pub_extpubs.size(), 1U);
 }
 
 // unused() descriptors don't produce scripts, so these need to be tested separately

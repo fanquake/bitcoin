@@ -83,7 +83,7 @@ public:
                      const CoinEligibilityFilter& filter,
                      bool avoid_partial_spends,
                      bool positive_only,
-                     int expected_size)
+                     size_t expected_size)
     {
         OutputGroupTypeMap groups = GroupOutputs(*wallet, coins_pool, makeSelectionParams(rand, avoid_partial_spends), {{filter}})[filter];
         std::vector<OutputGroup>& groups_out = positive_only ? groups.groups_by_type[type].positive_group :
@@ -93,8 +93,8 @@ public:
 
     void GroupAndVerify(const OutputType type,
                         const CoinEligibilityFilter& filter,
-                        int expected_with_partial_spends_size,
-                        int expected_without_partial_spends_size,
+                        size_t expected_with_partial_spends_size,
+                        size_t expected_without_partial_spends_size,
                         bool positive_only)
     {
         // First avoid partial spends

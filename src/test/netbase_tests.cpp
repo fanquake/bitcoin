@@ -636,25 +636,25 @@ BOOST_AUTO_TEST_CASE(asmap_test_vectors)
 
     // Check some randomly-generated IPv6 addresses in it (biased towards the very beginning and
     // very end of the 128-bit range).
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("0:1559:183:3728:224c:65a5:62e6:e991", false)), 961340);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("d0:d493:faa0:8609:e927:8b75:293c:f5a4", false)), 961340);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("2a0:26f:8b2c:2ee7:c7d1:3b24:4705:3f7f", false)), 693761);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("a77:7cd4:4be5:a449:89f2:3212:78c6:ee38", false)), 0);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("1336:1ad6:2f26:4fe3:d809:7321:6e0d:4615", false)), 672176);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("1d56:abd0:a52f:a8d5:d5a7:a610:581d:d792", false)), 499880);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("378e:7290:54e5:bd36:4760:971c:e9b9:570d", false)), 0);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("406c:820b:272a:c045:b74e:fc0a:9ef2:cecc", false)), 248495);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("46c2:ae07:9d08:2d56:d473:2bc7:57e3:20ac", false)), 248495);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("50d2:3db6:52fa:2e7:12ec:5bc4:1bd1:49f9", false)), 124471);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("53e1:1812:ffa:dccf:f9f2:64be:75fa:795", false)), 539993);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("544d:eeba:3990:35d1:ad66:f9a3:576d:8617", false)), 374443);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("6a53:40dc:8f1d:3ffa:efeb:3aa3:df88:b94b", false)), 435070);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("87aa:d1c9:9edb:91e7:aab1:9eb9:baa0:de18", false)), 244121);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("9f00:48fa:88e3:4b67:a6f3:e6d2:5cc1:5be2", false)), 862116);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("c49f:9cc6:86ad:ba08:4580:315e:dbd1:8a62", false)), 969411);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("dff5:8021:61d:b17d:406d:7888:fdac:4a20", false)), 969411);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("e888:6791:2960:d723:bcfd:47e1:2d8c:599f", false)), 824019);
-    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("ffff:d499:8c4b:4941:bc81:d5b9:b51e:85a8", false)), 824019);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("0:1559:183:3728:224c:65a5:62e6:e991", false)), 961340U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("d0:d493:faa0:8609:e927:8b75:293c:f5a4", false)), 961340U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("2a0:26f:8b2c:2ee7:c7d1:3b24:4705:3f7f", false)), 693761U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("a77:7cd4:4be5:a449:89f2:3212:78c6:ee38", false)), 0U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("1336:1ad6:2f26:4fe3:d809:7321:6e0d:4615", false)), 672176U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("1d56:abd0:a52f:a8d5:d5a7:a610:581d:d792", false)), 499880U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("378e:7290:54e5:bd36:4760:971c:e9b9:570d", false)), 0U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("406c:820b:272a:c045:b74e:fc0a:9ef2:cecc", false)), 248495U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("46c2:ae07:9d08:2d56:d473:2bc7:57e3:20ac", false)), 248495U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("50d2:3db6:52fa:2e7:12ec:5bc4:1bd1:49f9", false)), 124471U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("53e1:1812:ffa:dccf:f9f2:64be:75fa:795", false)), 539993U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("544d:eeba:3990:35d1:ad66:f9a3:576d:8617", false)), 374443U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("6a53:40dc:8f1d:3ffa:efeb:3aa3:df88:b94b", false)), 435070U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("87aa:d1c9:9edb:91e7:aab1:9eb9:baa0:de18", false)), 244121U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("9f00:48fa:88e3:4b67:a6f3:e6d2:5cc1:5be2", false)), 862116U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("c49f:9cc6:86ad:ba08:4580:315e:dbd1:8a62", false)), 969411U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("dff5:8021:61d:b17d:406d:7888:fdac:4a20", false)), 969411U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("e888:6791:2960:d723:bcfd:47e1:2d8c:599f", false)), 824019U);
+    BOOST_CHECK_EQUAL(netgroup.GetMappedAS(*LookupHost("ffff:d499:8c4b:4941:bc81:d5b9:b51e:85a8", false)), 824019U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

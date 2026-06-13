@@ -669,8 +669,8 @@ BOOST_AUTO_TEST_CASE(fixed_tests)
     // For CHECKMULTISIG the OP cost is the number of keys, but the stack size is the number of sigs (+1)
     const auto ms_multi = miniscript::FromString("multi(1,03d30199d74fb5a22d47b6e054e2f378cedacffcb89904a61d75d0dbd407143e65,03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556,0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)", wsh_converter);
     BOOST_CHECK(ms_multi);
-    BOOST_CHECK_EQUAL(*ms_multi->GetOps(), 4); // 3 pubkeys + CMS
-    BOOST_CHECK_EQUAL(*ms_multi->GetStackSize(), 2); // 1 sig + dummy elem
+    BOOST_CHECK_EQUAL(*ms_multi->GetOps(), 4U); // 3 pubkeys + CMS
+    BOOST_CHECK_EQUAL(*ms_multi->GetStackSize(), 2U); // 1 sig + dummy elem
     // The 'd:' wrapper leaves on the stack what was DUP'ed at the beginning of its execution.
     // Since it contains an OP_IF just after on the same element, we can make sure that the element
     // in question must be OP_1 if OP_IF enforces that its argument must only be OP_1 or the empty

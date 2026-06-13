@@ -112,7 +112,7 @@ struct TcpSocketPair {
         sockaddr_in bound{};
         socklen_t blen = sizeof(bound);
         BOOST_REQUIRE_EQUAL(receiver.GetSockName(reinterpret_cast<sockaddr*>(&bound), &blen), 0);
-        BOOST_REQUIRE_EQUAL(blen, sizeof(bound));
+        BOOST_REQUIRE_EQUAL(static_cast<size_t>(blen), sizeof(bound));
 
         BOOST_REQUIRE_EQUAL(sender.Connect(reinterpret_cast<sockaddr*>(&bound), sizeof(bound)), 0);
 

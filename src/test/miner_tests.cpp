@@ -138,7 +138,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     };
 
     LOCK(tx_mempool.cs);
-    BOOST_CHECK(tx_mempool.size() == 0);
+    BOOST_CHECK(tx_mempool.size() == 0U);
 
     // Block template should only have a coinbase when there's nothing in the mempool
     std::unique_ptr<BlockTemplate> block_template = mining->createNewBlock(options, /*cooldown=*/false);
@@ -200,7 +200,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
         &tx_mempool,
         MergeMiningOptions(options, m_node.mining_args),
     }.CreateNewBlock()->m_package_feerates;
-    BOOST_CHECK(block_package_feerates.size() == 2);
+    BOOST_CHECK(block_package_feerates.size() == 2U);
 
     // parent_tx and high_fee_tx are added to the block as a package.
     const auto combined_txs_fee = parent_tx.GetFee() + high_fee_tx.GetFee();

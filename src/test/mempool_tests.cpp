@@ -271,7 +271,7 @@ BOOST_AUTO_TEST_CASE(MempoolSizeLimitTest)
     // ... with a 1/4 halflife when mempool is < 1/4 its target size
 
     clock += 5 * HALFLIFE;
-    BOOST_CHECK_EQUAL(pool.GetMinFee(1).GetFeePerK(), DEFAULT_INCREMENTAL_RELAY_FEE);
+    BOOST_CHECK_EQUAL(pool.GetMinFee(1U).GetFeePerK(), static_cast<CAmount>(DEFAULT_INCREMENTAL_RELAY_FEE));
     // ... but feerate should never drop below DEFAULT_INCREMENTAL_RELAY_FEE
 
     clock += HALFLIFE;

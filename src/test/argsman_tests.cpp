@@ -224,7 +224,7 @@ BOOST_AUTO_TEST_CASE(util_ParseParameters)
     BOOST_CHECK(!testArgs.IsArgSet("f"));
     BOOST_CHECK(!testArgs.IsArgSet("-d"));
     testArgs.LockSettings([&](const common::Settings& s) {
-        BOOST_CHECK(s.command_line_options.size() == 3);
+        BOOST_CHECK(s.command_line_options.size() == 3U);
         BOOST_CHECK(s.ro_config.empty());
         BOOST_CHECK(s.command_line_options.contains("a"));
         BOOST_CHECK(s.command_line_options.contains("b"));
@@ -232,13 +232,13 @@ BOOST_AUTO_TEST_CASE(util_ParseParameters)
         BOOST_CHECK(!s.command_line_options.contains("f"));
         BOOST_CHECK(!s.command_line_options.contains("d"));
 
-        BOOST_CHECK(s.command_line_options.at("a").size() == 1);
+        BOOST_CHECK(s.command_line_options.at("a").size() == 1U);
         BOOST_CHECK(s.command_line_options.at("a").front().get_str() == "");
-        BOOST_CHECK(s.command_line_options.at("ccc").size() == 2);
+        BOOST_CHECK(s.command_line_options.at("ccc").size() == 2U);
         BOOST_CHECK(s.command_line_options.at("ccc").front().get_str() == "argument");
         BOOST_CHECK(s.command_line_options.at("ccc").back().get_str() == "multiple");
     });
-    BOOST_CHECK(testArgs.GetArgs("-ccc").size() == 2);
+    BOOST_CHECK(testArgs.GetArgs("-ccc").size() == 2U);
 }
 
 BOOST_AUTO_TEST_CASE(util_ParseInvalidParameters)
@@ -338,7 +338,7 @@ BOOST_AUTO_TEST_CASE(util_GetBoolArg)
 
     // Nothing else should be in the map
     testArgs.LockSettings([&](const common::Settings& s) {
-        BOOST_CHECK(s.command_line_options.size() == 6);
+        BOOST_CHECK(s.command_line_options.size() == 6U);
         BOOST_CHECK(s.ro_config.empty());
     });
 
@@ -402,12 +402,12 @@ BOOST_AUTO_TEST_CASE(util_GetBoolArgEdgeCases)
     // Command line overrides, but doesn't erase old setting
     BOOST_CHECK(testArgs.IsArgNegated("-foo"));
     BOOST_CHECK(testArgs.GetArg("-foo", "xxx") == "0");
-    BOOST_CHECK(testArgs.GetArgs("-foo").size() == 0);
+    BOOST_CHECK(testArgs.GetArgs("-foo").size() == 0U);
 
     // Command line overrides, but doesn't erase old setting
     BOOST_CHECK(!testArgs.IsArgNegated("-bar"));
     BOOST_CHECK(testArgs.GetArg("-bar", "xxx") == "");
-    BOOST_CHECK(testArgs.GetArgs("-bar").size() == 1);
+    BOOST_CHECK(testArgs.GetArgs("-bar").size() == 1U);
     BOOST_CHECK(testArgs.GetArgs("-bar").front() == "");
 }
 
@@ -454,10 +454,10 @@ BOOST_AUTO_TEST_CASE(util_ReadConfigStream)
 
     test_args.LockSettings([&](const common::Settings& s) {
         BOOST_CHECK(s.command_line_options.empty());
-        BOOST_CHECK(s.ro_config.size() == 3);
-        BOOST_CHECK(s.ro_config.at("").size() == 8);
-        BOOST_CHECK(s.ro_config.at("sec1").size() == 3);
-        BOOST_CHECK(s.ro_config.at("sec2").size() == 2);
+        BOOST_CHECK(s.ro_config.size() == 3U);
+        BOOST_CHECK(s.ro_config.at("").size() == 8U);
+        BOOST_CHECK(s.ro_config.at("sec1").size() == 3U);
+        BOOST_CHECK(s.ro_config.at("sec2").size() == 2U);
 
         BOOST_CHECK(s.ro_config.at("").contains("a"));
         BOOST_CHECK(s.ro_config.at("").contains("b"));
@@ -508,24 +508,24 @@ BOOST_AUTO_TEST_CASE(util_ReadConfigStream)
         BOOST_CHECK(test_args.GetBoolArg("-iii", def) == def);
     }
 
-    BOOST_CHECK(test_args.GetArgs("-a").size() == 1);
+    BOOST_CHECK(test_args.GetArgs("-a").size() == 1U);
     BOOST_CHECK(test_args.GetArgs("-a").front() == "");
-    BOOST_CHECK(test_args.GetArgs("-b").size() == 1);
+    BOOST_CHECK(test_args.GetArgs("-b").size() == 1U);
     BOOST_CHECK(test_args.GetArgs("-b").front() == "1");
-    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 2);
+    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 2U);
     BOOST_CHECK(test_args.GetArgs("-ccc").front() == "argument");
     BOOST_CHECK(test_args.GetArgs("-ccc").back() == "multiple");
-    BOOST_CHECK(test_args.GetArgs("-fff").size() == 0);
-    BOOST_CHECK(test_args.GetArgs("-nofff").size() == 0);
-    BOOST_CHECK(test_args.GetArgs("-ggg").size() == 1);
+    BOOST_CHECK(test_args.GetArgs("-fff").size() == 0U);
+    BOOST_CHECK(test_args.GetArgs("-nofff").size() == 0U);
+    BOOST_CHECK(test_args.GetArgs("-ggg").size() == 1U);
     BOOST_CHECK(test_args.GetArgs("-ggg").front() == "1");
-    BOOST_CHECK(test_args.GetArgs("-noggg").size() == 0);
-    BOOST_CHECK(test_args.GetArgs("-h").size() == 0);
-    BOOST_CHECK(test_args.GetArgs("-noh").size() == 0);
-    BOOST_CHECK(test_args.GetArgs("-i").size() == 1);
+    BOOST_CHECK(test_args.GetArgs("-noggg").size() == 0U);
+    BOOST_CHECK(test_args.GetArgs("-h").size() == 0U);
+    BOOST_CHECK(test_args.GetArgs("-noh").size() == 0U);
+    BOOST_CHECK(test_args.GetArgs("-i").size() == 1U);
     BOOST_CHECK(test_args.GetArgs("-i").front() == "1");
-    BOOST_CHECK(test_args.GetArgs("-noi").size() == 0);
-    BOOST_CHECK(test_args.GetArgs("-zzz").size() == 0);
+    BOOST_CHECK(test_args.GetArgs("-noi").size() == 0U);
+    BOOST_CHECK(test_args.GetArgs("-zzz").size() == 0U);
 
     BOOST_CHECK(!test_args.IsArgNegated("-a"));
     BOOST_CHECK(!test_args.IsArgNegated("-b"));
@@ -588,19 +588,19 @@ BOOST_AUTO_TEST_CASE(util_ReadConfigStream)
 
     test_args.SelectConfigNetwork(ChainTypeToString(ChainType::MAIN));
     BOOST_CHECK(test_args.GetArg("-d", "xxx") == "e");
-    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 2);
+    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 2U);
     BOOST_CHECK(test_args.GetArg("-h", "xxx") == "0");
 
     test_args.SelectConfigNetwork("sec1");
     BOOST_CHECK(test_args.GetArg("-d", "xxx") == "eee");
-    BOOST_CHECK(test_args.GetArgs("-d").size() == 1);
-    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 2);
+    BOOST_CHECK(test_args.GetArgs("-d").size() == 1U);
+    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 2U);
     BOOST_CHECK(test_args.GetArg("-h", "xxx") == "1");
 
     test_args.SelectConfigNetwork("sec2");
     BOOST_CHECK(test_args.GetArg("-d", "xxx") == "xxx");
-    BOOST_CHECK(test_args.GetArgs("-d").size() == 0);
-    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 1);
+    BOOST_CHECK(test_args.GetArgs("-d").size() == 0U);
+    BOOST_CHECK(test_args.GetArgs("-ccc").size() == 1U);
     BOOST_CHECK(test_args.GetArg("-h", "xxx") == "0");
 }
 

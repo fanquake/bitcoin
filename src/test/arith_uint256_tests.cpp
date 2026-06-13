@@ -390,10 +390,10 @@ BOOST_AUTO_TEST_CASE(methods)
     BOOST_CHECK(TmpL == HalfL);
 
     TmpL = R1L;
-    BOOST_CHECK(R1L.size() == 32);
-    BOOST_CHECK(R2L.size() == 32);
-    BOOST_CHECK(ZeroL.size() == 32);
-    BOOST_CHECK(MaxL.size() == 32);
+    BOOST_CHECK(R1L.size() == 32U);
+    BOOST_CHECK(R2L.size() == 32U);
+    BOOST_CHECK(ZeroL.size() == 32U);
+    BOOST_CHECK(MaxL.size() == 32U);
     BOOST_CHECK(R1L.GetLow64()  == R1LLow64);
     BOOST_CHECK(HalfL.GetLow64() ==0x0000000000000000ULL);
     BOOST_CHECK(OneL.GetLow64() ==0x0000000000000001ULL);

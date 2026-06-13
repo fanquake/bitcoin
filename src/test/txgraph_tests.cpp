@@ -8,6 +8,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -34,15 +35,15 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_zigzag)
     //    B     B     B     B     B     B     B     B     B     B     B     B     B    (49 B's)
     //
     /** The maximum cluster count used in this test. */
-    static constexpr int MAX_CLUSTER_COUNT = 50;
+    static constexpr uint32_t MAX_CLUSTER_COUNT = 50;
     /** The number of "bottom" transactions, which are in the mempool already. */
-    static constexpr int NUM_BOTTOM_TX = 49;
+    static constexpr uint32_t NUM_BOTTOM_TX = 49;
     /** The number of "top" transactions, which come from disconnected blocks. These are re-added
      *  to the mempool and, while connecting them to the already-in-mempool transactions, we
      *   discover the resulting cluster is oversized. */
-    static constexpr int NUM_TOP_TX = 50;
+    static constexpr uint32_t NUM_TOP_TX = 50;
     /** The total number of transactions in the test. */
-    static constexpr int NUM_TOTAL_TX = NUM_BOTTOM_TX + NUM_TOP_TX;
+    static constexpr uint32_t NUM_TOTAL_TX = NUM_BOTTOM_TX + NUM_TOP_TX;
     static_assert(NUM_TOTAL_TX > MAX_CLUSTER_COUNT);
     /** Set a very large cluster size limit so that only the count limit is triggered. */
     static constexpr int32_t MAX_CLUSTER_SIZE = 100'000 * 100;
@@ -82,7 +83,7 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_zigzag)
     BOOST_CHECK(!graph->IsOversized(TxGraph::Level::TOP));
 
     // We only need to trim the middle bottom transaction to end up with 2 clusters each within cluster limits.
-    BOOST_CHECK_EQUAL(removed_refs.size(), 1);
+    BOOST_CHECK_EQUAL(removed_refs.size(), 1U);
     BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), MAX_CLUSTER_COUNT * 2 - 2);
     for (unsigned int i = 0; i < refs.size(); ++i) {
         BOOST_CHECK_EQUAL(graph->Exists(refs[i], TxGraph::Level::TOP), i != (NUM_BOTTOM_TX / 2));
@@ -101,13 +102,13 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_flower)
     //                 B (1 B)
     //
     /** The maximum cluster count used in this test. */
-    static constexpr int MAX_CLUSTER_COUNT = 50;
+    static constexpr uint32_t MAX_CLUSTER_COUNT = 50;
     /** The number of "top" transactions, which come from disconnected blocks. These are re-added
      *  to the mempool and, connecting them to the already-in-mempool transactions, we discover the
      *  resulting cluster is oversized. */
-    static constexpr int NUM_TOP_TX = MAX_CLUSTER_COUNT * 2;
+    static constexpr uint32_t NUM_TOP_TX = MAX_CLUSTER_COUNT * 2;
     /** The total number of transactions in this test. */
-    static constexpr int NUM_TOTAL_TX = NUM_TOP_TX + 1;
+    static constexpr uint32_t NUM_TOTAL_TX = NUM_TOP_TX + 1;
     /** Set a very large cluster size limit so that only the count limit is triggered. */
     static constexpr int32_t MAX_CLUSTER_SIZE = 100'000 * 100;
 
@@ -140,7 +141,7 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_flower)
     BOOST_CHECK(!graph->IsOversized(TxGraph::Level::TOP));
 
     // Since only the bottom transaction connects these clusters, we only need to remove it.
-    BOOST_CHECK_EQUAL(removed_refs.size(), 1);
+    BOOST_CHECK_EQUAL(removed_refs.size(), 1U);
     BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), MAX_CLUSTER_COUNT * 2);
     BOOST_CHECK(!graph->Exists(refs[0], TxGraph::Level::TOP));
     for (unsigned int i = 1; i < refs.size(); ++i) {
@@ -173,17 +174,17 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_huge)
     //  (11 B's, each attaching to up to 100 chains of 64 T's)
     //
     /** The maximum cluster count used in this test. */
-    static constexpr int MAX_CLUSTER_COUNT = 64;
+    static constexpr unsigned int MAX_CLUSTER_COUNT = 64;
     /** The number of "top" (from-block) chains of transactions. */
-    static constexpr int NUM_TOP_CHAINS = 1000;
+    static constexpr unsigned int NUM_TOP_CHAINS = 1000;
     /** The number of transactions per top chain. */
-    static constexpr int NUM_TX_PER_TOP_CHAIN = MAX_CLUSTER_COUNT;
+    static constexpr unsigned int NUM_TX_PER_TOP_CHAIN = MAX_CLUSTER_COUNT;
     /** The (maximum) number of dependencies per bottom transaction. */
-    static constexpr int NUM_DEPS_PER_BOTTOM_TX = 100;
+    static constexpr unsigned int NUM_DEPS_PER_BOTTOM_TX = 100;
     /** The number of bottom transactions that are expected to be created. */
-    static constexpr int NUM_BOTTOM_TX = (NUM_TOP_CHAINS - 1 + (NUM_DEPS_PER_BOTTOM_TX - 2)) / (NUM_DEPS_PER_BOTTOM_TX - 1);
+    static constexpr unsigned int NUM_BOTTOM_TX = (NUM_TOP_CHAINS - 1 + (NUM_DEPS_PER_BOTTOM_TX - 2)) / (NUM_DEPS_PER_BOTTOM_TX - 1);
     /** The total number of transactions created in this test. */
-    static constexpr int NUM_TOTAL_TX = NUM_TOP_CHAINS * NUM_TX_PER_TOP_CHAIN + NUM_BOTTOM_TX;
+    static constexpr unsigned int NUM_TOTAL_TX = NUM_TOP_CHAINS * NUM_TX_PER_TOP_CHAIN + NUM_BOTTOM_TX;
     /** Set a very large cluster size limit so that only the count limit is triggered. */
     static constexpr int32_t MAX_CLUSTER_SIZE = 100'000 * 100;
 
@@ -200,8 +201,8 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_huge)
     auto graph = MakeTxGraph(MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, HIGH_ACCEPTABLE_COST, PointerComparator);
 
     // Construct the top chains.
-    for (int chain = 0; chain < NUM_TOP_CHAINS; ++chain) {
-        for (int chaintx = 0; chaintx < NUM_TX_PER_TOP_CHAIN; ++chaintx) {
+    for (size_t chain = 0; chain < NUM_TOP_CHAINS; ++chain) {
+        for (size_t chaintx = 0; chaintx < NUM_TX_PER_TOP_CHAIN; ++chaintx) {
             // Use random fees, size 1.
             int64_t fee = rng.randbits<27>() + 100;
             FeePerWeight feerate{fee, 1};
@@ -259,7 +260,7 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_huge)
     graph->SanityCheck();
 
     // At least 99% of chains must survive.
-    BOOST_CHECK(graph->GetTransactionCount(TxGraph::Level::TOP) >= (NUM_TOP_CHAINS * NUM_TX_PER_TOP_CHAIN * 99) / 100);
+    BOOST_CHECK(graph->GetTransactionCount(TxGraph::Level::TOP) >= (NUM_TOP_CHAINS * NUM_TX_PER_TOP_CHAIN * 99U) / 100);
 }
 
 BOOST_AUTO_TEST_CASE(txgraph_trim_big_singletons)
@@ -267,7 +268,7 @@ BOOST_AUTO_TEST_CASE(txgraph_trim_big_singletons)
     // Mempool consists of 100 singleton clusters; there are no dependencies. Some are oversized. Trim() should remove all of the oversized ones.
     static constexpr int MAX_CLUSTER_COUNT = 64;
     static constexpr int32_t MAX_CLUSTER_SIZE = 100'000;
-    static constexpr int NUM_TOTAL_TX = 100;
+    static constexpr uint32_t NUM_TOTAL_TX = 100;
 
     // Create a new graph for the test.
     auto graph = MakeTxGraph(MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, HIGH_ACCEPTABLE_COST, PointerComparator);
@@ -345,24 +346,24 @@ BOOST_AUTO_TEST_CASE(txgraph_chunk_chain)
     // everytime adding a transaction, test the chunk status
     // [A]
     graph->AddTransaction(refs.emplace_back(), feerateA);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1U);
     block_builder_checker({{&refs[0]}});
     // [A, B]
     graph->AddTransaction(refs.emplace_back(), feerateB);
     graph->AddDependency(/*parent=*/refs[0], /*child=*/refs[1]);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 2);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 2U);
     block_builder_checker({{&refs[0]}, {&refs[1]}});
 
     // [A, BC]
     graph->AddTransaction(refs.emplace_back(), feerateC);
     graph->AddDependency(/*parent=*/refs[1], /*child=*/refs[2]);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 3);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 3U);
     block_builder_checker({{&refs[0]}, {&refs[1], &refs[2]}});
 
     // [ABCD]
     graph->AddTransaction(refs.emplace_back(), feerateD);
     graph->AddDependency(/*parent=*/refs[2], /*child=*/refs[3]);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 4);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 4U);
     block_builder_checker({{&refs[0], &refs[1], &refs[2], &refs[3]}});
 
     graph->SanityCheck();
@@ -370,11 +371,11 @@ BOOST_AUTO_TEST_CASE(txgraph_chunk_chain)
     // D->C->A
     graph->RemoveTransaction(refs[1]);
     // txgraph is not responsible for removing the descendants or ancestors
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 3);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 3U);
     // only A remains there
     graph->RemoveTransaction(refs[2]);
     graph->RemoveTransaction(refs[3]);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1U);
     block_builder_checker({{&refs[0]}});
 }
 
@@ -395,38 +396,38 @@ BOOST_AUTO_TEST_CASE(txgraph_staging)
     // [A]
     graph->AddTransaction(refs.emplace_back(), feerateA);
     BOOST_CHECK_EQUAL(graph->HaveStaging(), false);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1U);
 
     graph->StartStaging();
     BOOST_CHECK_EQUAL(graph->HaveStaging(), true);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1U);
 
     // [A, B]
     graph->AddTransaction(refs.emplace_back(), feerateB);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 1);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 2);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 1U);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 2U);
     BOOST_CHECK_EQUAL(graph->Exists(refs[0], TxGraph::Level::TOP), true);
     BOOST_CHECK_EQUAL(graph->Exists(refs[1], TxGraph::Level::TOP), true);
 
     graph->AddDependency(/*parent=*/refs[0], /*child=*/refs[1]);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 1);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 2);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 1U);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 2U);
 
     graph->CommitStaging();
     BOOST_CHECK_EQUAL(graph->HaveStaging(), false);
 
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 2);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 2U);
 
     graph->StartStaging();
 
     // [A]
     graph->RemoveTransaction(refs[1]);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 2);
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 2U);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::TOP), 1U);
 
     graph->CommitStaging();
 
-    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 1);
+    BOOST_CHECK_EQUAL(graph->GetTransactionCount(TxGraph::Level::MAIN), 1U);
 
     graph->SanityCheck();
 }

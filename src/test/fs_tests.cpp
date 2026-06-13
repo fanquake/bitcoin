@@ -32,7 +32,7 @@ BOOST_AUTO_TEST_CASE(fsbridge_pathtostring)
     // and these functions do encoding and decoding, so the behavior of this
     // test would be undefined.
     std::string invalid_u8_str = "\xf0";
-    BOOST_CHECK_EQUAL(invalid_u8_str.size(), 1);
+    BOOST_CHECK_EQUAL(invalid_u8_str.size(), 1U);
     BOOST_CHECK_EQUAL(fs::PathToString(fs::PathFromString(invalid_u8_str)), invalid_u8_str);
 #endif
 }

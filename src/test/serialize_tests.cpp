@@ -223,7 +223,7 @@ BOOST_AUTO_TEST_CASE(noncanonical)
     // 0xfd encoded with three bytes is OK:
     ss << std::span{"\xfd\xfd\x00"}.first(3);
     n = ReadCompactSize(ss);
-    BOOST_CHECK(n == 0xfd);
+    BOOST_CHECK(n == 0xfdU);
 
     // zero encoded with five bytes:
     ss << std::span{"\xfe\x00\x00\x00\x00"}.first(5);

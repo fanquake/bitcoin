@@ -166,7 +166,7 @@ BOOST_AUTO_TEST_CASE(randbits_test)
                 }
                 BOOST_CHECK_EQUAL(gen, gen2);
                 // Make sure the result is in range.
-                if (bits < 64) BOOST_CHECK_EQUAL(gen >> bits, 0);
+                if (bits < 64) BOOST_CHECK_EQUAL(gen >> bits, 0U);
                 // Mark all the seen bits in the output.
                 for (int bit = 0; bit < bits; ++bit) {
                     int idx = bit + (bits * (bits - 1)) / 2 + 2080 * ctx_test_bitsleft;
@@ -226,11 +226,11 @@ BOOST_AUTO_TEST_CASE(shuffle_stat_test)
         int i1 = i % 5, i2 = (i / 5) % 5, i3 = (i / 25) % 5, i4 = (i / 125) % 5, i5 = i / 625;
         uint32_t count = counts[i];
         if (i1 == i2 || i1 == i3 || i1 == i4 || i1 == i5 || i2 == i3 || i2 == i4 || i2 == i5 || i3 == i4 || i3 == i5 || i4 == i5) {
-            BOOST_CHECK(count == 0);
+            BOOST_CHECK(count == 0U);
         } else {
             chi_score += ((count - 100.0) * (count - 100.0)) / 100.0;
-            BOOST_CHECK(count > 50);
-            BOOST_CHECK(count < 150);
+            BOOST_CHECK(count > 50U);
+            BOOST_CHECK(count < 150U);
             sum += count;
         }
     }
@@ -243,15 +243,15 @@ BOOST_AUTO_TEST_CASE(xoroshiro128plusplus_reference_values)
 {
     // numbers generated from reference implementation
     InsecureRandomContext rng(0);
-    BOOST_TEST(0x6f68e1e7e2646ee1 == rng());
+    BOOST_TEST(0x6f68e1e7e2646ee1UL == rng());
     BOOST_TEST(0xbf971b7f454094ad == rng());
-    BOOST_TEST(0x48f2de556f30de38 == rng());
-    BOOST_TEST(0x6ea7c59f89bbfc75 == rng());
+    BOOST_TEST(0x48f2de556f30de38UL == rng());
+    BOOST_TEST(0x6ea7c59f89bbfc75UL == rng());
 
     // seed with a random number
     rng.Reseed(0x1a26f3fa8546b47a);
     BOOST_TEST(0xc8dc5e08d844ac7d == rng());
-    BOOST_TEST(0x5b5f1f6d499dad1b == rng());
+    BOOST_TEST(0x5b5f1f6d499dad1bUL == rng());
     BOOST_TEST(0xbeb0031f93313d6f == rng());
     BOOST_TEST(0xbfbcf4f43a264497 == rng());
 }

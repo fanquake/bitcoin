@@ -84,7 +84,7 @@ BOOST_AUTO_TEST_CASE(addrman_simple)
 
     CService addr2 = ResolveService("250.1.1.2", 8333);
     BOOST_CHECK(addrman->Add({CAddress(addr2, NODE_NONE)}, source));
-    BOOST_CHECK(addrman->Size() >= 1);
+    BOOST_CHECK(addrman->Size() >= 1U);
 
     // Test: reset addrman and test AddrMan::Add multiple addresses works as expected
     addrman = std::make_unique<AddrMan>(EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node));
@@ -92,7 +92,7 @@ BOOST_AUTO_TEST_CASE(addrman_simple)
     vAddr.emplace_back(ResolveService("250.1.1.3", 8333), NODE_NONE);
     vAddr.emplace_back(ResolveService("250.1.1.4", 8333), NODE_NONE);
     BOOST_CHECK(addrman->Add(vAddr, source));
-    BOOST_CHECK(addrman->Size() >= 1);
+    BOOST_CHECK(addrman->Size() >= 1U);
 }
 
 
@@ -390,7 +390,7 @@ BOOST_AUTO_TEST_CASE(addrman_new_multiplicity)
         addrman->Add({addr}, source);
     }
     AddressPosition addr_pos = addrman->FindAddressEntry(addr).value();
-    BOOST_CHECK_EQUAL(addr_pos.multiplicity, 1U);
+    BOOST_CHECK_EQUAL(addr_pos.multiplicity, 1);
     BOOST_CHECK_EQUAL(addrman->Size(), 1U);
 
     // if nTime increases, an addr can occur in up to 8 buckets
@@ -403,7 +403,7 @@ BOOST_AUTO_TEST_CASE(addrman_new_multiplicity)
         addrman->Add({addr}, source);
     }
     AddressPosition addr_pos_multi = addrman->FindAddressEntry(addr).value();
-    BOOST_CHECK_EQUAL(addr_pos_multi.multiplicity, 8U);
+    BOOST_CHECK_EQUAL(addr_pos_multi.multiplicity, 8);
     // multiplicity doesn't affect size
     BOOST_CHECK_EQUAL(addrman->Size(), 1U);
 }
@@ -633,7 +633,7 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket_legacy)
     }
     // Test: IP addresses in the same source groups should map to NO MORE
     //  than 64 buckets.
-    BOOST_CHECK(buckets.size() <= 64);
+    BOOST_CHECK(buckets.size() <= 64U);
 
     buckets.clear();
     for (int p = 0; p < 255; p++) {
@@ -645,7 +645,7 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket_legacy)
     }
     // Test: IP addresses in the different source groups should map to MORE
     //  than 64 buckets.
-    BOOST_CHECK(buckets.size() > 64);
+    BOOST_CHECK(buckets.size() > 64U);
 }
 
 // The following three test cases use asmap.raw
@@ -697,7 +697,7 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_tried_bucket)
     }
     // Test: IP addresses in the different /16 prefix MAY map to more than
     // 8 buckets.
-    BOOST_CHECK(buckets.size() > 8);
+    BOOST_CHECK(buckets.size() > 8U);
 
     buckets.clear();
     for (int j = 0; j < 255; j++) {
@@ -709,7 +709,7 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_tried_bucket)
     }
     // Test: IP addresses in the different /16 prefix MAY NOT map to more than
     // 8 buckets.
-    BOOST_CHECK(buckets.size() == 8);
+    BOOST_CHECK(buckets.size() == 8U);
 }
 
 BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket)
@@ -762,7 +762,7 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket)
     }
     // Test: IP addresses in the same source /16 prefix should not map to more
     // than 64 buckets.
-    BOOST_CHECK(buckets.size() <= 64);
+    BOOST_CHECK(buckets.size() <= 64U);
 
     buckets.clear();
     for (int p = 0; p < 255; p++) {
@@ -774,7 +774,7 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket)
     }
     // Test: IP addresses in the different source /16 prefixes usually map to MORE
     // than 1 bucket.
-    BOOST_CHECK(buckets.size() > 1);
+    BOOST_CHECK(buckets.size() > 1U);
 
     buckets.clear();
     for (int p = 0; p < 255; p++) {
@@ -786,7 +786,7 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket)
     }
     // Test: IP addresses in the different source /16 prefixes sometimes map to NO MORE
     // than 1 bucket.
-    BOOST_CHECK(buckets.size() == 1);
+    BOOST_CHECK(buckets.size() == 1U);
 }
 
 BOOST_AUTO_TEST_CASE(addrman_serialization)
@@ -868,7 +868,7 @@ BOOST_AUTO_TEST_CASE(remove_invalid)
     addrman->Add({new1, tried1, new2, tried2}, CNetAddr{});
     addrman->Good(tried1);
     addrman->Good(tried2);
-    BOOST_REQUIRE_EQUAL(addrman->Size(), 4);
+    BOOST_REQUIRE_EQUAL(addrman->Size(), 4U);
 
     stream << *addrman;
 
@@ -891,14 +891,14 @@ BOOST_AUTO_TEST_CASE(remove_invalid)
 
     addrman = std::make_unique<AddrMan>(EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node));
     stream >> *addrman;
-    BOOST_CHECK_EQUAL(addrman->Size(), 2);
+    BOOST_CHECK_EQUAL(addrman->Size(), 2U);
 }
 
 BOOST_AUTO_TEST_CASE(addrman_selecttriedcollision)
 {
     auto addrman = std::make_unique<AddrMan>(EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node));
 
-    BOOST_CHECK(addrman->Size() == 0);
+    BOOST_CHECK(addrman->Size() == 0U);
 
     // Empty addrman should return blank addrman info.
     BOOST_CHECK(addrman->SelectTriedCollision().first.ToStringAddrPort() == "[::]:0");
@@ -983,7 +983,7 @@ BOOST_AUTO_TEST_CASE(addrman_evictionworks)
 {
     auto addrman = std::make_unique<AddrMan>(EMPTY_NETGROUPMAN, DETERMINISTIC, GetCheckRatio(m_node));
 
-    BOOST_CHECK(addrman->Size() == 0);
+    BOOST_CHECK(addrman->Size() == 0U);
 
     // Empty addrman should return blank addrman info.
     BOOST_CHECK(addrman->SelectTriedCollision().first.ToStringAddrPort() == "[::]:0");
@@ -1071,14 +1071,14 @@ BOOST_AUTO_TEST_CASE(load_addrman)
     BOOST_CHECK(source.has_value());
     std::vector<CAddress> addresses{CAddress(addr1.value(), NODE_NONE), CAddress(addr2.value(), NODE_NONE), CAddress(addr3.value(), NODE_NONE)};
     BOOST_CHECK(addrman.Add(addresses, source.value()));
-    BOOST_CHECK(addrman.Size() == 3);
+    BOOST_CHECK(addrman.Size() == 3U);
 
     // Test that the de-serialization does not throw an exception.
     auto ssPeers1{AddrmanToStream(addrman)};
     bool exceptionThrown = false;
     AddrMan addrman1{EMPTY_NETGROUPMAN, !DETERMINISTIC, GetCheckRatio(m_node)};
 
-    BOOST_CHECK(addrman1.Size() == 0);
+    BOOST_CHECK(addrman1.Size() == 0U);
     try {
         unsigned char pchMsgTmp[4];
         ssPeers1 >> pchMsgTmp;
@@ -1087,16 +1087,16 @@ BOOST_AUTO_TEST_CASE(load_addrman)
         exceptionThrown = true;
     }
 
-    BOOST_CHECK(addrman1.Size() == 3);
+    BOOST_CHECK(addrman1.Size() == 3U);
     BOOST_CHECK(exceptionThrown == false);
 
     // Test that ReadFromStream creates an addrman with the correct number of addrs.
     DataStream ssPeers2 = AddrmanToStream(addrman);
 
     AddrMan addrman2{EMPTY_NETGROUPMAN, !DETERMINISTIC, GetCheckRatio(m_node)};
-    BOOST_CHECK(addrman2.Size() == 0);
+    BOOST_CHECK(addrman2.Size() == 0U);
     ReadFromStream(addrman2, ssPeers2);
-    BOOST_CHECK(addrman2.Size() == 3);
+    BOOST_CHECK(addrman2.Size() == 3U);
 }
 
 // Produce a corrupt peers.dat that claims 20 addrs when it only has one addr.
@@ -1132,7 +1132,7 @@ BOOST_AUTO_TEST_CASE(load_addrman_corrupted)
     auto ssPeers1{MakeCorruptPeersDat()};
     bool exceptionThrown = false;
     AddrMan addrman1{EMPTY_NETGROUPMAN, !DETERMINISTIC, GetCheckRatio(m_node)};
-    BOOST_CHECK(addrman1.Size() == 0);
+    BOOST_CHECK(addrman1.Size() == 0U);
     try {
         unsigned char pchMsgTmp[4];
         ssPeers1 >> pchMsgTmp;
@@ -1146,7 +1146,7 @@ BOOST_AUTO_TEST_CASE(load_addrman_corrupted)
     auto ssPeers2{MakeCorruptPeersDat()};
 
     AddrMan addrman2{EMPTY_NETGROUPMAN, !DETERMINISTIC, GetCheckRatio(m_node)};
-    BOOST_CHECK(addrman2.Size() == 0);
+    BOOST_CHECK(addrman2.Size() == 0U);
     BOOST_CHECK_THROW(ReadFromStream(addrman2, ssPeers2), std::ios_base::failure);
 }
 

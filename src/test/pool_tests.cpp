@@ -31,20 +31,20 @@ BOOST_AUTO_TEST_CASE(basic_allocating)
     expected_bytes_available -= 8;
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
-    BOOST_TEST(0 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(0U == PoolResourceTester::FreeListSizes(resource)[1]);
     resource.Deallocate(block, 8, 8);
     PoolResourceTester::CheckAllDataAccountedFor(resource);
-    BOOST_TEST(1 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(1U == PoolResourceTester::FreeListSizes(resource)[1]);
 
     // alignment is too small, but the best fitting freelist is used. Nothing is allocated.
     void* b = resource.Allocate(8, 1);
     BOOST_TEST(b == block); // we got the same block of memory as before
-    BOOST_TEST(0 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(0U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
     resource.Deallocate(block, 8, 1);
     PoolResourceTester::CheckAllDataAccountedFor(resource);
-    BOOST_TEST(1 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(1U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
     // can't use resource because alignment is too big, allocate system memory
@@ -52,34 +52,34 @@ BOOST_AUTO_TEST_CASE(basic_allocating)
     BOOST_TEST(b != block);
     block = b;
     PoolResourceTester::CheckAllDataAccountedFor(resource);
-    BOOST_TEST(1 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(1U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
     resource.Deallocate(block, 8, 16);
     PoolResourceTester::CheckAllDataAccountedFor(resource);
-    BOOST_TEST(1 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(1U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
     // can't use chunk because size is too big
     block = resource.Allocate(16, 8);
     PoolResourceTester::CheckAllDataAccountedFor(resource);
-    BOOST_TEST(1 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(1U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
     resource.Deallocate(block, 16, 8);
     PoolResourceTester::CheckAllDataAccountedFor(resource);
-    BOOST_TEST(1 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(1U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
     // it's possible that 0 bytes are allocated, make sure this works. In that case the call is forwarded to operator new
     // 0 bytes takes one entry from the first freelist
     void* p = resource.Allocate(0, 1);
-    BOOST_TEST(0 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(0U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 
     resource.Deallocate(p, 0, 1);
     PoolResourceTester::CheckAllDataAccountedFor(resource);
-    BOOST_TEST(1 == PoolResourceTester::FreeListSizes(resource)[1]);
+    BOOST_TEST(1U == PoolResourceTester::FreeListSizes(resource)[1]);
     BOOST_TEST(expected_bytes_available == PoolResourceTester::AvailableMemoryFromChunk(resource));
 }
 
@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(random_allocations)
             std::size_t size = (m_rng.randrange(200) / alignment + 1) * alignment; // multiple of alignment
             void* ptr = resource.Allocate(size, alignment);
             BOOST_TEST(ptr != nullptr);
-            BOOST_TEST((reinterpret_cast<uintptr_t>(ptr) & (alignment - 1)) == 0);
+            BOOST_TEST((reinterpret_cast<uintptr_t>(ptr) & (alignment - 1)) == 0U);
             ptr_size_alignment.push_back({ptr, size, alignment});
         } else {
             // deallocate a random item

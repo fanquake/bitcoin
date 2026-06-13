@@ -1403,7 +1403,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendMessage("tx", msg_data_2); // 12-character encoded message type
         ret = tester.Interact();
         BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 3);
+        BOOST_REQUIRE(ret->size() == 3U);
         BOOST_CHECK((*ret)[0]);
         BOOST_CHECK((*ret)[0]->m_type == "cmpctblock");
         BOOST_CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
@@ -1420,7 +1420,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         while (true) {
             ret = tester.Interact();
             if (!ret) break; // failure
-            BOOST_CHECK(ret->size() == 0); // no message can be delivered
+            BOOST_CHECK(ret->size() == 0U); // no message can be delivered
             // Send another message.
             auto msg_data_3 = m_rng.randbytes<uint8_t>(m_rng.randrange(10000));
             tester.SendMessage(uint8_t(12), msg_data_3); // getheaders short id
@@ -1450,7 +1450,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendMessage(uint8_t(19), msg_data_2); // pong short id
         ret = tester.Interact();
         BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 2);
+        BOOST_REQUIRE(ret->size() == 2U);
         BOOST_CHECK((*ret)[0]);
         BOOST_CHECK((*ret)[0]->m_type == "inv");
         BOOST_CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
@@ -1523,7 +1523,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.AddMessage("barfoo", {}); // test sending unknown message type
         ret = tester.Interact();
         BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 4);
+        BOOST_REQUIRE(ret->size() == 4U);
         BOOST_CHECK((*ret)[0]);
         BOOST_CHECK((*ret)[0]->m_type == "addrv2");
         BOOST_CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
@@ -1601,7 +1601,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.AddMessage("blocktxn", msg_data_2); // schedule blocktxn to be sent to us
         ret = tester.Interact();
         BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 2);
+        BOOST_REQUIRE(ret->size() == 2U);
         BOOST_CHECK(!(*ret)[0]);
         BOOST_CHECK((*ret)[1]);
         BOOST_CHECK((*ret)[1]->m_type == "block");

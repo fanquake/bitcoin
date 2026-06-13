@@ -156,14 +156,14 @@ BOOST_AUTO_TEST_CASE(thread_safety)
 
     // sig0 will have been called 2000 times, and only the first connection did
     // increment val_det, so it must be 2000.
-    BOOST_CHECK_EQUAL(val_det.load(), 2000);
+    BOOST_CHECK_EQUAL(val_det.load(), 2000U);
     // The number of connections that increment val_non_det is growing from 1
     // to 500, where 500 are disconnected immediately again after the step.
     // Before the end of each step the connections are called at least once.
     // However, it is unknown how often the connections have been called
     // exactly. The 500th Triangular Number gives a lower estimate.
     // T_n=n(n+1)/2
-    BOOST_CHECK_GE(val_non_det.load(), 500 * 501 / 2);
+    BOOST_CHECK_GE(val_non_det.load(), 500U * 501 / 2);
 }
 
 /* Test that connection and disconnection works from within signal

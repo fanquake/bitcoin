@@ -459,8 +459,8 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
         changeset->StageAddition(replacement_tx, high_fee, 0, 1, 0, false, 4, LockPoints());
         const auto replace_multiple_clusters{changeset->CalculateChunksForRBF()};
         BOOST_CHECK(replace_multiple_clusters.has_value());
-        BOOST_CHECK(replace_multiple_clusters->first.size() == 3);
-        BOOST_CHECK(replace_multiple_clusters->second.size() == 1);
+        BOOST_CHECK(replace_multiple_clusters->first.size() == 3U);
+        BOOST_CHECK(replace_multiple_clusters->second.size() == 1U);
     }
 
     // Add a child transaction to conflict_1 and make it cluster size 2, two chunks due to same feerate
@@ -478,8 +478,8 @@ BOOST_FIXTURE_TEST_CASE(calc_feerate_diagram_rbf, TestChain100Setup)
         const auto replace_multiple_clusters_2{changeset->CalculateChunksForRBF()};
 
         BOOST_CHECK(replace_multiple_clusters_2.has_value());
-        BOOST_CHECK(replace_multiple_clusters_2->first.size() == 4);
-        BOOST_CHECK(replace_multiple_clusters_2->second.size() == 1);
+        BOOST_CHECK(replace_multiple_clusters_2->first.size() == 4U);
+        BOOST_CHECK(replace_multiple_clusters_2->second.size() == 1U);
     }
 }
 

@@ -54,7 +54,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
     BOOST_CHECK(WITH_LOCK(::cs_main, return !manager.CurrentChainstate().m_from_snapshot_blockhash));
     {
         LOCK(manager.GetMutex());
-        BOOST_CHECK_EQUAL(manager.m_chainstates.size(), 1);
+        BOOST_CHECK_EQUAL(manager.m_chainstates.size(), 1U);
         BOOST_CHECK_EQUAL(manager.m_chainstates[0].get(), &c1);
     }
 
@@ -97,7 +97,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
     BOOST_CHECK(&c1 != &manager.ActiveChainstate());
     {
         LOCK(manager.GetMutex());
-        BOOST_CHECK_EQUAL(manager.m_chainstates.size(), 2);
+        BOOST_CHECK_EQUAL(manager.m_chainstates.size(), 2U);
         BOOST_CHECK_EQUAL(manager.m_chainstates[0].get(), &c1);
         BOOST_CHECK_EQUAL(manager.m_chainstates[1].get(), &c2);
     }
@@ -429,7 +429,7 @@ struct SnapshotTestSetup : TestChain100Setup {
             m_node.validation_signals->SyncWithValidationInterfaceQueue();
             LOCK(::cs_main);
             chainman.ResetChainstates();
-            BOOST_CHECK_EQUAL(chainman.m_chainstates.size(), 0);
+            BOOST_CHECK_EQUAL(chainman.m_chainstates.size(), 0U);
             m_node.notifications = std::make_unique<KernelNotifications>(Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings));
             const ChainstateManager::Options chainman_opts{
                 .chainparams = ::Params(),
@@ -512,7 +512,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     // Ensure that without any assumed-valid BlockIndex entries, only the current tip is
     // considered as a candidate.
     reload_all_block_indexes();
-    BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.size(), 1);
+    BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.size(), 1U);
 
     // Reset some region of the chain's nStatus, removing the HAVE_DATA flag.
     for (int i = 0; i <= cs1.m_chain.Height(); ++i) {
@@ -571,8 +571,8 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     // - It does not have any blocks after height 110 because cs1 is a background
     //   chainstate, and only blocks that are ancestors of the snapshot block
     //   are added as candidates for the background chainstate.
-    BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.size(), 1);
-    BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.count(validated_tip), 1);
+    BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.size(), 1U);
+    BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.count(validated_tip), 1U);
 
     // The assumed-valid tolerant chain has the assumed valid base as a
     // candidate, but otherwise has none of the assumed-valid (which do not
@@ -588,15 +588,15 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     // - Blocks 111-120 are added because they have data.
 
     // Check that block 90 is absent
-    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(validated_tip), 0);
+    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(validated_tip), 0U);
     // Check that block 109 is absent
-    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_base->pprev), 0);
+    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_base->pprev), 0U);
     // Check that block 110 is present
-    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_base), 1);
+    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_base), 1U);
     // Check that block 120 is present
-    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_tip), 1);
+    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.count(assumed_tip), 1U);
     // Check that 11 blocks total are present.
-    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.size(), num_indexes - last_assumed_valid_idx + 1);
+    BOOST_CHECK_EQUAL(cs2.setBlockIndexCandidates.size(), num_indexes - last_assumed_valid_idx + 1U);
 }
 
 BOOST_FIXTURE_TEST_CASE(loadblockindex_invalid_descendants, TestChain100Setup)
@@ -729,7 +729,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
     const uint256 snapshot_tip_hash = WITH_LOCK(chainman.GetMutex(),
         return chainman.ActiveTip()->GetBlockHash());
 
-    BOOST_CHECK_EQUAL(WITH_LOCK(chainman.GetMutex(), return chainman.m_chainstates.size()), 2);
+    BOOST_CHECK_EQUAL(WITH_LOCK(chainman.GetMutex(), return chainman.m_chainstates.size()), 2U);
 
     // "Rewind" the background chainstate so that its tip is not at the
     // base block of the snapshot - this is so after simulating a node restart,
@@ -756,7 +756,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
 
     {
         LOCK(chainman_restarted.GetMutex());
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 2);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 2U);
         // Background chainstate has height of 109 not 110 here due to a quirk
         // of the LoadVerifyActivate only calling ActivateBestChain on one
         // chainstate. The height would be 110 after a real restart, but it's
@@ -781,7 +781,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
 
         // Background chainstate should be unaware of new blocks on the snapshot
         // chainstate, but the block disconnected above is now reattached.
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 2);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 2U);
         BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[0]->m_chain.Height(), 110);
         BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[1]->m_chain.Height(), 220);
         BOOST_CHECK_EQUAL(chainman_restarted.HistoricalChainstate(), nullptr);
@@ -850,7 +850,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion, SnapshotTestSetup
 
     {
         LOCK(chainman_restarted.GetMutex());
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 1);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 1U);
         BOOST_CHECK(!chainman_restarted.CurrentChainstate().m_from_snapshot_blockhash);
         BOOST_CHECK(active_cs2.m_coinstip_cache_size_bytes > tip_cache_before_complete);
         BOOST_CHECK(active_cs2.m_coinsdb_cache_size_bytes > db_cache_before_complete);
@@ -899,7 +899,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
 
     {
         LOCK(chainman.GetMutex());
-        BOOST_CHECK_EQUAL(chainman.m_chainstates.size(), 2);
+        BOOST_CHECK_EQUAL(chainman.m_chainstates.size(), 2U);
         BOOST_CHECK(chainman.m_chainstates[0]->m_assumeutxo == Assumeutxo::VALIDATED);
         BOOST_CHECK(!chainman.m_chainstates[0]->SnapshotBase());
         BOOST_CHECK(chainman.m_chainstates[1]->m_assumeutxo == Assumeutxo::INVALID);
@@ -925,7 +925,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
 
     {
         LOCK(::cs_main);
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 1);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 1U);
         BOOST_CHECK(!chainman_restarted.CurrentChainstate().m_from_snapshot_blockhash);
         BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 210);
     }

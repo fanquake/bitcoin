@@ -102,7 +102,7 @@ BOOST_FIXTURE_TEST_CASE(miniminer_negative, TestChain100Setup)
     BOOST_CHECK(mini_miner_no_target.IsReadyToCalculate());
     mini_miner_no_target.BuildMockTemplate(std::nullopt);
     const auto template_txids{mini_miner_no_target.GetMockTemplateTxids()};
-    BOOST_CHECK_EQUAL(template_txids.size(), 1);
+    BOOST_CHECK_EQUAL(template_txids.size(), 1U);
     BOOST_CHECK(template_txids.contains(tx_mod_negative->GetHash()));
 }
 
@@ -351,22 +351,22 @@ BOOST_FIXTURE_TEST_CASE(miniminer_1p1c, TestChain100Setup)
     BOOST_CHECK(miniminer_pool.IsReadyToCalculate());
     for (const auto& sequences : {miniminer_manual.Linearize(), miniminer_pool.Linearize()}) {
         // tx6 is selected first: high feerate with no parents to bump
-        BOOST_CHECK_EQUAL(Find(sequences, tx6->GetHash()), 0);
+        BOOST_CHECK_EQUAL(Find(sequences, tx6->GetHash()), 0U);
 
         // tx2 + tx3 CPFP are selected next
-        BOOST_CHECK_EQUAL(Find(sequences, tx2->GetHash()), 1);
-        BOOST_CHECK_EQUAL(Find(sequences, tx3->GetHash()), 1);
+        BOOST_CHECK_EQUAL(Find(sequences, tx2->GetHash()), 1U);
+        BOOST_CHECK_EQUAL(Find(sequences, tx3->GetHash()), 1U);
 
         // tx4 + prioritised tx5 CPFP
-        BOOST_CHECK_EQUAL(Find(sequences, tx4->GetHash()), 2);
-        BOOST_CHECK_EQUAL(Find(sequences, tx5->GetHash()), 2);
+        BOOST_CHECK_EQUAL(Find(sequences, tx4->GetHash()), 2U);
+        BOOST_CHECK_EQUAL(Find(sequences, tx5->GetHash()), 2U);
 
-        BOOST_CHECK_EQUAL(Find(sequences, tx0->GetHash()), 3);
-        BOOST_CHECK_EQUAL(Find(sequences, tx1->GetHash()), 3);
+        BOOST_CHECK_EQUAL(Find(sequences, tx0->GetHash()), 3U);
+        BOOST_CHECK_EQUAL(Find(sequences, tx1->GetHash()), 3U);
 
 
         // tx7 is selected last: low feerate with no children
-        BOOST_CHECK_EQUAL(Find(sequences, tx7->GetHash()), 4);
+        BOOST_CHECK_EQUAL(Find(sequences, tx7->GetHash()), 4U);
     }
 }
 
@@ -577,20 +577,20 @@ BOOST_FIXTURE_TEST_CASE(miniminer_overlap, TestChain100Setup)
     BOOST_CHECK(miniminer_pool.IsReadyToCalculate());
     for (const auto& sequences : {miniminer_manual.Linearize(), miniminer_pool.Linearize()}) {
         // tx2 and tx4 selected first: high feerate with nothing to bump
-        BOOST_CHECK_EQUAL(Find(sequences, tx4->GetHash()), 0);
-        BOOST_CHECK_EQUAL(Find(sequences, tx2->GetHash()), 1);
+        BOOST_CHECK_EQUAL(Find(sequences, tx4->GetHash()), 0U);
+        BOOST_CHECK_EQUAL(Find(sequences, tx2->GetHash()), 1U);
 
         // tx5 + tx7 CPFP
-        BOOST_CHECK_EQUAL(Find(sequences, tx5->GetHash()), 2);
-        BOOST_CHECK_EQUAL(Find(sequences, tx7->GetHash()), 2);
+        BOOST_CHECK_EQUAL(Find(sequences, tx5->GetHash()), 2U);
+        BOOST_CHECK_EQUAL(Find(sequences, tx7->GetHash()), 2U);
 
         // tx0 and tx1 CPFP'd by tx3
-        BOOST_CHECK_EQUAL(Find(sequences, tx0->GetHash()), 3);
-        BOOST_CHECK_EQUAL(Find(sequences, tx1->GetHash()), 3);
-        BOOST_CHECK_EQUAL(Find(sequences, tx3->GetHash()), 3);
+        BOOST_CHECK_EQUAL(Find(sequences, tx0->GetHash()), 3U);
+        BOOST_CHECK_EQUAL(Find(sequences, tx1->GetHash()), 3U);
+        BOOST_CHECK_EQUAL(Find(sequences, tx3->GetHash()), 3U);
 
         // tx6 at medium feerate
-        BOOST_CHECK_EQUAL(Find(sequences, tx6->GetHash()), 4);
+        BOOST_CHECK_EQUAL(Find(sequences, tx6->GetHash()), 4U);
     }
 }
 BOOST_FIXTURE_TEST_CASE(calculate_cluster, TestChain100Setup)
@@ -624,7 +624,7 @@ BOOST_FIXTURE_TEST_CASE(calculate_cluster, TestChain100Setup)
     const auto tx_501 = make_tx({COutPoint{lasttx->GetHash(), 0}}, /*num_outputs=*/1);
     TryAddToMempool(pool, entry.Fee(CENT).FromTx(tx_501));
     const auto cluster_501 = pool.GatherClusters(last_txs);
-    BOOST_CHECK_EQUAL(cluster_501.size(), 0);
+    BOOST_CHECK_EQUAL(cluster_501.size(), 0U);
 
     /* Zig Zag cluster:
      * txp0     txp1     txp2    ...  txp30  txp31
@@ -699,19 +699,19 @@ BOOST_FIXTURE_TEST_CASE(manual_ctor, TestChain100Setup)
         const auto sequences{miniminer_manual.Linearize()};
 
         // CPFP zero + high
-        BOOST_CHECK_EQUAL(sequences.at(grandparent_zero_fee->GetHash()), 0);
-        BOOST_CHECK_EQUAL(sequences.at(parent_high_feerate->GetHash()), 0);
+        BOOST_CHECK_EQUAL(sequences.at(grandparent_zero_fee->GetHash()), 0U);
+        BOOST_CHECK_EQUAL(sequences.at(parent_high_feerate->GetHash()), 0U);
 
         // CPFP double low + med
-        BOOST_CHECK_EQUAL(sequences.at(grandparent_double_low_feerate->GetHash()), 1);
-        BOOST_CHECK_EQUAL(sequences.at(parent_med_feerate->GetHash()), 1);
+        BOOST_CHECK_EQUAL(sequences.at(grandparent_double_low_feerate->GetHash()), 1U);
+        BOOST_CHECK_EQUAL(sequences.at(parent_med_feerate->GetHash()), 1U);
 
         // CPFP low + double low
-        BOOST_CHECK_EQUAL(sequences.at(grandparent_low_feerate->GetHash()), 2);
-        BOOST_CHECK_EQUAL(sequences.at(parent_double_low_feerate->GetHash()), 2);
+        BOOST_CHECK_EQUAL(sequences.at(grandparent_low_feerate->GetHash()), 2U);
+        BOOST_CHECK_EQUAL(sequences.at(parent_double_low_feerate->GetHash()), 2U);
 
         // Child at the end
-        BOOST_CHECK_EQUAL(sequences.at(child->GetHash()), 3);
+        BOOST_CHECK_EQUAL(sequences.at(child->GetHash()), 3U);
     }
 }
 

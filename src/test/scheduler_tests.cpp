@@ -53,7 +53,7 @@ BOOST_AUTO_TEST_CASE(manythreads)
     auto now = start;
     std::chrono::steady_clock::time_point first, last;
     size_t nTasks = microTasks.getQueueInfo(first, last);
-    BOOST_CHECK(nTasks == 0);
+    BOOST_CHECK(nTasks == 0U);
 
     for (int i = 0; i < 100; ++i) {
         auto t = now + std::chrono::microseconds(randomMsec(rng));
@@ -65,7 +65,7 @@ BOOST_AUTO_TEST_CASE(manythreads)
         microTasks.schedule(f, t);
     }
     nTasks = microTasks.getQueueInfo(first, last);
-    BOOST_CHECK(nTasks == 100);
+    BOOST_CHECK(nTasks == 100U);
     BOOST_CHECK(first < last);
     BOOST_CHECK(last > now);
 

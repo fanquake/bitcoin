@@ -583,7 +583,7 @@ BOOST_AUTO_TEST_CASE(streams_buffered_file_rand)
                 bf.SetLimit(currentPos + 1);
                 bf >> a;
                 for (uint8_t i = 0; i < 1; ++i) {
-                    BOOST_CHECK_EQUAL(a[i], currentPos);
+                    BOOST_CHECK_EQUAL(static_cast<size_t>(a[i]), currentPos);
                     currentPos++;
                 }
                 break;
@@ -595,7 +595,7 @@ BOOST_AUTO_TEST_CASE(streams_buffered_file_rand)
                 bf.SetLimit(currentPos + 2);
                 bf >> a;
                 for (uint8_t i = 0; i < 2; ++i) {
-                    BOOST_CHECK_EQUAL(a[i], currentPos);
+                    BOOST_CHECK_EQUAL(static_cast<size_t>(a[i]), currentPos);
                     currentPos++;
                 }
                 break;
@@ -607,7 +607,7 @@ BOOST_AUTO_TEST_CASE(streams_buffered_file_rand)
                 bf.SetLimit(currentPos + 5);
                 bf >> a;
                 for (uint8_t i = 0; i < 5; ++i) {
-                    BOOST_CHECK_EQUAL(a[i], currentPos);
+                    BOOST_CHECK_EQUAL(static_cast<size_t>(a[i]), currentPos);
                     currentPos++;
                 }
                 break;
@@ -635,7 +635,7 @@ BOOST_AUTO_TEST_CASE(streams_buffered_file_rand)
                 bf.SetLimit(currentPos + 1);
                 uint8_t i;
                 bf >> i;
-                BOOST_CHECK_EQUAL(i, currentPos);
+                BOOST_CHECK_EQUAL(static_cast<size_t>(i), currentPos);
                 currentPos++;
                 break;
             }

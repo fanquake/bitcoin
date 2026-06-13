@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(fetch_no_double_spend)
         }
     }
     // Coins are not added to the view, even though they exist unspent in the parent db
-    BOOST_CHECK_EQUAL(view.GetCacheSize(), 0);
+    BOOST_CHECK_EQUAL(view.GetCacheSize(), 0U);
 }
 
 BOOST_AUTO_TEST_CASE(fetch_no_inputs)
@@ -158,7 +158,7 @@ BOOST_AUTO_TEST_CASE(fetch_no_inputs)
             BOOST_CHECK(!view.GetCoin(in.prevout));
         }
     }
-    BOOST_CHECK_EQUAL(view.GetCacheSize(), 0);
+    BOOST_CHECK_EQUAL(view.GetCacheSize(), 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

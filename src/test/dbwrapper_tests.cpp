@@ -363,11 +363,11 @@ BOOST_AUTO_TEST_CASE(iterator_ordering)
                 break;
             BOOST_CHECK(it->GetKey(key));
             if (x & 1) {
-                BOOST_CHECK_EQUAL(key, x + 1);
+                BOOST_CHECK_EQUAL(static_cast<unsigned int>(key), x + 1);
                 continue;
             }
             BOOST_CHECK(it->GetValue(value));
-            BOOST_CHECK_EQUAL(key, x);
+            BOOST_CHECK_EQUAL(static_cast<unsigned int>(key), x);
             BOOST_CHECK_EQUAL(value, x*x);
             it->Next();
         }

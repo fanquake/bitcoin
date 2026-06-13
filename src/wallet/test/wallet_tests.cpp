@@ -255,7 +255,7 @@ BOOST_FIXTURE_TEST_CASE(write_wallet_settings_concurrently, TestingSetup)
     // Since we're counting the number of wallets, ensure we start without any.
     BOOST_REQUIRE(chain->getRwSetting("wallet").isNull());
 
-    const auto& check_concurrent_wallet = [&](const auto& settings_function, int num_expected_wallets) {
+    const auto& check_concurrent_wallet = [&](const auto& settings_function, unsigned int num_expected_wallets) {
         std::vector<std::thread> threads;
         threads.reserve(NUM_WALLETS);
         for (auto i{0}; i < NUM_WALLETS; ++i) threads.emplace_back(settings_function, i);

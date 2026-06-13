@@ -826,7 +826,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     // Custom 83-byte TxoutType::NULL_DATA (standard with max_op_return_relay of 83)
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
-    BOOST_CHECK_EQUAL(83, t.vout[0].scriptPubKey.size());
+    BOOST_CHECK_EQUAL(83U, t.vout[0].scriptPubKey.size());
     CheckIsStandard(t, /*max_op_return_relay=*/83);
 
     // Non-standard if max_op_return_relay datacarrier arg is one less
@@ -1050,7 +1050,7 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     AddCoins(coins, CTransaction(tx_create), 0, false);
 
     // 2490 sigops is below the limit.
-    BOOST_CHECK_EQUAL(GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins), 2490);
+    BOOST_CHECK_EQUAL(GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins), 2490U);
     BOOST_CHECK(::ValidateInputsStandardness(CTransaction(tx_max_sigops), coins).IsValid());
 
     // Adding one more input will bump this to 2505, hitting the limit.
@@ -1063,7 +1063,7 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     AddCoins(coins, CTransaction(tx_create), 0, false);
     BOOST_CHECK_GT((p2sh_inputs_count + 1) * MAX_P2SH_SIGOPS, MAX_TX_LEGACY_SIGOPS);
     auto legacy_sigops_count = GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins);
-    BOOST_CHECK_EQUAL(legacy_sigops_count, 2505);
+    BOOST_CHECK_EQUAL(legacy_sigops_count, 2505U);
     std::string reject_reason("bad-txns-nonstandard-inputs");
     std::string sigop_limit_reject_debug_message("non-witness sigops exceed bip54 limit");
     {

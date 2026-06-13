@@ -334,7 +334,7 @@ void CheckRange(const RangeType& range, size_t expected_size)
     using value_type = std::ranges::range_value_t<RangeType>;
 
     BOOST_CHECK_EQUAL(range.size(), expected_size);
-    BOOST_REQUIRE(range.size() > 0); // Some checks below assume a non-empty range
+    BOOST_REQUIRE(range.size() > 0U); // Some checks below assume a non-empty range
     BOOST_REQUIRE(!range.empty());
 
     BOOST_CHECK(range.begin() != range.end());
@@ -412,9 +412,9 @@ BOOST_AUTO_TEST_CASE(btck_transaction_tests)
     auto empty_data = hex_string_to_byte_vec("");
     BOOST_CHECK_THROW(Transaction{empty_data}, std::runtime_error);
 
-    BOOST_CHECK_EQUAL(tx.CountOutputs(), 2);
-    BOOST_CHECK_EQUAL(tx.CountInputs(), 1);
-    BOOST_CHECK_EQUAL(tx.GetLocktime(), 510826);
+    BOOST_CHECK_EQUAL(tx.CountOutputs(), 2U);
+    BOOST_CHECK_EQUAL(tx.CountInputs(), 1U);
+    BOOST_CHECK_EQUAL(tx.GetLocktime(), 510826U);
     auto broken_tx_data{std::span<std::byte>{tx_data.begin(), tx_data.begin() + 10}};
     BOOST_CHECK_THROW(Transaction{broken_tx_data}, std::runtime_error);
     auto input{tx.GetInput(0)};
@@ -687,9 +687,9 @@ BOOST_AUTO_TEST_CASE(btck_block_header_tests)
     auto mainnet_block_1_header = hex_string_to_byte_vec("010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299");
     BlockHeader header{mainnet_block_1_header};
     BOOST_CHECK_EQUAL(header.Version(), 1);
-    BOOST_CHECK_EQUAL(header.Timestamp(), 1231469665);
-    BOOST_CHECK_EQUAL(header.Bits(), 0x1d00ffff);
-    BOOST_CHECK_EQUAL(header.Nonce(), 2573394689);
+    BOOST_CHECK_EQUAL(header.Timestamp(), 1231469665U);
+    BOOST_CHECK_EQUAL(header.Bits(), 0x1d00ffffU);
+    BOOST_CHECK_EQUAL(header.Nonce(), 2573394689U);
     BOOST_CHECK_EQUAL(byte_span_to_hex_string_reversed(header.Hash().ToBytes()), "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048");
     auto prev_hash = header.PrevHash();
     BOOST_CHECK_EQUAL(byte_span_to_hex_string_reversed(prev_hash.ToBytes()), "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
@@ -702,14 +702,14 @@ BOOST_AUTO_TEST_CASE(btck_block_header_tests)
     Block block{raw_block};
     BlockHeader block_header{block.GetHeader()};
     BOOST_CHECK_EQUAL(block_header.Version(), 1);
-    BOOST_CHECK_EQUAL(block_header.Timestamp(), 1231469665);
-    BOOST_CHECK_EQUAL(block_header.Bits(), 0x1d00ffff);
-    BOOST_CHECK_EQUAL(block_header.Nonce(), 2573394689);
+    BOOST_CHECK_EQUAL(block_header.Timestamp(), 1231469665U);
+    BOOST_CHECK_EQUAL(block_header.Bits(), 0x1d00ffffU);
+    BOOST_CHECK_EQUAL(block_header.Nonce(), 2573394689U);
     BOOST_CHECK_EQUAL(byte_span_to_hex_string_reversed(block_header.Hash().ToBytes()), "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048");
 
     // Verify header from block serializes to first 80 bytes of raw block
     auto block_header_bytes = block_header.ToBytes();
-    BOOST_CHECK_EQUAL(block_header_bytes.size(), 80);
+    BOOST_CHECK_EQUAL(block_header_bytes.size(), 80U);
     check_equal(block_header_bytes, std::span<const std::byte>(raw_block.data(), 80));
 }
 
@@ -883,19 +883,19 @@ void chainman_mainnet_validation_test(TestDirectory& test_directory)
     TransactionView tx{block.GetTransaction(block.CountTransactions() - 1)};
     BOOST_CHECK_EQUAL(byte_span_to_hex_string_reversed(tx.Txid().ToBytes()), "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098");
     BOOST_CHECK_EQUAL(header.Version(), 1);
-    BOOST_CHECK_EQUAL(header.Timestamp(), 1231469665);
-    BOOST_CHECK_EQUAL(header.Bits(), 0x1d00ffff);
-    BOOST_CHECK_EQUAL(header.Nonce(), 2573394689);
-    BOOST_CHECK_EQUAL(tx.CountInputs(), 1);
+    BOOST_CHECK_EQUAL(header.Timestamp(), 1231469665U);
+    BOOST_CHECK_EQUAL(header.Bits(), 0x1d00ffffU);
+    BOOST_CHECK_EQUAL(header.Nonce(), 2573394689U);
+    BOOST_CHECK_EQUAL(tx.CountInputs(), 1U);
     Transaction tx2 = tx;
-    BOOST_CHECK_EQUAL(tx2.CountInputs(), 1);
+    BOOST_CHECK_EQUAL(tx2.CountInputs(), 1U);
     for (auto transaction : block.Transactions()) {
-        BOOST_CHECK_EQUAL(transaction.CountInputs(), 1);
+        BOOST_CHECK_EQUAL(transaction.CountInputs(), 1U);
     }
     auto output_counts = *(block.Transactions() | std::views::transform([](const auto& tx) {
                                return tx.CountOutputs();
                            })).begin();
-    BOOST_CHECK_EQUAL(output_counts, 1);
+    BOOST_CHECK_EQUAL(output_counts, 1U);
 
     validation_interface->m_expected_valid_block.emplace(raw_block);
     auto ser_block{block.ToBytes()};
@@ -920,8 +920,8 @@ void chainman_mainnet_validation_test(TestDirectory& test_directory)
     // Check that we can read the previous block
     BlockTreeEntry tip_2{*tip.GetPrevious()};
     Block read_block_2{*chainman->ReadBlock(tip_2)};
-    BOOST_CHECK_EQUAL(chainman->ReadBlockSpentOutputs(tip_2).Count(), 0);
-    BOOST_CHECK_EQUAL(chainman->ReadBlockSpentOutputs(tip).Count(), 0);
+    BOOST_CHECK_EQUAL(chainman->ReadBlockSpentOutputs(tip_2).Count(), 0U);
+    BOOST_CHECK_EQUAL(chainman->ReadBlockSpentOutputs(tip).Count(), 0U);
 
     // It should be an error if we go another block back, since the genesis has no ancestor
     BOOST_CHECK(!tip_2.GetPrevious());
@@ -1196,7 +1196,7 @@ BOOST_AUTO_TEST_CASE(btck_chainman_regtest_tests)
     BlockSpentOutputs block_spent_outputs_prev{chainman->ReadBlockSpentOutputs(*tip.GetPrevious())};
     CheckHandle(block_spent_outputs, block_spent_outputs_prev);
     CheckRange(block_spent_outputs_prev.TxsSpentOutputs(), block_spent_outputs_prev.Count());
-    BOOST_CHECK_EQUAL(block_spent_outputs.Count(), 1);
+    BOOST_CHECK_EQUAL(block_spent_outputs.Count(), 1U);
 
     // Get transaction spent outputs from the last transaction in the two blocks
     TransactionSpentOutputsView transaction_spent_outputs{block_spent_outputs.GetTxSpentOutputs(block_spent_outputs.Count() - 1)};
@@ -1215,15 +1215,15 @@ BOOST_AUTO_TEST_CASE(btck_chainman_regtest_tests)
     // Validate coin properties
     TransactionOutputView output = coin.GetOutput();
     uint32_t coin_height = coin.GetConfirmationHeight();
-    BOOST_CHECK_EQUAL(coin_height, 143);
+    BOOST_CHECK_EQUAL(coin_height, 143U);
     BOOST_CHECK_EQUAL(output.Amount(), 3949990974);
 
     // Test script pubkey serialization
     auto script_pubkey = output.GetScriptPubkey();
     auto script_pubkey_bytes{script_pubkey.ToBytes()};
-    BOOST_CHECK_EQUAL(script_pubkey_bytes.size(), 34);
+    BOOST_CHECK_EQUAL(script_pubkey_bytes.size(), 34U);
     auto round_trip_script_pubkey{ScriptPubkey(script_pubkey_bytes)};
-    BOOST_CHECK_EQUAL(round_trip_script_pubkey.ToBytes().size(), 34);
+    BOOST_CHECK_EQUAL(round_trip_script_pubkey.ToBytes().size(), 34U);
 
     for (const auto tx_spent_outputs : block_spent_outputs.TxsSpentOutputs()) {
         for (const auto coins : tx_spent_outputs.Coins()) {

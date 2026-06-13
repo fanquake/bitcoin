@@ -37,9 +37,9 @@ BOOST_AUTO_TEST_CASE(basic)
 
     // No transactions initially.
     BOOST_CHECK(!pb.PickTxForSend(/*will_send_to_nodeid=*/recipient1, /*will_send_to_address=*/addr1).has_value());
-    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0);
+    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0U);
     BOOST_CHECK(!pb.HavePendingTransactions());
-    BOOST_CHECK_EQUAL(pb.GetBroadcastInfo().size(), 0);
+    BOOST_CHECK_EQUAL(pb.GetBroadcastInfo().size(), 0U);
 
     // Make a transaction and add it.
     const auto tx1{MakeDummyTx(/*id=*/1, /*num_witness=*/0)};
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(basic)
     }};
     const auto check_peer_counts{[&](size_t tx1_peer_count, size_t tx2_peer_count) {
         const auto infos{pb.GetBroadcastInfo()};
-        BOOST_CHECK_EQUAL(infos.size(), 2);
+        BOOST_CHECK_EQUAL(infos.size(), 2U);
         BOOST_CHECK_EQUAL(find_tx_info(infos, tx1).peers.size(), tx1_peer_count);
         BOOST_CHECK_EQUAL(find_tx_info(infos, tx2).peers.size(), tx2_peer_count);
     }};
@@ -92,13 +92,13 @@ BOOST_AUTO_TEST_CASE(basic)
     BOOST_CHECK(!pb.DidNodeConfirmReception(nonexistent_recipient));
 
     // 1. Freshly added transactions should NOT be stale yet.
-    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0);
+    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0U);
 
     // 2. Fast-forward the mock clock past the INITIAL_STALE_DURATION.
     clock += PrivateBroadcast::INITIAL_STALE_DURATION + 1min;
 
     // 3. Now that the initial duration has passed, both unconfirmed transactions should be stale.
-    BOOST_CHECK_EQUAL(pb.GetStale().size(), 2);
+    BOOST_CHECK_EQUAL(pb.GetStale().size(), 2U);
 
     // Confirm reception by recipient1.
     pb.NodeConfirmedReception(nonexistent_recipient); // Dummy call.
@@ -108,34 +108,34 @@ BOOST_AUTO_TEST_CASE(basic)
     BOOST_CHECK(!pb.DidNodeConfirmReception(recipient2));
 
     const auto infos{pb.GetBroadcastInfo()};
-    BOOST_CHECK_EQUAL(infos.size(), 2);
+    BOOST_CHECK_EQUAL(infos.size(), 2U);
     {
         const auto& peers{find_tx_info(infos, tx_for_recipient1).peers};
-        BOOST_CHECK_EQUAL(peers.size(), 1);
+        BOOST_CHECK_EQUAL(peers.size(), 1U);
         BOOST_CHECK_EQUAL(peers[0].address.ToStringAddrPort(), addr1.ToStringAddrPort());
         BOOST_CHECK(peers[0].received.has_value());
     }
     {
         const auto& peers{find_tx_info(infos, tx_for_recipient2).peers};
-        BOOST_CHECK_EQUAL(peers.size(), 1);
+        BOOST_CHECK_EQUAL(peers.size(), 1U);
         BOOST_CHECK_EQUAL(peers[0].address.ToStringAddrPort(), addr2.ToStringAddrPort());
         BOOST_CHECK(!peers[0].received.has_value());
     }
 
     const auto stale_state{pb.GetStale()};
-    BOOST_CHECK_EQUAL(stale_state.size(), 1);
+    BOOST_CHECK_EQUAL(stale_state.size(), 1U);
     BOOST_CHECK_EQUAL(stale_state[0], tx_for_recipient2);
 
     clock += 10h;
 
-    BOOST_CHECK_EQUAL(pb.GetStale().size(), 2);
+    BOOST_CHECK_EQUAL(pb.GetStale().size(), 2U);
 
-    BOOST_CHECK_EQUAL(pb.Remove(tx_for_recipient1).value(), 1);
+    BOOST_CHECK_EQUAL(pb.Remove(tx_for_recipient1).value(), 1U);
     BOOST_CHECK(!pb.Remove(tx_for_recipient1).has_value());
-    BOOST_CHECK_EQUAL(pb.Remove(tx_for_recipient2).value(), 0);
+    BOOST_CHECK_EQUAL(pb.Remove(tx_for_recipient2).value(), 0U);
     BOOST_CHECK(!pb.Remove(tx_for_recipient2).has_value());
 
-    BOOST_CHECK_EQUAL(pb.GetBroadcastInfo().size(), 0);
+    BOOST_CHECK_EQUAL(pb.GetBroadcastInfo().size(), 0U);
     const CService addr_nonexistent{ipv4Addr, 3333};
     BOOST_CHECK(!pb.PickTxForSend(/*will_send_to_nodeid=*/nonexistent_recipient, /*will_send_to_address=*/addr_nonexistent).has_value());
 }
@@ -149,12 +149,12 @@ BOOST_AUTO_TEST_CASE(stale_unpicked_tx)
     BOOST_REQUIRE(pb.Add(tx));
 
     // Unpicked transactions use the longer INITIAL_STALE_DURATION.
-    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0);
+    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0U);
     clock += PrivateBroadcast::INITIAL_STALE_DURATION - 1min;
-    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0);
+    BOOST_CHECK_EQUAL(pb.GetStale().size(), 0U);
     clock += 2min;
     const auto stale_state{pb.GetStale()};
-    BOOST_REQUIRE_EQUAL(stale_state.size(), 1);
+    BOOST_REQUIRE_EQUAL(stale_state.size(), 1U);
     BOOST_CHECK_EQUAL(stale_state[0], tx);
 }
 

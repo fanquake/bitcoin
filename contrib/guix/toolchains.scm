@@ -189,7 +189,6 @@ chain for " target " development."))
                   "--enable-standard-branch-protection=yes"
                   "--enable-cet=yes"
                   "--enable-gprofng=no"
-                  "--disable-gcov"
                   "--disable-libgomp"
                   "--disable-libquadmath"
                   "--disable-libsanitizer"

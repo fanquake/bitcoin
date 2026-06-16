@@ -4,19 +4,12 @@
              ((gnu packages installers) #:select (nsis-x86_64))
              (gnu packages ninja)
              (gnu packages pkg-config)
-             ((gnu packages python-xyz) #:select (python-lief))
-             (guix build-system python)
-             (guix git-download)
-             (guix packages))
+             ((gnu packages python-xyz) #:select (python-lief)))
 
 (packages->manifest
  (append
   (list ;; Compression and archiving
         xz
-        ;; File(system) inspection
-        diffutils
-        ;; File transformation
-        gawk
         ;; Build tools
         ninja
         ;; Tests
@@ -27,6 +20,7 @@
                  nsis-x86_64))
           ((string-contains target "-linux-")
            (list bison
+                 gawk
                  pkg-config))
           ((string-contains target "darwin")
            (list zip))

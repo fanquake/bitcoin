@@ -32,7 +32,7 @@
         tar
         gzip
         ;; Build tools
-        gcc-toolchain-14
+        gcc-toolchain-15
         cmake-minimal-4
         gnu-make
         ;; Scripting

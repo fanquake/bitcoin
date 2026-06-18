@@ -28,14 +28,14 @@ FILE-NAME found in ./patches relative to the current file."
 (define (base-binutils target)
   (package
     (inherit (cross-binutils target)) ;; 2.44
-    (version "2.46.0")
+    (version "2.47")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://gnu/binutils/binutils-"
                           version ".tar.bz2"))
               (sha256
                (base32
-                "04nd9vl7c1pxjbc9wh3ckddzhz5g82xyjqq9y9kf171a59im4c8g"))))
+                "1s0092jj7bi3bdjzp7fczyay3s2608v1s8dlrjcgiafdfn614s1h"))))
     (arguments
       (substitute-keyword-arguments (package-arguments (cross-binutils target))
         ((#:configure-flags flags)

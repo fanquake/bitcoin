@@ -451,11 +451,6 @@ EOF
                                     --root="$(profiledir_for_host "${HOST}")" \
                                     "${shell_opts[@]}" \
                                     bash -c "cd /bitcoin && bash contrib/guix/libexec/build_linux.sh"
-
-            time-machine shell --manifest="${PWD}/contrib/guix/manifest_gui.scm" \
-                                    --root="$(profiledir_for_host "${HOST}"_gui)" \
-                                    "${shell_opts[@]}" \
-                                    bash -c "cd /bitcoin && bash contrib/guix/libexec/build_linux_gui.sh"
             ;;
             *)
             time-machine shell --manifest="${PWD}/contrib/guix/manifest_gui.scm" \

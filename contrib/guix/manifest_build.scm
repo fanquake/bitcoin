@@ -111,12 +111,10 @@ chain for " target " development."))
   (package-with-extra-patches gcc-14
     (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
 
-(define base-linux-kernel-headers linux-libre-headers-6.1)
-
 (define* (make-bitcoin-cross-toolchain target
                                        #:key
                                        (base-gcc-for-libc linux-base-gcc)
-                                       (base-kernel-headers base-linux-kernel-headers)
+                                       (base-kernel-headers linux-libre-headers-6.18)
                                        (base-libc glibc-2.31)
                                        (base-gcc linux-base-gcc))
   "Convenience wrapper around MAKE-CROSS-TOOLCHAIN with default values

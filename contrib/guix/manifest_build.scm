@@ -108,7 +108,7 @@ chain for " target " development."))
       (license (package-license xgcc)))))
 
 (define base-gcc
-  (package-with-extra-patches gcc-14
+  (package-with-extra-patches gcc-15
     (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
@@ -273,7 +273,7 @@ chain for " target " development."))
         gzip
         xz
         ;; Build tools
-        gcc-toolchain-14
+        gcc-toolchain-15
         cmake-minimal-4
         gnu-make
         ninja

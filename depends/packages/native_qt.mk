@@ -93,6 +93,10 @@ $(package)_config_env += OBJC="$$(build_CC)"
 $(package)_config_env += OBJCXX="$$(build_CXX)"
 endif
 
+ifneq ($(LTO),)
+$(package)_config_opts_linux += -ltcg
+endif
+
 $(package)_cmake_opts := -DCMAKE_EXE_LINKER_FLAGS="$$(build_LDFLAGS)"
 ifneq ($(V),)
 $(package)_cmake_opts += --log-level=STATUS

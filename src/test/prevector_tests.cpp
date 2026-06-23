@@ -8,12 +8,12 @@
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <ranges>
 #include <vector>
 
-BOOST_FIXTURE_TEST_SUITE(prevector_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(prevector_tests)
 
 template <unsigned int N, typename T>
 class prevector_tester
@@ -225,7 +225,7 @@ public:
 
     ~prevector_tester()
     {
-        BOOST_CHECK_MESSAGE(passed, "insecure_rand: " + rand_seed.ToString());
+        CHECK(passed, "insecure_rand: " + rand_seed.ToString());
     }
 
     prevector_tester(FastRandomContext& rng)
@@ -235,7 +235,7 @@ public:
     }
 };
 
-BOOST_AUTO_TEST_CASE(PrevectorTestInt)
+FIXTURE_TEST_CASE(PrevectorTestInt, BasicTestingSetup)
 {
     for (int j = 0; j < 64; j++) {
         prevector_tester<8, int> test{m_rng};
@@ -313,4 +313,4 @@ BOOST_AUTO_TEST_CASE(PrevectorTestInt)
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

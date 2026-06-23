@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <clientversion.h>
 #include <key.h>
@@ -133,22 +133,22 @@ void RunTest(const TestVector& test)
         pubkey.Encode(data);
 
         // Test private key
-        BOOST_CHECK(EncodeExtKey(key) == derive.prv);
-        BOOST_CHECK(DecodeExtKey(derive.prv) == key); //ensure a base58 decoded key also matches
+        CHECK(EncodeExtKey(key) == derive.prv);
+        CHECK(DecodeExtKey(derive.prv) == key); //ensure a base58 decoded key also matches
 
         // Test public key
-        BOOST_CHECK(EncodeExtPubKey(pubkey) == derive.pub);
-        BOOST_CHECK(DecodeExtPubKey(derive.pub) == pubkey); //ensure a base58 decoded pubkey also matches
+        CHECK(EncodeExtPubKey(pubkey) == derive.pub);
+        CHECK(DecodeExtPubKey(derive.pub) == pubkey); //ensure a base58 decoded pubkey also matches
 
         // Derive new keys
         CExtKey keyNew;
-        BOOST_CHECK(key.Derive(keyNew, derive.nChild));
+        CHECK(key.Derive(keyNew, derive.nChild));
         CExtPubKey pubkeyNew = keyNew.Neuter();
         if (!(derive.nChild & 0x80000000)) {
             // Compare with public derivation
             CExtPubKey pubkeyNew2;
-            BOOST_CHECK(pubkey.Derive(pubkeyNew2, derive.nChild));
-            BOOST_CHECK(pubkeyNew == pubkeyNew2);
+            CHECK(pubkey.Derive(pubkeyNew2, derive.nChild));
+            CHECK(pubkeyNew == pubkeyNew2);
         }
         key = keyNew;
         pubkey = pubkeyNew;
@@ -157,50 +157,50 @@ void RunTest(const TestVector& test)
 
 }  // namespace
 
-BOOST_FIXTURE_TEST_SUITE(bip32_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(bip32_tests)
 
-BOOST_AUTO_TEST_CASE(bip32_test1) {
+FIXTURE_TEST_CASE(bip32_test1, BasicTestingSetup) {
     RunTest(test1);
 }
 
-BOOST_AUTO_TEST_CASE(bip32_test2) {
+FIXTURE_TEST_CASE(bip32_test2, BasicTestingSetup) {
     RunTest(test2);
 }
 
-BOOST_AUTO_TEST_CASE(bip32_test3) {
+FIXTURE_TEST_CASE(bip32_test3, BasicTestingSetup) {
     RunTest(test3);
 }
 
-BOOST_AUTO_TEST_CASE(bip32_test4) {
+FIXTURE_TEST_CASE(bip32_test4, BasicTestingSetup) {
     RunTest(test4);
 }
 
-BOOST_AUTO_TEST_CASE(bip32_test5) {
+FIXTURE_TEST_CASE(bip32_test5, BasicTestingSetup) {
     for (const auto& str : TEST5) {
         auto dec_extkey = DecodeExtKey(str);
         auto dec_extpubkey = DecodeExtPubKey(str);
-        BOOST_CHECK_MESSAGE(!dec_extkey.key.IsValid(), "Decoding '" + str + "' as xprv should fail");
-        BOOST_CHECK_MESSAGE(!dec_extpubkey.pubkey.IsValid(), "Decoding '" + str + "' as xpub should fail");
+        CHECK(!dec_extkey.key.IsValid(), "Decoding '" + str + "' as xprv should fail");
+        CHECK(!dec_extpubkey.pubkey.IsValid(), "Decoding '" + str + "' as xpub should fail");
     }
 }
 
-BOOST_AUTO_TEST_CASE(bip32_max_depth) {
+FIXTURE_TEST_CASE(bip32_max_depth, BasicTestingSetup) {
     CExtKey key_parent{DecodeExtKey(test1.vDerive[0].prv)}, key_child;
     CExtPubKey pubkey_parent{DecodeExtPubKey(test1.vDerive[0].pub)}, pubkey_child;
 
     // We can derive up to the 255th depth..
     for (auto i = 0; i++ < 255;) {
-        BOOST_CHECK(key_parent.Derive(key_child, 0));
+        CHECK(key_parent.Derive(key_child, 0));
         std::swap(key_parent, key_child);
-        BOOST_CHECK(pubkey_parent.Derive(pubkey_child, 0));
+        CHECK(pubkey_parent.Derive(pubkey_child, 0));
         std::swap(pubkey_parent, pubkey_child);
     }
 
     // But trying to derive a non-existent 256th depth will fail!
-    BOOST_CHECK(key_parent.nDepth == 255);
-    BOOST_CHECK(pubkey_parent.nDepth == 255);
-    BOOST_CHECK(!key_parent.Derive(key_child, 0));
-    BOOST_CHECK(!pubkey_parent.Derive(pubkey_child, 0));
+    CHECK(key_parent.nDepth == 255);
+    CHECK(pubkey_parent.nDepth == 255);
+    CHECK(!key_parent.Derive(key_child, 0));
+    CHECK(!pubkey_parent.Derive(pubkey_child, 0));
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

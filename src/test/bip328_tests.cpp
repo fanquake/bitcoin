@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <key.h>
 #include <key_io.h>
@@ -22,9 +22,9 @@ struct BIP328TestVector {
     std::string expected_aggregate_xpub;
 };
 
-BOOST_FIXTURE_TEST_SUITE(bip328_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(bip328_tests)
 
-BOOST_AUTO_TEST_CASE(valid_keys)
+FIXTURE_TEST_CASE(valid_keys, BasicTestingSetup)
 {
     // BIP 328 test vectors
     std::vector<BIP328TestVector> test_vectors = {
@@ -74,28 +74,28 @@ BOOST_AUTO_TEST_CASE(valid_keys)
 
         // Aggregate public keys
         std::optional<CPubKey> m_aggregate_pubkey = MuSig2AggregatePubkeys(pubkeys);
-        BOOST_CHECK_MESSAGE(m_aggregate_pubkey.has_value(), "Test vector " << i << ": Failed to aggregate pubkeys");
+        CHECK(m_aggregate_pubkey.has_value(), "Test vector " << i << ": Failed to aggregate pubkeys");
 
         // Check aggregate pubkey
         std::string combined_keys = HexStr(m_aggregate_pubkey.value());
-        BOOST_CHECK_MESSAGE(combined_keys == test.expected_aggregate_pubkey, "Test vector " << i << ": Aggregate pubkey mismatch");
+        CHECK(combined_keys == test.expected_aggregate_pubkey, "Test vector " << i << ": Aggregate pubkey mismatch");
 
         // Create extended public key
         CExtPubKey extpub = CreateMuSig2SyntheticXpub(m_aggregate_pubkey.value());
 
         // Check xpub
         std::string xpub = EncodeExtPubKey(extpub);
-        BOOST_CHECK_MESSAGE(xpub == test.expected_aggregate_xpub, "Test vector " << i << ": Synthetic xpub mismatch");
+        CHECK(xpub == test.expected_aggregate_xpub, "Test vector " << i << ": Synthetic xpub mismatch");
     }
 }
 
-BOOST_AUTO_TEST_CASE(empty_pubkey_list)
+FIXTURE_TEST_CASE(empty_pubkey_list, BasicTestingSetup)
 {
     const std::optional<CPubKey> aggregate_pubkey{MuSig2AggregatePubkeys({})};
-    BOOST_CHECK(!aggregate_pubkey.has_value());
+    CHECK(!aggregate_pubkey.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(invalid_key)
+FIXTURE_TEST_CASE(invalid_key, BasicTestingSetup)
 {
     std::vector<std::string> test_vectors = {
         "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -112,9 +112,9 @@ BOOST_AUTO_TEST_CASE(invalid_key)
 
     // Aggregate public keys
     std::optional<CPubKey> m_aggregate_pubkey = MuSig2AggregatePubkeys(pubkeys);
-    BOOST_CHECK_MESSAGE(!m_aggregate_pubkey.has_value(), "Aggregate key with an invalid public key is null");
+    CHECK(!m_aggregate_pubkey.has_value(), "Aggregate key with an invalid public key is null");
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 
 }

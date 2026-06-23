@@ -9,10 +9,10 @@
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(group_outputs_tests, TestingSetup)
+TEST_SUITE_BEGIN(group_outputs_tests)
 
 static int nextLockTime = 0;
 
@@ -88,7 +88,7 @@ public:
         OutputGroupTypeMap groups = GroupOutputs(*wallet, coins_pool, makeSelectionParams(rand, avoid_partial_spends), {{filter}})[filter];
         std::vector<OutputGroup>& groups_out = positive_only ? groups.groups_by_type[type].positive_group :
                                                groups.groups_by_type[type].mixed_group;
-        BOOST_CHECK_EQUAL(groups_out.size(), expected_size);
+        CHECK(groups_out.size() == expected_size);
     }
 
     void GroupAndVerify(const OutputType type,
@@ -104,7 +104,7 @@ public:
     }
 };
 
-BOOST_AUTO_TEST_CASE(outputs_grouping_tests)
+FIXTURE_TEST_CASE(outputs_grouping_tests, TestingSetup)
 {
     const auto& wallet = NewWallet(m_node);
     GroupVerifier group_verifier;
@@ -152,7 +152,7 @@ BOOST_AUTO_TEST_CASE(outputs_grouping_tests)
 
     const CTxDestination dest3 = *Assert(wallet->GetNewDestination(OutputType::BECH32, ""));
     addCoin(group_verifier.coins_pool, *wallet, dest3, 1, true, CFeeRate(100));
-    BOOST_CHECK(group_verifier.coins_pool.coins[OutputType::BECH32].back().GetEffectiveValue() <= 0);
+    CHECK(group_verifier.coins_pool.coins[OutputType::BECH32].back().GetEffectiveValue() <= 0);
 
     // First expect no changes with "positive_only" enabled
     group_verifier.GroupAndVerify(OutputType::BECH32,
@@ -229,5 +229,5 @@ BOOST_AUTO_TEST_CASE(outputs_grouping_tests)
             /*positive_only=*/ false);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // end namespace wallet

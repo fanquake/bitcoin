@@ -5,28 +5,28 @@
 #include <sync.h>
 #include <test/util/common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <stdexcept>
 
-BOOST_AUTO_TEST_SUITE(reverselock_tests)
+TEST_SUITE_BEGIN(reverselock_tests)
 
-BOOST_AUTO_TEST_CASE(reverselock_basics)
+TEST_CASE(reverselock_basics)
 {
     Mutex mutex;
     WAIT_LOCK(mutex, lock);
 
-    BOOST_CHECK(lock.owns_lock());
+    CHECK(lock.owns_lock());
     AssertLockHeld(mutex);
     {
         REVERSE_LOCK(lock, mutex);
         AssertLockNotHeld(mutex);
-        BOOST_CHECK(!lock.owns_lock());
+        CHECK(!lock.owns_lock());
     }
-    BOOST_CHECK(lock.owns_lock());
+    CHECK(lock.owns_lock());
 }
 
-BOOST_AUTO_TEST_CASE(reverselock_multiple)
+TEST_CASE(reverselock_multiple)
 {
     Mutex mutex2;
     Mutex mutex;
@@ -36,15 +36,15 @@ BOOST_AUTO_TEST_CASE(reverselock_multiple)
     // Make sure undoing two locks succeeds
     {
         REVERSE_LOCK(lock, mutex);
-        BOOST_CHECK(!lock.owns_lock());
+        CHECK(!lock.owns_lock());
         REVERSE_LOCK(lock2, mutex2);
-        BOOST_CHECK(!lock2.owns_lock());
+        CHECK(!lock2.owns_lock());
     }
-    BOOST_CHECK(lock.owns_lock());
-    BOOST_CHECK(lock2.owns_lock());
+    CHECK(lock.owns_lock());
+    CHECK(lock2.owns_lock());
 }
 
-BOOST_AUTO_TEST_CASE(reverselock_errors)
+TEST_CASE(reverselock_errors)
 {
     Mutex mutex2;
     Mutex mutex;
@@ -56,8 +56,8 @@ BOOST_AUTO_TEST_CASE(reverselock_errors)
     g_debug_lockorder_abort = false;
 
     // Make sure trying to reverse lock a previous lock fails
-    BOOST_CHECK_EXCEPTION(REVERSE_LOCK(lock2, mutex2), std::logic_error, HasReason("mutex2 was not most recent critical section locked"));
-    BOOST_CHECK(lock2.owns_lock());
+    CHECK_EXCEPTION(REVERSE_LOCK(lock2, mutex2), std::logic_error, HasReason("mutex2 was not most recent critical section locked"));
+    CHECK(lock2.owns_lock());
 
     g_debug_lockorder_abort = prev;
 #endif
@@ -65,7 +65,7 @@ BOOST_AUTO_TEST_CASE(reverselock_errors)
     // Make sure trying to reverse lock an unlocked lock fails
     lock.unlock();
 
-    BOOST_CHECK(!lock.owns_lock());
+    CHECK(!lock.owns_lock());
 
     bool failed = false;
     try {
@@ -74,22 +74,22 @@ BOOST_AUTO_TEST_CASE(reverselock_errors)
         failed = true;
     }
 
-    BOOST_CHECK(failed);
-    BOOST_CHECK(!lock.owns_lock());
+    CHECK(failed);
+    CHECK(!lock.owns_lock());
 
     // Locking the original lock after it has been taken by a reverse lock
     // makes no sense. Ensure that the original lock no longer owns the lock
     // after giving it to a reverse one.
 
     lock.lock();
-    BOOST_CHECK(lock.owns_lock());
+    CHECK(lock.owns_lock());
     {
         REVERSE_LOCK(lock, mutex);
-        BOOST_CHECK(!lock.owns_lock());
+        CHECK(!lock.owns_lock());
     }
 
-    BOOST_CHECK(failed);
-    BOOST_CHECK(lock.owns_lock());
+    CHECK(failed);
+    CHECK(lock.owns_lock());
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

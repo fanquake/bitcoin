@@ -19,7 +19,7 @@
 
 #include <iostream>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <univalue.h>
 
@@ -117,9 +117,9 @@ void RandomTransaction(CMutableTransaction& tx, bool fSingle)
 }
 }; // struct SigHashTest
 
-BOOST_FIXTURE_TEST_SUITE(sighash_tests, SigHashTest)
+TEST_SUITE_BEGIN(sighash_tests)
 
-BOOST_AUTO_TEST_CASE(sighash_test)
+FIXTURE_TEST_CASE(sighash_test, SigHashTest)
 {
     #if defined(PRINT_SIGHASH_JSON)
     std::cout << "[\n";
@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(sighash_test)
         }
         std::cout << "\n";
         #endif
-        BOOST_CHECK(sh == sho);
+        CHECK(sh == sho);
     }
     #if defined(PRINT_SIGHASH_JSON)
     std::cout << "]\n";
@@ -162,7 +162,7 @@ BOOST_AUTO_TEST_CASE(sighash_test)
 }
 
 // Goal: check that SignatureHash generates correct hash
-BOOST_AUTO_TEST_CASE(sighash_from_data)
+FIXTURE_TEST_CASE(sighash_from_data, SigHashTest)
 {
     UniValue tests = read_json(json_tests::sighash);
 
@@ -171,7 +171,7 @@ BOOST_AUTO_TEST_CASE(sighash_from_data)
         std::string strTest = test.write();
         if (test.size() < 1) // Allow for extra stuff (useful for comments)
         {
-            BOOST_ERROR("Bad test: " << strTest);
+            RECORD_ERROR("Bad test: " << strTest);
             continue;
         }
         if (test.size() == 1) continue; // comment
@@ -193,22 +193,22 @@ BOOST_AUTO_TEST_CASE(sighash_from_data)
           SpanReader{ParseHex(raw_tx)} >> TX_WITH_WITNESS(tx);
 
           TxValidationState state;
-          BOOST_CHECK_MESSAGE(CheckTransaction(*tx, state), strTest);
-          BOOST_CHECK(state.IsValid());
+          CHECK(CheckTransaction(*tx, state), strTest);
+          CHECK(state.IsValid());
 
           std::vector<unsigned char> raw = ParseHex(raw_script);
           scriptCode.insert(scriptCode.end(), raw.begin(), raw.end());
         } catch (...) {
-          BOOST_ERROR("Bad test, couldn't deserialize data: " << strTest);
+          RECORD_ERROR("Bad test, couldn't deserialize data: " << strTest);
           continue;
         }
 
         sh = SignatureHash(scriptCode, *tx, nIn, nHashType, 0, SigVersion::BASE);
-        BOOST_CHECK_MESSAGE(sh.GetHex() == sigHashHex, strTest);
+        CHECK(sh.GetHex() == sigHashHex, strTest);
     }
 }
 
-BOOST_AUTO_TEST_CASE(sighash_caching)
+FIXTURE_TEST_CASE(sighash_caching, SigHashTest)
 {
     // Get a script, transaction and parameters as inputs to the sighash function.
     CScript scriptcode;
@@ -239,30 +239,30 @@ BOOST_AUTO_TEST_CASE(sighash_caching)
             // The result of computing the sighash should be the same with or without cache.
             const auto sighash_with_cache{SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache)};
             const auto sighash_no_cache{SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, nullptr)};
-            BOOST_CHECK_EQUAL(sighash_with_cache, sighash_no_cache);
+            CHECK(sighash_with_cache == sighash_no_cache);
 
             // Calling the cached version again should return the same value again.
-            BOOST_CHECK_EQUAL(sighash_with_cache, SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache));
+            CHECK(sighash_with_cache == SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache));
 
             // While here we might as well also check that the result for legacy is the same as for the old SignatureHash() function.
             if (sigversion == SigVersion::BASE) {
-                BOOST_CHECK_EQUAL(sighash_with_cache, SignatureHashOld(scriptcode, CTransaction(tx), in_index, hash_type));
+                CHECK(sighash_with_cache == SignatureHashOld(scriptcode, CTransaction(tx), in_index, hash_type));
             }
 
             // Calling with a different scriptcode (for instance in case a CODESEP is encountered) will not return the cache value but
             // overwrite it. The sighash will always be different except in case of legacy SIGHASH_SINGLE bug.
             const auto sighash_with_cache2{SignatureHash(diff_scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache)};
             const auto sighash_no_cache2{SignatureHash(diff_scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, nullptr)};
-            BOOST_CHECK_EQUAL(sighash_with_cache2, sighash_no_cache2);
+            CHECK(sighash_with_cache2 == sighash_no_cache2);
             if (!expect_one) {
-                BOOST_CHECK_NE(sighash_with_cache, sighash_with_cache2);
+                CHECK(sighash_with_cache != sighash_with_cache2);
             } else {
-                BOOST_CHECK_EQUAL(sighash_with_cache, sighash_with_cache2);
-                BOOST_CHECK_EQUAL(sighash_with_cache, uint256::ONE);
+                CHECK(sighash_with_cache == sighash_with_cache2);
+                CHECK(sighash_with_cache == uint256::ONE);
             }
 
             // Calling the cached version again should return the same value again.
-            BOOST_CHECK_EQUAL(sighash_with_cache2, SignatureHash(diff_scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache));
+            CHECK(sighash_with_cache2 == SignatureHash(diff_scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache));
 
             // And if we store a different value for this scriptcode and hash type it will return that instead.
             {
@@ -270,31 +270,31 @@ BOOST_AUTO_TEST_CASE(sighash_caching)
                 h << 42;
                 cache.Store(hash_type, scriptcode, h);
                 const auto stored_hash{h.GetHash()};
-                BOOST_CHECK(cache.Load(hash_type, scriptcode, h));
+                CHECK(cache.Load(hash_type, scriptcode, h));
                 const auto loaded_hash{h.GetHash()};
-                BOOST_CHECK_EQUAL(stored_hash, loaded_hash);
+                CHECK(stored_hash == loaded_hash);
             }
 
             // And using this mutated cache with the sighash function will return the new value (except in the legacy SIGHASH_SINGLE bug
             // case in which it'll return 1).
             if (!expect_one) {
-                BOOST_CHECK_NE(SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache), sighash_with_cache);
+                CHECK(SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache) != sighash_with_cache);
                 HashWriter h{};
-                BOOST_CHECK(cache.Load(hash_type, scriptcode, h));
+                CHECK(cache.Load(hash_type, scriptcode, h));
                 h << hash_type;
                 const auto new_hash{h.GetHash()};
-                BOOST_CHECK_EQUAL(SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache), new_hash);
+                CHECK(SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache) == new_hash);
             } else {
-                BOOST_CHECK_EQUAL(SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache), uint256::ONE);
+                CHECK(SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache) == uint256::ONE);
             }
 
             // Wipe the cache and restore the correct cached value for this scriptcode and hash_type before starting the next iteration.
             HashWriter dummy{};
             cache.Store(hash_type, diff_scriptcode, dummy);
             (void)SignatureHash(scriptcode, tx, in_index, hash_type, amount, sigversion, nullptr, &cache);
-            BOOST_CHECK((cache.Load(hash_type, scriptcode, dummy) || expect_one));
+            CHECK((cache.Load(hash_type, scriptcode, dummy) || expect_one));
         }
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

@@ -6,13 +6,13 @@
 #include <bech32.h>
 #include <util/strencodings.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <string>
 
-BOOST_AUTO_TEST_SUITE(bech32_tests)
+TEST_SUITE_BEGIN(bech32_tests)
 
-BOOST_AUTO_TEST_CASE(bech32_testvectors_valid)
+TEST_CASE(bech32_testvectors_valid)
 {
     static const std::string CASES[] = {
         "A12UEL5L",
@@ -25,14 +25,14 @@ BOOST_AUTO_TEST_CASE(bech32_testvectors_valid)
     };
     for (const std::string& str : CASES) {
         const auto dec = bech32::Decode(str);
-        BOOST_CHECK(dec.encoding == bech32::Encoding::BECH32);
+        CHECK(dec.encoding == bech32::Encoding::BECH32);
         std::string recode = bech32::Encode(bech32::Encoding::BECH32, dec.hrp, dec.data);
-        BOOST_CHECK(!recode.empty());
-        BOOST_CHECK(CaseInsensitiveEqual(str, recode));
+        CHECK(!recode.empty());
+        CHECK(CaseInsensitiveEqual(str, recode));
     }
 }
 
-BOOST_AUTO_TEST_CASE(bech32m_testvectors_valid)
+TEST_CASE(bech32m_testvectors_valid)
 {
     static const std::string CASES[] = {
         "A1LQFN3A",
@@ -45,14 +45,14 @@ BOOST_AUTO_TEST_CASE(bech32m_testvectors_valid)
     };
     for (const std::string& str : CASES) {
         const auto dec = bech32::Decode(str);
-        BOOST_CHECK(dec.encoding == bech32::Encoding::BECH32M);
+        CHECK(dec.encoding == bech32::Encoding::BECH32M);
         std::string recode = bech32::Encode(bech32::Encoding::BECH32M, dec.hrp, dec.data);
-        BOOST_CHECK(!recode.empty());
-        BOOST_CHECK(CaseInsensitiveEqual(str, recode));
+        CHECK(!recode.empty());
+        CHECK(CaseInsensitiveEqual(str, recode));
     }
 }
 
-BOOST_AUTO_TEST_CASE(bech32_testvectors_invalid)
+TEST_CASE(bech32_testvectors_invalid)
 {
     static const std::string CASES[] = {
         " 1nwldj5",
@@ -96,15 +96,15 @@ BOOST_AUTO_TEST_CASE(bech32_testvectors_invalid)
     for (const std::string& str : CASES) {
         const auto& err = ERRORS[i];
         const auto dec = bech32::Decode(str);
-        BOOST_CHECK(dec.encoding == bech32::Encoding::INVALID);
+        CHECK(dec.encoding == bech32::Encoding::INVALID);
         auto [error, error_locations] = bech32::LocateErrors(str);
-        BOOST_CHECK_EQUAL(err.first, error);
-        BOOST_CHECK(err.second == error_locations);
+        CHECK(err.first == error);
+        CHECK(err.second == error_locations);
         i++;
     }
 }
 
-BOOST_AUTO_TEST_CASE(bech32m_testvectors_invalid)
+TEST_CASE(bech32m_testvectors_invalid)
 {
     static const std::string CASES[] = {
         " 1xj0phk",
@@ -148,12 +148,12 @@ BOOST_AUTO_TEST_CASE(bech32m_testvectors_invalid)
     for (const std::string& str : CASES) {
         const auto& err = ERRORS[i];
         const auto dec = bech32::Decode(str);
-        BOOST_CHECK(dec.encoding == bech32::Encoding::INVALID);
+        CHECK(dec.encoding == bech32::Encoding::INVALID);
         auto [error, error_locations] = bech32::LocateErrors(str);
-        BOOST_CHECK_EQUAL(err.first, error);
-        BOOST_CHECK(err.second == error_locations);
+        CHECK(err.first == error);
+        CHECK(err.second == error_locations);
         i++;
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

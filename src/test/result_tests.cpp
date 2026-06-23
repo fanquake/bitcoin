@@ -4,7 +4,7 @@
 
 #include <util/result.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <memory>
 
@@ -18,7 +18,7 @@ inline std::ostream& operator<<(std::ostream& os, const bilingual_str& s)
     return os << "bilingual_str('" << s.original << "' , '" << s.translated << "')";
 }
 
-BOOST_AUTO_TEST_SUITE(result_tests)
+TEST_SUITE_BEGIN(result_tests)
 
 struct NoCopy {
     NoCopy(int n) : m_n{std::make_unique<int>(n)} {}
@@ -56,18 +56,18 @@ util::Result<NoCopy> NoCopyFn(int i, bool success)
 template <typename T>
 void ExpectResult(const util::Result<T>& result, bool success, const bilingual_str& str)
 {
-    BOOST_CHECK_EQUAL(bool(result), success);
-    BOOST_CHECK_EQUAL(util::ErrorString(result), str);
+    CHECK(bool(result) == success);
+    CHECK(util::ErrorString(result) == str);
 }
 
 template <typename T, typename... Args>
 void ExpectSuccess(const util::Result<T>& result, const bilingual_str& str, Args&&... args)
 {
     ExpectResult(result, true, str);
-    BOOST_CHECK_EQUAL(result.has_value(), true);
+    CHECK(result.has_value() == true);
     T expected{std::forward<Args>(args)...};
-    BOOST_CHECK_EQUAL(result.value(), expected);
-    BOOST_CHECK_EQUAL(&result.value(), &*result);
+    CHECK(result.value() == expected);
+    CHECK(&result.value() == &*result);
 }
 
 template <typename T, typename... Args>
@@ -76,7 +76,7 @@ void ExpectFail(const util::Result<T>& result, const bilingual_str& str)
     ExpectResult(result, false, str);
 }
 
-BOOST_AUTO_TEST_CASE(check_returned)
+TEST_CASE(check_returned)
 {
     ExpectSuccess(IntFn(5, true), {}, 5);
     ExpectFail(IntFn(5, false), Untranslated("int 5 error."));
@@ -86,14 +86,14 @@ BOOST_AUTO_TEST_CASE(check_returned)
     ExpectFail(StrFn(Untranslated("S"), false), Untranslated("str S error."));
 }
 
-BOOST_AUTO_TEST_CASE(check_value_or)
+TEST_CASE(check_value_or)
 {
-    BOOST_CHECK_EQUAL(IntFn(10, true).value_or(20), 10);
-    BOOST_CHECK_EQUAL(IntFn(10, false).value_or(20), 20);
-    BOOST_CHECK_EQUAL(NoCopyFn(10, true).value_or(20), 10);
-    BOOST_CHECK_EQUAL(NoCopyFn(10, false).value_or(20), 20);
-    BOOST_CHECK_EQUAL(StrFn(Untranslated("A"), true).value_or(Untranslated("B")), Untranslated("A"));
-    BOOST_CHECK_EQUAL(StrFn(Untranslated("A"), false).value_or(Untranslated("B")), Untranslated("B"));
+    CHECK(IntFn(10, true).value_or(20) == 10);
+    CHECK(IntFn(10, false).value_or(20) == 20);
+    CHECK(NoCopyFn(10, true).value_or(20) == 10);
+    CHECK(NoCopyFn(10, false).value_or(20) == 20);
+    CHECK(StrFn(Untranslated("A"), true).value_or(Untranslated("B")) == Untranslated("A"));
+    CHECK(StrFn(Untranslated("A"), false).value_or(Untranslated("B")) == Untranslated("B"));
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

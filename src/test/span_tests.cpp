@@ -4,7 +4,8 @@
 
 #include <span.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <array>
 #include <set>
 #include <vector>
@@ -40,23 +41,23 @@ struct SpannableNo
 
 using namespace spannable;
 
-BOOST_AUTO_TEST_SUITE(span_tests)
+TEST_SUITE_BEGIN(span_tests)
 
 // Make sure template std::span template deduction guides accurately enable calls to
 // std::span constructor overloads that work, and disable calls to constructor overloads that
 // don't work. This makes it possible to use the std::span constructor in a SFINAE
 // contexts like in the Spannable function above to detect whether types are or
 // aren't compatible with std::span at compile time.
-BOOST_AUTO_TEST_CASE(span_constructor_sfinae)
+TEST_CASE(span_constructor_sfinae)
 {
-    BOOST_CHECK(Spannable(std::vector<int>{}));
-    BOOST_CHECK(!Spannable(std::set<int>{}));
-    BOOST_CHECK(!Spannable(std::vector<bool>{}));
-    BOOST_CHECK(Spannable(std::array<int, 3>{}));
-    BOOST_CHECK(Spannable(std::span<int>{}));
-    BOOST_CHECK(Spannable("char array"));
-    BOOST_CHECK(Spannable(SpannableYes{}));
-    BOOST_CHECK(!Spannable(SpannableNo{}));
+    CHECK(Spannable(std::vector<int>{}));
+    CHECK(!Spannable(std::set<int>{}));
+    CHECK(!Spannable(std::vector<bool>{}));
+    CHECK(Spannable(std::array<int, 3>{}));
+    CHECK(Spannable(std::span<int>{}));
+    CHECK(Spannable("char array"));
+    CHECK(Spannable(SpannableYes{}));
+    CHECK(!Spannable(SpannableNo{}));
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

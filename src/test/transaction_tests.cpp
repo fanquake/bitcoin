@@ -39,7 +39,7 @@
 #include <map>
 #include <string>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <univalue.h>
 
@@ -63,7 +63,7 @@ script_verify_flags ParseScriptFlags(std::string strFlags)
     for (const std::string& word : words)
     {
         if (!mapFlagNames.contains(word)) {
-            BOOST_ERROR("Bad test: unknown verification flag '" << word << "'");
+            RECORD_ERROR("Bad test: unknown verification flag '" << word << "'");
             continue;
         }
         flags |= mapFlagNames.at(word);
@@ -97,18 +97,18 @@ bool CheckTxScripts(const CTransaction& tx, const std::map<COutPoint, CScript>& 
             tx_valid = VerifyScript(input.scriptSig, map_prevout_scriptPubKeys.at(input.prevout),
                 &input.scriptWitness, flags, TransactionSignatureChecker(&tx, i, amount, txdata, MissingDataBehavior::ASSERT_FAIL), &err);
         } catch (...) {
-            BOOST_ERROR("Bad test: " << strTest);
+            RECORD_ERROR("Bad test: " << strTest);
             return true; // The test format is bad and an error is thrown. Return true to silence further error.
         }
         if (expect_valid) {
-            BOOST_CHECK_MESSAGE(tx_valid, strTest);
-            BOOST_CHECK_MESSAGE((err == SCRIPT_ERR_OK), ScriptErrorString(err));
+            CHECK(tx_valid, strTest);
+            CHECK((err == SCRIPT_ERR_OK), ScriptErrorString(err));
             err = SCRIPT_ERR_UNKNOWN_ERROR;
         }
     }
     if (!expect_valid) {
-        BOOST_CHECK_MESSAGE(!tx_valid, strTest);
-        BOOST_CHECK_MESSAGE((err != SCRIPT_ERR_OK), ScriptErrorString(err));
+        CHECK(!tx_valid, strTest);
+        CHECK((err != SCRIPT_ERR_OK), ScriptErrorString(err));
     }
     return (tx_valid == expect_valid);
 }
@@ -157,11 +157,11 @@ std::set<script_verify_flags> ExcludeIndividualFlags(script_verify_flags flags)
     return flags_combos;
 }
 
-BOOST_FIXTURE_TEST_SUITE(transaction_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(transaction_tests)
 
-BOOST_AUTO_TEST_CASE(tx_valid)
+FIXTURE_TEST_CASE(tx_valid, BasicTestingSetup)
 {
-    BOOST_CHECK_MESSAGE(CheckMapFlagNames(), "mapFlagNames is missing a script verification flag");
+    CHECK(CheckMapFlagNames(), "mapFlagNames is missing a script verification flag");
     // Read tests from test/data/tx_valid.json
     UniValue tests = read_json(json_tests::tx_valid);
 
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
         {
             if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
             {
-                BOOST_ERROR("Bad test: " << strTest);
+                RECORD_ERROR("Bad test: " << strTest);
                 continue;
             }
 
@@ -201,7 +201,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
             }
             if (!fValid)
             {
-                BOOST_ERROR("Bad test: " << strTest);
+                RECORD_ERROR("Bad test: " << strTest);
                 continue;
             }
 
@@ -210,45 +210,44 @@ BOOST_AUTO_TEST_CASE(tx_valid)
             CTransaction tx(deserialize, TX_WITH_WITNESS, stream);
 
             TxValidationState state;
-            BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
-            BOOST_CHECK(state.IsValid());
+            CHECK(CheckTransaction(tx, state), strTest);
+            CHECK(state.IsValid());
 
             PrecomputedTransactionData txdata(tx);
             script_verify_flags verify_flags = ParseScriptFlags(test[2].get_str());
 
             // Check that the test gives a valid combination of flags (otherwise VerifyScript will throw). Don't edit the flags.
             if (~verify_flags != FillFlags(~verify_flags)) {
-                BOOST_ERROR("Bad test flags: " << strTest);
+                RECORD_ERROR("Bad test flags: " << strTest);
             }
 
-            BOOST_CHECK_MESSAGE(CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, ~verify_flags, txdata, strTest, /*expect_valid=*/true),
-                                "Tx unexpectedly failed: " << strTest);
+            CHECK(CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, ~verify_flags, txdata, strTest, /*expect_valid=*/true), "Tx unexpectedly failed: " << strTest);
 
             // Backwards compatibility of script verification flags: Removing any flag(s) should not invalidate a valid transaction
             for (const auto& [name, flag] : mapFlagNames) {
                 // Removing individual flags
                 script_verify_flags flags = TrimFlags(~(verify_flags | flag));
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, flags, txdata, strTest, /*expect_valid=*/true)) {
-                    BOOST_ERROR("Tx unexpectedly failed with flag " << name << " unset: " << strTest);
+                    RECORD_ERROR("Tx unexpectedly failed with flag " << name << " unset: " << strTest);
                 }
                 // Removing random combinations of flags
                 flags = TrimFlags(~(verify_flags | script_verify_flags::from_int(m_rng.randbits(MAX_SCRIPT_VERIFY_FLAGS_BITS))));
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, flags, txdata, strTest, /*expect_valid=*/true)) {
-                    BOOST_ERROR("Tx unexpectedly failed with random flags " << ToString(flags.as_int()) << ": " << strTest);
+                    RECORD_ERROR("Tx unexpectedly failed with random flags " << ToString(flags.as_int()) << ": " << strTest);
                 }
             }
 
             // Check that flags are maximal: transaction should fail if any unset flags are set.
             for (auto flags_excluding_one : ExcludeIndividualFlags(verify_flags)) {
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, ~flags_excluding_one, txdata, strTest, /*expect_valid=*/false)) {
-                    BOOST_ERROR("Too many flags unset: " << strTest);
+                    RECORD_ERROR("Too many flags unset: " << strTest);
                 }
             }
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(tx_invalid)
+FIXTURE_TEST_CASE(tx_invalid, BasicTestingSetup)
 {
     // Read tests from test/data/tx_invalid.json
     UniValue tests = read_json(json_tests::tx_invalid);
@@ -260,7 +259,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
         {
             if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
             {
-                BOOST_ERROR("Bad test: " << strTest);
+                RECORD_ERROR("Bad test: " << strTest);
                 continue;
             }
 
@@ -289,7 +288,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
             }
             if (!fValid)
             {
-                BOOST_ERROR("Bad test: " << strTest);
+                RECORD_ERROR("Bad test: " << strTest);
                 continue;
             }
 
@@ -299,7 +298,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
 
             TxValidationState state;
             if (!CheckTransaction(tx, state) || state.IsInvalid()) {
-                BOOST_CHECK_MESSAGE(test[2].get_str() == "BADTX", strTest);
+                CHECK(test[2].get_str() == "BADTX", strTest);
                 continue;
             }
 
@@ -308,47 +307,46 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
 
             // Check that the test gives a valid combination of flags (otherwise VerifyScript will throw). Don't edit the flags.
             if (verify_flags != FillFlags(verify_flags)) {
-                BOOST_ERROR("Bad test flags: " << strTest);
+                RECORD_ERROR("Bad test flags: " << strTest);
             }
 
             // Not using FillFlags() in the main test, in order to detect invalid verifyFlags combination
-            BOOST_CHECK_MESSAGE(CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, verify_flags, txdata, strTest, /*expect_valid=*/false),
-                                "Tx unexpectedly passed: " << strTest);
+            CHECK(CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, verify_flags, txdata, strTest, /*expect_valid=*/false), "Tx unexpectedly passed: " << strTest);
 
             // Backwards compatibility of script verification flags: Adding any flag(s) should not validate an invalid transaction
             for (const auto& [name, flag] : mapFlagNames) {
                 script_verify_flags flags = FillFlags(verify_flags | flag);
                 // Adding individual flags
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, flags, txdata, strTest, /*expect_valid=*/false)) {
-                    BOOST_ERROR("Tx unexpectedly passed with flag " << name << " set: " << strTest);
+                    RECORD_ERROR("Tx unexpectedly passed with flag " << name << " set: " << strTest);
                 }
                 // Adding random combinations of flags
                 flags = FillFlags(verify_flags | script_verify_flags::from_int(m_rng.randbits(MAX_SCRIPT_VERIFY_FLAGS_BITS)));
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, flags, txdata, strTest, /*expect_valid=*/false)) {
-                    BOOST_ERROR("Tx unexpectedly passed with random flags " << name << ": " << strTest);
+                    RECORD_ERROR("Tx unexpectedly passed with random flags " << name << ": " << strTest);
                 }
             }
 
             // Check that flags are minimal: transaction should succeed if any set flags are unset.
             for (auto flags_excluding_one : ExcludeIndividualFlags(verify_flags)) {
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, flags_excluding_one, txdata, strTest, /*expect_valid=*/true)) {
-                    BOOST_ERROR("Too many flags set: " << strTest);
+                    RECORD_ERROR("Too many flags set: " << strTest);
                 }
             }
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(tx_no_inputs)
+FIXTURE_TEST_CASE(tx_no_inputs, BasicTestingSetup)
 {
     CMutableTransaction empty;
 
     TxValidationState state;
-    BOOST_CHECK_MESSAGE(!CheckTransaction(CTransaction(empty), state), "Transaction with no inputs should be invalid.");
-    BOOST_CHECK(state.GetRejectReason() == "bad-txns-vin-empty");
+    CHECK(!CheckTransaction(CTransaction(empty), state), "Transaction with no inputs should be invalid.");
+    CHECK(state.GetRejectReason() == "bad-txns-vin-empty");
 }
 
-BOOST_AUTO_TEST_CASE(tx_oversized)
+FIXTURE_TEST_CASE(tx_oversized, BasicTestingSetup)
 {
     auto createTransaction =[](size_t payloadSize) {
         CMutableTransaction tx;
@@ -363,18 +361,18 @@ BOOST_AUTO_TEST_CASE(tx_oversized)
     {
         TxValidationState state;
         CheckTransaction(createTransaction(maxPayloadSize), state);
-        BOOST_CHECK(state.GetRejectReason() != "bad-txns-oversize");
+        CHECK(state.GetRejectReason() != "bad-txns-oversize");
     }
 
     maxPayloadSize += 1;
     {
         TxValidationState state;
-        BOOST_CHECK_MESSAGE(!CheckTransaction(createTransaction(maxPayloadSize), state), "Oversized transaction should be invalid");
-        BOOST_CHECK(state.GetRejectReason() == "bad-txns-oversize");
+        CHECK(!CheckTransaction(createTransaction(maxPayloadSize), state), "Oversized transaction should be invalid");
+        CHECK(state.GetRejectReason() == "bad-txns-oversize");
     }
 }
 
-BOOST_AUTO_TEST_CASE(basic_transaction_tests)
+FIXTURE_TEST_CASE(basic_transaction_tests, BasicTestingSetup)
 {
     // Random real transaction (e2769b09e784f32f62ef849763d4f45b98e07ba658647343b915ff832b110436)
     unsigned char ch[] = {0x01, 0x00, 0x00, 0x00, 0x01, 0x6b, 0xff, 0x7f, 0xcd, 0x4f, 0x85, 0x65, 0xef, 0x40, 0x6d, 0xd5, 0xd6, 0x3d, 0x4f, 0xf9, 0x4f, 0x31, 0x8f, 0xe8, 0x20, 0x27, 0xfd, 0x4d, 0xc4, 0x51, 0xb0, 0x44, 0x74, 0x01, 0x9f, 0x74, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x8c, 0x49, 0x30, 0x46, 0x02, 0x21, 0x00, 0xda, 0x0d, 0xc6, 0xae, 0xce, 0xfe, 0x1e, 0x06, 0xef, 0xdf, 0x05, 0x77, 0x37, 0x57, 0xde, 0xb1, 0x68, 0x82, 0x09, 0x30, 0xe3, 0xb0, 0xd0, 0x3f, 0x46, 0xf5, 0xfc, 0xf1, 0x50, 0xbf, 0x99, 0x0c, 0x02, 0x21, 0x00, 0xd2, 0x5b, 0x5c, 0x87, 0x04, 0x00, 0x76, 0xe4, 0xf2, 0x53, 0xf8, 0x26, 0x2e, 0x76, 0x3e, 0x2d, 0xd5, 0x1e, 0x7f, 0xf0, 0xbe, 0x15, 0x77, 0x27, 0xc4, 0xbc, 0x42, 0x80, 0x7f, 0x17, 0xbd, 0x39, 0x01, 0x41, 0x04, 0xe6, 0xc2, 0x6e, 0xf6, 0x7d, 0xc6, 0x10, 0xd2, 0xcd, 0x19, 0x24, 0x84, 0x78, 0x9a, 0x6c, 0xf9, 0xae, 0xa9, 0x93, 0x0b, 0x94, 0x4b, 0x7e, 0x2d, 0xb5, 0x34, 0x2b, 0x9d, 0x9e, 0x5b, 0x9f, 0xf7, 0x9a, 0xff, 0x9a, 0x2e, 0xe1, 0x97, 0x8d, 0xd7, 0xfd, 0x01, 0xdf, 0xc5, 0x22, 0xee, 0x02, 0x28, 0x3d, 0x3b, 0x06, 0xa9, 0xd0, 0x3a, 0xcf, 0x80, 0x96, 0x96, 0x8d, 0x7d, 0xbb, 0x0f, 0x91, 0x78, 0xff, 0xff, 0xff, 0xff, 0x02, 0x8b, 0xa7, 0x94, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x19, 0x76, 0xa9, 0x14, 0xba, 0xde, 0xec, 0xfd, 0xef, 0x05, 0x07, 0x24, 0x7f, 0xc8, 0xf7, 0x42, 0x41, 0xd7, 0x3b, 0xc0, 0x39, 0x97, 0x2d, 0x7b, 0x88, 0xac, 0x40, 0x94, 0xa8, 0x02, 0x00, 0x00, 0x00, 0x00, 0x19, 0x76, 0xa9, 0x14, 0xc1, 0x09, 0x32, 0x48, 0x3f, 0xec, 0x93, 0xed, 0x51, 0xf5, 0xfe, 0x95, 0xe7, 0x25, 0x59, 0xf2, 0xcc, 0x70, 0x43, 0xf9, 0x88, 0xac, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -382,15 +380,15 @@ BOOST_AUTO_TEST_CASE(basic_transaction_tests)
     CMutableTransaction tx;
     SpanReader{vch} >> TX_WITH_WITNESS(tx);
     TxValidationState state;
-    BOOST_CHECK_MESSAGE(CheckTransaction(CTransaction(tx), state), "Simple deserialized transaction should be valid.");
-    BOOST_CHECK_MESSAGE(state.IsValid(), "Simple deserialized transaction should be valid.");
+    CHECK(CheckTransaction(CTransaction(tx), state), "Simple deserialized transaction should be valid.");
+    CHECK(state.IsValid(), "Simple deserialized transaction should be valid.");
 
     // Check that duplicate txins fail
     tx.vin.push_back(tx.vin[0]);
-    BOOST_CHECK_MESSAGE((!CheckTransaction(CTransaction(tx), state) || !state.IsValid()), "Transaction with duplicate txins should be invalid.");
+    CHECK((!CheckTransaction(CTransaction(tx), state) || !state.IsValid()), "Transaction with duplicate txins should be invalid.");
 }
 
-BOOST_AUTO_TEST_CASE(test_Get)
+FIXTURE_TEST_CASE(test_Get, BasicTestingSetup)
 {
     FillableSigningProvider keystore;
     CCoinsViewCache coins{&CoinsViewEmpty::Get()};
@@ -412,7 +410,7 @@ BOOST_AUTO_TEST_CASE(test_Get)
     t1.vout[0].nValue = 90*CENT;
     t1.vout[0].scriptPubKey << OP_1;
 
-    BOOST_CHECK(ValidateInputsStandardness(CTransaction(t1), coins).IsValid());
+    CHECK(ValidateInputsStandardness(CTransaction(t1), coins).IsValid());
 }
 
 static void CreateCreditAndSpend(const FillableSigningProvider& keystore, const CScript& outscript, CTransactionRef& output, CMutableTransaction& input, bool success = true)
@@ -488,14 +486,14 @@ static void ReplaceRedeemScript(CScript& script, const CScript& redeemScript)
     script = PushAll(stack);
 }
 
-BOOST_AUTO_TEST_CASE(test_big_witness_transaction)
+FIXTURE_TEST_CASE(test_big_witness_transaction, BasicTestingSetup)
 {
     CMutableTransaction mtx;
     mtx.version = 1;
 
     CKey key = GenerateRandomKey(); // Need to use compressed keys in segwit or the signing will fail
     FillableSigningProvider keystore;
-    BOOST_CHECK(keystore.AddKeyPubKey(key, key.GetPubKey()));
+    CHECK(keystore.AddKeyPubKey(key, key.GetPubKey()));
     CKeyID hash = key.GetPubKey().GetID();
     CScript scriptPubKey = CScript() << OP_0 << std::vector<unsigned char>(hash.begin(), hash.end());
 
@@ -568,7 +566,7 @@ SignatureData CombineSignatures(const CMutableTransaction& input1, const CMutabl
     return sigdata;
 }
 
-BOOST_AUTO_TEST_CASE(test_witness)
+FIXTURE_TEST_CASE(test_witness, BasicTestingSetup)
 {
     FillableSigningProvider keystore, keystore2;
     CKey key1 = GenerateRandomKey();
@@ -581,10 +579,10 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CPubKey pubkey3 = key3.GetPubKey();
     CPubKey pubkey1L = key1L.GetPubKey();
     CPubKey pubkey2L = key2L.GetPubKey();
-    BOOST_CHECK(keystore.AddKeyPubKey(key1, pubkey1));
-    BOOST_CHECK(keystore.AddKeyPubKey(key2, pubkey2));
-    BOOST_CHECK(keystore.AddKeyPubKey(key1L, pubkey1L));
-    BOOST_CHECK(keystore.AddKeyPubKey(key2L, pubkey2L));
+    CHECK(keystore.AddKeyPubKey(key1, pubkey1));
+    CHECK(keystore.AddKeyPubKey(key2, pubkey2));
+    CHECK(keystore.AddKeyPubKey(key1L, pubkey1L));
+    CHECK(keystore.AddKeyPubKey(key2L, pubkey2L));
     CScript scriptPubkey1, scriptPubkey2, scriptPubkey1L, scriptPubkey2L, scriptMulti;
     scriptPubkey1 << ToByteVector(pubkey1) << OP_CHECKSIG;
     scriptPubkey2 << ToByteVector(pubkey2) << OP_CHECKSIG;
@@ -594,25 +592,25 @@ BOOST_AUTO_TEST_CASE(test_witness)
     oneandthree.push_back(pubkey1);
     oneandthree.push_back(pubkey3);
     scriptMulti = GetScriptForMultisig(2, oneandthree);
-    BOOST_CHECK(keystore.AddCScript(scriptPubkey1));
-    BOOST_CHECK(keystore.AddCScript(scriptPubkey2));
-    BOOST_CHECK(keystore.AddCScript(scriptPubkey1L));
-    BOOST_CHECK(keystore.AddCScript(scriptPubkey2L));
-    BOOST_CHECK(keystore.AddCScript(scriptMulti));
+    CHECK(keystore.AddCScript(scriptPubkey1));
+    CHECK(keystore.AddCScript(scriptPubkey2));
+    CHECK(keystore.AddCScript(scriptPubkey1L));
+    CHECK(keystore.AddCScript(scriptPubkey2L));
+    CHECK(keystore.AddCScript(scriptMulti));
     CScript destination_script_1, destination_script_2, destination_script_1L, destination_script_2L, destination_script_multi;
     destination_script_1 = GetScriptForDestination(WitnessV0KeyHash(pubkey1));
     destination_script_2 = GetScriptForDestination(WitnessV0KeyHash(pubkey2));
     destination_script_1L = GetScriptForDestination(WitnessV0KeyHash(pubkey1L));
     destination_script_2L = GetScriptForDestination(WitnessV0KeyHash(pubkey2L));
     destination_script_multi = GetScriptForDestination(WitnessV0ScriptHash(scriptMulti));
-    BOOST_CHECK(keystore.AddCScript(destination_script_1));
-    BOOST_CHECK(keystore.AddCScript(destination_script_2));
-    BOOST_CHECK(keystore.AddCScript(destination_script_1L));
-    BOOST_CHECK(keystore.AddCScript(destination_script_2L));
-    BOOST_CHECK(keystore.AddCScript(destination_script_multi));
-    BOOST_CHECK(keystore2.AddCScript(scriptMulti));
-    BOOST_CHECK(keystore2.AddCScript(destination_script_multi));
-    BOOST_CHECK(keystore2.AddKeyPubKey(key3, pubkey3));
+    CHECK(keystore.AddCScript(destination_script_1));
+    CHECK(keystore.AddCScript(destination_script_2));
+    CHECK(keystore.AddCScript(destination_script_1L));
+    CHECK(keystore.AddCScript(destination_script_2L));
+    CHECK(keystore.AddCScript(destination_script_multi));
+    CHECK(keystore2.AddCScript(scriptMulti));
+    CHECK(keystore2.AddCScript(destination_script_multi));
+    CHECK(keystore2.AddKeyPubKey(key3, pubkey3));
 
     CTransactionRef output1, output2;
     CMutableTransaction input1, input2;
@@ -705,7 +703,7 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CheckWithFlag(output1, input1, SCRIPT_VERIFY_NONE, false);
     CreateCreditAndSpend(keystore2, scriptMulti, output2, input2, false);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_NONE, false);
-    BOOST_CHECK(*output1 == *output2);
+    CHECK(*output1 == *output2);
     UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
     CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
 
@@ -716,7 +714,7 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CreateCreditAndSpend(keystore2, GetScriptForDestination(ScriptHash(scriptMulti)), output2, input2, false);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_NONE, true);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH, false);
-    BOOST_CHECK(*output1 == *output2);
+    CHECK(*output1 == *output2);
     UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
     CheckWithFlag(output1, input1, SCRIPT_VERIFY_P2SH, true);
     CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
@@ -728,7 +726,7 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CreateCreditAndSpend(keystore2, destination_script_multi, output2, input2, false);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_NONE, true);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, false);
-    BOOST_CHECK(*output1 == *output2);
+    CHECK(*output1 == *output2);
     UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
     CheckWithFlag(output1, input1, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, true);
     CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
@@ -740,13 +738,13 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CreateCreditAndSpend(keystore2, GetScriptForDestination(ScriptHash(destination_script_multi)), output2, input2, false);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH, true);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, false);
-    BOOST_CHECK(*output1 == *output2);
+    CHECK(*output1 == *output2);
     UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
     CheckWithFlag(output1, input1, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, true);
     CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
 }
 
-BOOST_AUTO_TEST_CASE(test_IsStandard)
+FIXTURE_TEST_CASE(test_IsStandard, BasicTestingSetup)
 {
     FillableSigningProvider keystore;
     CCoinsViewCache coins{&CoinsViewEmpty::Get()};
@@ -765,20 +763,20 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     constexpr auto CheckIsStandard = [](const auto& t, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY) {
         std::string reason;
-        BOOST_CHECK(IsStandardTx(CTransaction{t}, max_op_return_relay, g_bare_multi, g_dust, reason));
-        BOOST_CHECK(reason.empty());
+        CHECK(IsStandardTx(CTransaction{t}, max_op_return_relay, g_bare_multi, g_dust, reason));
+        CHECK(reason.empty());
     };
     constexpr auto CheckIsNotStandard = [](const auto& t, const std::string& reason_in, const unsigned int max_op_return_relay = MAX_OP_RETURN_RELAY) {
         std::string reason;
-        BOOST_CHECK(!IsStandardTx(CTransaction{t}, max_op_return_relay, g_bare_multi, g_dust, reason));
-        BOOST_CHECK_EQUAL(reason_in, reason);
+        CHECK(!IsStandardTx(CTransaction{t}, max_op_return_relay, g_bare_multi, g_dust, reason));
+        CHECK(reason_in == reason);
     };
 
     CheckIsStandard(t);
 
     // Check dust with default relay fee:
     CAmount nDustThreshold = 182 * g_dust.GetFeePerK() / 1000;
-    BOOST_CHECK_EQUAL(nDustThreshold, 546);
+    CHECK(nDustThreshold == 546);
 
     // Add dust outputs up to allowed maximum, still standard!
     for (size_t i{0}; i < MAX_DUST_OUTPUTS_PER_TX; ++i) {
@@ -826,7 +824,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     // Custom 83-byte TxoutType::NULL_DATA (standard with max_op_return_relay of 83)
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38"_hex;
-    BOOST_CHECK_EQUAL(83U, t.vout[0].scriptPubKey.size());
+    CHECK(83U == t.vout[0].scriptPubKey.size());
     CheckIsStandard(t, /*max_op_return_relay=*/83);
 
     // Non-standard if max_op_return_relay datacarrier arg is one less
@@ -928,12 +926,12 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     //    1 output:              30 bytes =>    120 weight units
     //                      ======================================
     //                                total: 400000 weight units
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400000);
+    CHECK(GetTransactionWeight(CTransaction(t)) == 400000);
     CheckIsStandard(t);
 
     // increase output size by one byte, so we end up with 400004 weight units
     t.vout[0].scriptPubKey = CScript() << OP_RETURN << std::vector<unsigned char>(20, 0); // output size: 31 bytes
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(t)), 400004);
+    CHECK(GetTransactionWeight(CTransaction(t)) == 400004);
     CheckIsNotStandard(t, "tx-size");
 
     // Check bare multisig (standard if policy flag g_bare_multi is set)
@@ -1012,14 +1010,14 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     // Check anchor outputs
     t.vout[0].scriptPubKey = CScript() << OP_1 << ANCHOR_BYTES;
-    BOOST_CHECK(t.vout[0].scriptPubKey.IsPayToAnchor());
+    CHECK(t.vout[0].scriptPubKey.IsPayToAnchor());
     t.vout[0].nValue = 240;
     CheckIsStandard(t);
     t.vout[0].nValue = 239;
     CheckIsNotStandard(t, "dust");
 }
 
-BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
+FIXTURE_TEST_CASE(max_standard_legacy_sigops, BasicTestingSetup)
 {
     CCoinsViewCache coins{&CoinsViewEmpty::Get()};
     CKey key;
@@ -1046,12 +1044,12 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     }
 
     // p2sh_inputs_count is truncated to 166 (from 166.6666..)
-    BOOST_CHECK_LT(p2sh_inputs_count * MAX_P2SH_SIGOPS, MAX_TX_LEGACY_SIGOPS);
+    CHECK(p2sh_inputs_count * MAX_P2SH_SIGOPS < MAX_TX_LEGACY_SIGOPS);
     AddCoins(coins, CTransaction(tx_create), 0, false);
 
     // 2490 sigops is below the limit.
-    BOOST_CHECK_EQUAL(GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins), 2490U);
-    BOOST_CHECK(::ValidateInputsStandardness(CTransaction(tx_max_sigops), coins).IsValid());
+    CHECK(GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins) == 2490U);
+    CHECK(::ValidateInputsStandardness(CTransaction(tx_max_sigops), coins).IsValid());
 
     // Adding one more input will bump this to 2505, hitting the limit.
     tx_create.vout.emplace_back(424242, max_sigops_p2sh);
@@ -1061,16 +1059,16 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     }
     tx_max_sigops.vin.emplace_back(prev_txid, p2sh_inputs_count, CScript() << ToByteVector(max_sigops_redeem_script));
     AddCoins(coins, CTransaction(tx_create), 0, false);
-    BOOST_CHECK_GT((p2sh_inputs_count + 1) * MAX_P2SH_SIGOPS, MAX_TX_LEGACY_SIGOPS);
+    CHECK((p2sh_inputs_count + 1) * MAX_P2SH_SIGOPS > MAX_TX_LEGACY_SIGOPS);
     auto legacy_sigops_count = GetP2SHSigOpCount(CTransaction(tx_max_sigops), coins);
-    BOOST_CHECK_EQUAL(legacy_sigops_count, 2505U);
+    CHECK(legacy_sigops_count == 2505U);
     std::string reject_reason("bad-txns-nonstandard-inputs");
     std::string sigop_limit_reject_debug_message("non-witness sigops exceed bip54 limit");
     {
         auto validation_state = ValidateInputsStandardness(CTransaction(tx_max_sigops), coins);
-        BOOST_CHECK(validation_state.IsInvalid());
-        BOOST_CHECK_EQUAL(validation_state.GetRejectReason(), reject_reason);
-        BOOST_CHECK_EQUAL(validation_state.GetDebugMessage(), sigop_limit_reject_debug_message);
+        CHECK(validation_state.IsInvalid());
+        CHECK(validation_state.GetRejectReason() == reject_reason);
+        CHECK(validation_state.GetDebugMessage() == sigop_limit_reject_debug_message);
     }
 
 
@@ -1090,8 +1088,8 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     AddCoins(coins, CTransaction(tx_create_p2pk), 0, false);
 
     // The transaction now contains exactly 2500 sigops, the check should pass.
-    BOOST_CHECK_EQUAL(p2sh_inputs_count * MAX_P2SH_SIGOPS + p2pk_inputs_count * 1, MAX_TX_LEGACY_SIGOPS);
-    BOOST_CHECK(::ValidateInputsStandardness(CTransaction(tx_max_sigops), coins).IsValid());
+    CHECK(p2sh_inputs_count * MAX_P2SH_SIGOPS + p2pk_inputs_count * 1 == MAX_TX_LEGACY_SIGOPS);
+    CHECK(::ValidateInputsStandardness(CTransaction(tx_max_sigops), coins).IsValid());
 
     // Now, add some Segwit inputs. We add one for each defined Segwit output type. The limit
     // is exclusively on non-witness sigops and therefore those should not be counted.
@@ -1107,7 +1105,7 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
 
     // The transaction now still contains exactly 2500 sigops, the check should pass.
     AddCoins(coins, CTransaction(tx_create_segwit), 0, false);
-    BOOST_REQUIRE(::ValidateInputsStandardness(CTransaction(tx_max_sigops), coins).IsValid());
+    REQUIRE(::ValidateInputsStandardness(CTransaction(tx_max_sigops), coins).IsValid());
 
     // Add one more P2PK input. We'll reach the limit.
     tx_create_p2pk.vout.emplace_back(212121, p2pk_script);
@@ -1119,16 +1117,16 @@ BOOST_AUTO_TEST_CASE(max_standard_legacy_sigops)
     }
     AddCoins(coins, CTransaction(tx_create_p2pk), 0, false);
     auto legacy_sigop_count_p2pk = p2sh_inputs_count * MAX_P2SH_SIGOPS + p2pk_inputs_count * 1;
-    BOOST_CHECK_GT(legacy_sigop_count_p2pk, MAX_TX_LEGACY_SIGOPS);
+    CHECK(legacy_sigop_count_p2pk > MAX_TX_LEGACY_SIGOPS);
     {
         auto validation_state = ValidateInputsStandardness(CTransaction(tx_max_sigops), coins);
-        BOOST_CHECK(validation_state.IsInvalid());
-        BOOST_CHECK_EQUAL(validation_state.GetRejectReason(), reject_reason);
-        BOOST_CHECK_EQUAL(validation_state.GetDebugMessage(), sigop_limit_reject_debug_message);
+        CHECK(validation_state.IsInvalid());
+        CHECK(validation_state.GetRejectReason() == reject_reason);
+        CHECK(validation_state.GetDebugMessage() == sigop_limit_reject_debug_message);
     }
 }
 
-BOOST_AUTO_TEST_CASE(checktxinputs_invalid_transactions_test)
+FIXTURE_TEST_CASE(checktxinputs_invalid_transactions_test, BasicTestingSetup)
 {
     auto check_invalid{[](CAmount input_value, CAmount output_value, bool coinbase, int spend_height, TxValidationResult expected_result, std::string_view expected_reason) {
         CCoinsViewCache inputs{&CoinsViewEmpty::Get()};
@@ -1142,10 +1140,10 @@ BOOST_AUTO_TEST_CASE(checktxinputs_invalid_transactions_test)
 
         TxValidationState state;
         CAmount txfee{0};
-        BOOST_CHECK(!Consensus::CheckTxInputs(CTransaction{mtx}, state, inputs, spend_height, txfee));
-        BOOST_CHECK(state.IsInvalid());
-        BOOST_CHECK_EQUAL(state.GetResult(), expected_result);
-        BOOST_CHECK_EQUAL(state.GetRejectReason(), expected_reason);
+        CHECK(!Consensus::CheckTxInputs(CTransaction{mtx}, state, inputs, spend_height, txfee));
+        CHECK(state.IsInvalid());
+        CHECK(state.GetResult() == expected_result);
+        CHECK(state.GetRejectReason() == expected_reason);
     }};
 
     check_invalid(/*input_value=*/MAX_MONEY + 1,
@@ -1167,17 +1165,17 @@ BOOST_AUTO_TEST_CASE(checktxinputs_invalid_transactions_test)
                   TxValidationResult::TX_PREMATURE_SPEND, /*expected_reason=*/"bad-txns-premature-spend-of-coinbase");
 }
 
-BOOST_AUTO_TEST_CASE(getvalueout_out_of_range_throws)
+FIXTURE_TEST_CASE(getvalueout_out_of_range_throws, BasicTestingSetup)
 {
     CMutableTransaction mtx;
     mtx.vout.emplace_back(MAX_MONEY + 1, CScript() << OP_TRUE);
 
     const CTransaction tx{mtx};
-    BOOST_CHECK_EXCEPTION(tx.GetValueOut(), std::runtime_error, HasReason("GetValueOut: value out of range"));
+    CHECK_EXCEPTION(tx.GetValueOut(), std::runtime_error, HasReason("GetValueOut: value out of range"));
 }
 
 /** Sanity check the return value of SpendsNonAnchorWitnessProg for various output types. */
-BOOST_AUTO_TEST_CASE(spends_witness_prog)
+FIXTURE_TEST_CASE(spends_witness_prog, BasicTestingSetup)
 {
     CCoinsViewCache coins{&CoinsViewEmpty::Get()};
     CKey key;
@@ -1196,138 +1194,138 @@ BOOST_AUTO_TEST_CASE(spends_witness_prog)
 
     // P2PK
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(PubKeyDestination{pubkey});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::PUBKEY);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::PUBKEY);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2PKH
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(PKHash{pubkey});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::PUBKEYHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::PUBKEYHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2SH
     auto redeem_script{CScript{} << OP_1 << OP_CHECKSIG};
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(ScriptHash{redeem_script});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::SCRIPTHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::SCRIPTHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     tx_spend.vin[0].scriptSig = CScript{} << OP_0 << ToByteVector(redeem_script);
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
     tx_spend.vin[0].scriptSig.clear();
 
     // native P2WSH
     const auto witness_script{CScript{} << OP_12 << OP_HASH160 << OP_DUP << OP_EQUAL};
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(WitnessV0ScriptHash{witness_script});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::WITNESS_V0_SCRIPTHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::WITNESS_V0_SCRIPTHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2SH-wrapped P2WSH
     redeem_script = tx_create.vout[0].scriptPubKey;
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(ScriptHash(redeem_script));
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::SCRIPTHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::SCRIPTHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     tx_spend.vin[0].scriptSig = CScript{} << ToByteVector(redeem_script);
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
     tx_spend.vin[0].scriptSig.clear();
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // native P2WPKH
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(WitnessV0KeyHash{pubkey});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::WITNESS_V0_KEYHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::WITNESS_V0_KEYHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2SH-wrapped P2WPKH
     redeem_script = tx_create.vout[0].scriptPubKey;
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(ScriptHash(redeem_script));
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::SCRIPTHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::SCRIPTHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     tx_spend.vin[0].scriptSig = CScript{} << ToByteVector(redeem_script);
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
     tx_spend.vin[0].scriptSig.clear();
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2TR
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(WitnessV1Taproot{XOnlyPubKey{pubkey}});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::WITNESS_V1_TAPROOT);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::WITNESS_V1_TAPROOT);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2SH-wrapped P2TR (undefined, non-standard)
     redeem_script = tx_create.vout[0].scriptPubKey;
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(ScriptHash(redeem_script));
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::SCRIPTHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::SCRIPTHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     tx_spend.vin[0].scriptSig = CScript{} << ToByteVector(redeem_script);
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
     tx_spend.vin[0].scriptSig.clear();
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2A
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(PayToAnchor{});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::ANCHOR);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::ANCHOR);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2SH-wrapped P2A (undefined, non-standard)
     redeem_script = tx_create.vout[0].scriptPubKey;
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(ScriptHash(redeem_script));
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::SCRIPTHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::SCRIPTHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     tx_spend.vin[0].scriptSig = CScript{} << ToByteVector(redeem_script);
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
     tx_spend.vin[0].scriptSig.clear();
 
     // Undefined version 1 witness program
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(WitnessUnknown{1, {0x42, 0x42}});
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::WITNESS_UNKNOWN);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::WITNESS_UNKNOWN);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // P2SH-wrapped undefined version 1 witness program
     redeem_script = tx_create.vout[0].scriptPubKey;
     tx_create.vout[0].scriptPubKey = GetScriptForDestination(ScriptHash(redeem_script));
-    BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::SCRIPTHASH);
+    CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::SCRIPTHASH);
     tx_spend.vin[0].prevout.hash = tx_create.GetHash();
     tx_spend.vin[0].scriptSig = CScript{} << ToByteVector(redeem_script);
     AddCoins(coins, CTransaction{tx_create}, 0, false);
-    BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
     tx_spend.vin[0].scriptSig.clear();
-    BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+    CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
     // Various undefined version >1 32-byte witness programs.
     const auto program{ToByteVector(XOnlyPubKey{pubkey})};
     for (int i{2}; i <= 16; ++i) {
         tx_create.vout[0].scriptPubKey = GetScriptForDestination(WitnessUnknown{i, program});
-        BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::WITNESS_UNKNOWN);
+        CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::WITNESS_UNKNOWN);
         tx_spend.vin[0].prevout.hash = tx_create.GetHash();
         AddCoins(coins, CTransaction{tx_create}, 0, false);
-        BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+        CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
 
         // It's also detected within P2SH.
         redeem_script = tx_create.vout[0].scriptPubKey;
         tx_create.vout[0].scriptPubKey = GetScriptForDestination(ScriptHash(redeem_script));
-        BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::SCRIPTHASH);
+        CHECK(Solver(tx_create.vout[0].scriptPubKey, sol_dummy) == TxoutType::SCRIPTHASH);
         tx_spend.vin[0].prevout.hash = tx_create.GetHash();
         tx_spend.vin[0].scriptSig = CScript{} << ToByteVector(redeem_script);
         AddCoins(coins, CTransaction{tx_create}, 0, false);
-        BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+        CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
         tx_spend.vin[0].scriptSig.clear();
-        BOOST_CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
+        CHECK(!::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

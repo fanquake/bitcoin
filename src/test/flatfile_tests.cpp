@@ -8,27 +8,27 @@
 #include <streams.h>
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(flatfile_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(flatfile_tests)
 
-BOOST_AUTO_TEST_CASE(flatfile_filename)
+FIXTURE_TEST_CASE(flatfile_filename, BasicTestingSetup)
 {
     const auto data_dir = m_args.GetDataDirBase();
 
     FlatFilePos pos(456, 789);
 
     FlatFileSeq seq1(data_dir, "a", 16 * 1024);
-    BOOST_CHECK_EQUAL(seq1.FileName(pos), data_dir / "a00456.dat");
+    CHECK(seq1.FileName(pos) == data_dir / "a00456.dat");
 
     FlatFileSeq seq2(data_dir / "a", "b", 16 * 1024);
-    BOOST_CHECK_EQUAL(seq2.FileName(pos), data_dir / "a" / "b00456.dat");
+    CHECK(seq2.FileName(pos) == data_dir / "a" / "b00456.dat");
 
     // Check default constructor IsNull
     assert(FlatFilePos{}.IsNull());
 }
 
-BOOST_AUTO_TEST_CASE(flatfile_open)
+FIXTURE_TEST_CASE(flatfile_open, BasicTestingSetup)
 {
     const auto data_dir = m_args.GetDataDirBase();
     FlatFileSeq seq(data_dir, "a", 16 * 1024);
@@ -46,20 +46,20 @@ BOOST_AUTO_TEST_CASE(flatfile_open)
     {
         AutoFile file{seq.Open(FlatFilePos(0, pos1))};
         file << LIMITED_STRING(line1, 256);
-        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
+        REQUIRE(file.fclose() == 0);
     }
 
     // Attempt to append to file opened in read-only mode.
     {
         AutoFile file{seq.Open(FlatFilePos(0, pos2), true)};
-        BOOST_CHECK_THROW(file << LIMITED_STRING(line2, 256), std::ios_base::failure);
+        CHECK_THROWS_AS(file << LIMITED_STRING(line2, 256), std::ios_base::failure);
     }
 
     // Append second line to file.
     {
         AutoFile file{seq.Open(FlatFilePos(0, pos2))};
         file << LIMITED_STRING(line2, 256);
-        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
+        REQUIRE(file.fclose() == 0);
     }
 
     // Read text from file in read-only mode.
@@ -68,10 +68,10 @@ BOOST_AUTO_TEST_CASE(flatfile_open)
         AutoFile file{seq.Open(FlatFilePos(0, pos1), true)};
 
         file >> LIMITED_STRING(text, 256);
-        BOOST_CHECK_EQUAL(text, line1);
+        CHECK(text == line1);
 
         file >> LIMITED_STRING(text, 256);
-        BOOST_CHECK_EQUAL(text, line2);
+        CHECK(text == line2);
     }
 
     // Read text from file with position offset.
@@ -80,40 +80,40 @@ BOOST_AUTO_TEST_CASE(flatfile_open)
         AutoFile file{seq.Open(FlatFilePos(0, pos2))};
 
         file >> LIMITED_STRING(text, 256);
-        BOOST_CHECK_EQUAL(text, line2);
-        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
+        CHECK(text == line2);
+        REQUIRE(file.fclose() == 0);
     }
 
     // Ensure another file in the sequence has no data.
     {
         std::string text;
         AutoFile file{seq.Open(FlatFilePos(1, pos2))};
-        BOOST_CHECK_THROW(file >> LIMITED_STRING(text, 256), std::ios_base::failure);
-        BOOST_REQUIRE_EQUAL(file.fclose(), 0);
+        CHECK_THROWS_AS(file >> LIMITED_STRING(text, 256), std::ios_base::failure);
+        REQUIRE(file.fclose() == 0);
     }
 }
 
-BOOST_AUTO_TEST_CASE(flatfile_allocate)
+FIXTURE_TEST_CASE(flatfile_allocate, BasicTestingSetup)
 {
     const auto data_dir = m_args.GetDataDirBase();
     FlatFileSeq seq(data_dir, "a", 100);
 
     bool out_of_space;
 
-    BOOST_CHECK_EQUAL(seq.Allocate(FlatFilePos(0, 0), 1, out_of_space), 100U);
-    BOOST_CHECK_EQUAL(fs::file_size(seq.FileName(FlatFilePos(0, 0))), 100U);
-    BOOST_CHECK(!out_of_space);
+    CHECK(seq.Allocate(FlatFilePos(0, 0), 1, out_of_space) == 100U);
+    CHECK(fs::file_size(seq.FileName(FlatFilePos(0, 0))) == 100U);
+    CHECK(!out_of_space);
 
-    BOOST_CHECK_EQUAL(seq.Allocate(FlatFilePos(0, 99), 1, out_of_space), 0U);
-    BOOST_CHECK_EQUAL(fs::file_size(seq.FileName(FlatFilePos(0, 99))), 100U);
-    BOOST_CHECK(!out_of_space);
+    CHECK(seq.Allocate(FlatFilePos(0, 99), 1, out_of_space) == 0U);
+    CHECK(fs::file_size(seq.FileName(FlatFilePos(0, 99))) == 100U);
+    CHECK(!out_of_space);
 
-    BOOST_CHECK_EQUAL(seq.Allocate(FlatFilePos(0, 99), 2, out_of_space), 101U);
-    BOOST_CHECK_EQUAL(fs::file_size(seq.FileName(FlatFilePos(0, 99))), 200U);
-    BOOST_CHECK(!out_of_space);
+    CHECK(seq.Allocate(FlatFilePos(0, 99), 2, out_of_space) == 101U);
+    CHECK(fs::file_size(seq.FileName(FlatFilePos(0, 99))) == 200U);
+    CHECK(!out_of_space);
 }
 
-BOOST_AUTO_TEST_CASE(flatfile_flush)
+FIXTURE_TEST_CASE(flatfile_flush, BasicTestingSetup)
 {
     const auto data_dir = m_args.GetDataDirBase();
     FlatFileSeq seq(data_dir, "a", 100);
@@ -123,11 +123,11 @@ BOOST_AUTO_TEST_CASE(flatfile_flush)
 
     // Flush without finalize should not truncate file.
     seq.Flush(FlatFilePos(0, 1));
-    BOOST_CHECK_EQUAL(fs::file_size(seq.FileName(FlatFilePos(0, 1))), 100U);
+    CHECK(fs::file_size(seq.FileName(FlatFilePos(0, 1))) == 100U);
 
     // Flush with finalize should truncate file.
     seq.Flush(FlatFilePos(0, 1), true);
-    BOOST_CHECK_EQUAL(fs::file_size(seq.FileName(FlatFilePos(0, 1))), 1U);
+    CHECK(fs::file_size(seq.FileName(FlatFilePos(0, 1))) == 1U);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

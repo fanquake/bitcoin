@@ -4,30 +4,31 @@
 
 #include <util/check.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <test/util/common.h>
 
-BOOST_AUTO_TEST_SUITE(util_check_tests)
+TEST_SUITE_BEGIN(util_check_tests)
 
-BOOST_AUTO_TEST_CASE(check_pass)
+TEST_CASE(check_pass)
 {
     Assume(true);
     Assert(true);
     CHECK_NONFATAL(true);
 }
 
-BOOST_AUTO_TEST_CASE(check_fail)
+TEST_CASE(check_fail)
 {
     // Disable aborts for easier testing here
     test_only_CheckFailuresAreExceptionsNotAborts mock_checks{};
 
     if constexpr (G_ABORT_ON_FAILED_ASSUME) {
-        BOOST_CHECK_EXCEPTION(Assume(false), NonFatalCheckError, HasReason{"Internal bug detected: false"});
+        CHECK_EXCEPTION(Assume(false), NonFatalCheckError, HasReason{"Internal bug detected: false"});
     } else {
-        BOOST_CHECK_NO_THROW(Assume(false));
+        CHECK_NOTHROW(Assume(false));
     }
-    BOOST_CHECK_EXCEPTION(Assert(false), NonFatalCheckError, HasReason{"Internal bug detected: false"});
-    BOOST_CHECK_EXCEPTION(CHECK_NONFATAL(false), NonFatalCheckError, HasReason{"Internal bug detected: false"});
+    CHECK_EXCEPTION(Assert(false), NonFatalCheckError, HasReason{"Internal bug detected: false"});
+    CHECK_EXCEPTION(CHECK_NONFATAL(false), NonFatalCheckError, HasReason{"Internal bug detected: false"});
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

@@ -8,11 +8,11 @@
 
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(node_warnings_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(node_warnings_tests)
 
-BOOST_AUTO_TEST_CASE(warnings)
+FIXTURE_TEST_CASE(warnings, BasicTestingSetup)
 {
     node::Warnings warnings;
     // On pre-release builds, a warning is generated automatically
@@ -24,29 +24,29 @@ BOOST_AUTO_TEST_CASE(warnings)
     const auto warning_2{node::Warning::FATAL_INTERNAL_ERROR};
 
     // Ensure we start without any warnings
-    BOOST_CHECK(warnings.GetMessages().size() == 0U);
+    CHECK(warnings.GetMessages().size() == 0U);
     // Add two warnings
-    BOOST_CHECK(warnings.Set(warning_1, _("warning 1")));
-    BOOST_CHECK(warnings.Set(warning_2, _("warning 2")));
+    CHECK(warnings.Set(warning_1, _("warning 1")));
+    CHECK(warnings.Set(warning_2, _("warning 2")));
     // Unset the second one
-    BOOST_CHECK(warnings.Unset(warning_2));
+    CHECK(warnings.Unset(warning_2));
     // Since it's already been unset, this should return false
-    BOOST_CHECK(!warnings.Unset(warning_2));
+    CHECK(!warnings.Unset(warning_2));
     // We should now be able to set w2 again
-    BOOST_CHECK(warnings.Set(warning_2, _("warning 2 - revision 1")));
+    CHECK(warnings.Set(warning_2, _("warning 2 - revision 1")));
     // Setting w2 again should return false since it's already set
-    BOOST_CHECK(!warnings.Set(warning_2, _("warning 2 - revision 2")));
+    CHECK(!warnings.Set(warning_2, _("warning 2 - revision 2")));
 
     // Verify messages are correct
     const auto messages{warnings.GetMessages()};
-    BOOST_CHECK(messages.size() == 2U);
-    BOOST_CHECK(messages[0].original == "warning 1");
-    BOOST_CHECK(messages[1].original == "warning 2 - revision 1");
+    CHECK(messages.size() == 2U);
+    CHECK(messages[0].original == "warning 1");
+    CHECK(messages[1].original == "warning 2 - revision 1");
 
     // Clearing all warnings should also clear all messages
-    BOOST_CHECK(warnings.Unset(warning_1));
-    BOOST_CHECK(warnings.Unset(warning_2));
-    BOOST_CHECK(warnings.GetMessages().size() == 0U);
+    CHECK(warnings.Unset(warning_1));
+    CHECK(warnings.Unset(warning_2));
+    CHECK(warnings.GetMessages().size() == 0U);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

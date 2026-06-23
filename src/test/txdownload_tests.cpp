@@ -15,9 +15,9 @@
 
 #include <array>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_AUTO_TEST_SUITE(txdownload_tests)
+TEST_SUITE_BEGIN(txdownload_tests)
 
 struct Behaviors {
     bool m_txid_in_rejects;
@@ -41,16 +41,16 @@ struct Behaviors {
 
     void CheckEqual(const Behaviors& other, bool segwit)
     {
-        BOOST_CHECK_EQUAL(other.m_wtxid_in_rejects,       m_wtxid_in_rejects);
-        BOOST_CHECK_EQUAL(other.m_wtxid_in_rejects_recon, m_wtxid_in_rejects_recon);
-        BOOST_CHECK_EQUAL(other.m_keep_for_compact,       m_keep_for_compact);
-        BOOST_CHECK_EQUAL(other.m_ignore_inv_wtxid,       m_ignore_inv_wtxid);
+        CHECK(other.m_wtxid_in_rejects == m_wtxid_in_rejects);
+        CHECK(other.m_wtxid_in_rejects_recon == m_wtxid_in_rejects_recon);
+        CHECK(other.m_keep_for_compact == m_keep_for_compact);
+        CHECK(other.m_ignore_inv_wtxid == m_ignore_inv_wtxid);
 
         // false negatives for nonsegwit transactions, since txid == wtxid.
         if (segwit) {
-            BOOST_CHECK_EQUAL(other.m_txid_in_rejects,        m_txid_in_rejects);
-            BOOST_CHECK_EQUAL(other.m_txid_in_rejects_recon,  m_txid_in_rejects_recon);
-            BOOST_CHECK_EQUAL(other.m_ignore_inv_txid,        m_ignore_inv_txid);
+            CHECK(other.m_txid_in_rejects == m_txid_in_rejects);
+            CHECK(other.m_txid_in_rejects_recon == m_txid_in_rejects_recon);
+            CHECK(other.m_ignore_inv_txid == m_ignore_inv_txid);
         }
     }
 };
@@ -111,7 +111,7 @@ static CTransactionRef CreatePlaceholderTx(bool segwit)
     return ptx;
 }
 
-BOOST_FIXTURE_TEST_CASE(tx_rejection_types, TestChain100Setup)
+FIXTURE_TEST_CASE(tx_rejection_types, TestChain100Setup)
 {
     CTxMemPool& pool = *Assert(m_node.mempool);
     FastRandomContext det_rand{true};
@@ -150,7 +150,7 @@ BOOST_FIXTURE_TEST_CASE(tx_rejection_types, TestChain100Setup)
                     /*txid_inv=*/txdownload_impl.AddTxAnnouncement(nodeid, parent_txid, now),
                     /*wtxid_inv=*/txdownload_impl.AddTxAnnouncement(nodeid, parent_wtxid, now),
                 };
-                BOOST_TEST_MESSAGE("Testing behavior for " << result << (segwit_parent ? " segwit " : " nonsegwit"));
+                TEST_MESSAGE("Testing behavior for " << result << (segwit_parent ? " segwit " : " nonsegwit"));
                 actual_behavior.CheckEqual(expected_behavior, /*segwit=*/segwit_parent);
 
                 // Later, a child of this transaction fails for missing inputs
@@ -159,17 +159,17 @@ BOOST_FIXTURE_TEST_CASE(tx_rejection_types, TestChain100Setup)
 
                 // If parent (by txid) was rejected, child is too.
                 const bool parent_txid_rejected{segwit_parent ? expected_behavior.m_txid_in_rejects : expected_behavior.m_wtxid_in_rejects};
-                BOOST_CHECK_EQUAL(parent_txid_rejected, txdownload_impl.RecentRejectsFilter().contains(child_txid.ToUint256()));
-                BOOST_CHECK_EQUAL(parent_txid_rejected, txdownload_impl.RecentRejectsFilter().contains(child_wtxid.ToUint256()));
+                CHECK(parent_txid_rejected == txdownload_impl.RecentRejectsFilter().contains(child_txid.ToUint256()));
+                CHECK(parent_txid_rejected == txdownload_impl.RecentRejectsFilter().contains(child_wtxid.ToUint256()));
 
                 // Unless rejected, the child should be in orphanage.
-                BOOST_CHECK_EQUAL(!parent_txid_rejected, txdownload_impl.m_orphanage->HaveTx(ptx_child->GetWitnessHash()));
+                CHECK(!parent_txid_rejected == txdownload_impl.m_orphanage->HaveTx(ptx_child->GetWitnessHash()));
             }
         }
     }
 }
 
-BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
+FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
 {
     CTxMemPool& pool = *Assert(m_node.mempool);
     FastRandomContext det_rand{true};
@@ -223,7 +223,7 @@ BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
         if (parent_recent_conf) txdownload_impl.RecentConfirmedTransactionsFilter().insert(single_parent->GetHash().ToUint256());
         if (parent_in_mempool) {
             const auto mempool_result = WITH_LOCK(::cs_main, return m_node.chainman->ProcessTransaction(single_parent));
-            BOOST_CHECK(mempool_result.m_result_type == MempoolAcceptResult::ResultType::VALID);
+            CHECK(mempool_result.m_result_type == MempoolAcceptResult::ResultType::VALID);
             coinbase_idx += 1;
             assert(coinbase_idx < m_coinbase_txns.size());
         }
@@ -235,12 +235,12 @@ BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
         const unsigned int expected_parents = parent_recent_rej || parent_recent_conf || parent_in_mempool ? 0 : 1;
         // If we don't expect to keep the orphan then expected_parents is 0.
         // !expect_keep_orphan => (expected_parents == 0)
-        BOOST_CHECK((expect_keep_orphan || expected_parents == 0));
+        CHECK((expect_keep_orphan || expected_parents == 0));
         const auto ret_1p1c = txdownload_impl.MempoolRejectedTx(orphan, state_orphan, nodeid, /*first_time_failure=*/true);
         std::string err_msg;
         const bool ok = CheckOrphanBehavior(txdownload_impl, orphan, ret_1p1c, err_msg,
                                             /*expect_orphan=*/expect_keep_orphan, /*expect_keep=*/true, /*expected_parents=*/expected_parents);
-        BOOST_CHECK_MESSAGE(ok, err_msg);
+        CHECK(ok, err_msg);
     }
 
     // Orphan with multiple parents
@@ -271,7 +271,7 @@ BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
             std::string err_msg;
             const bool ok = CheckOrphanBehavior(txdownload_impl, orphan, ret_1p1c_parent_reconsiderable, err_msg,
                                                 /*expect_orphan=*/true, /*expect_keep=*/true, /*expected_parents=*/num_parents);
-            BOOST_CHECK_MESSAGE(ok, err_msg);
+            CHECK(ok, err_msg);
         }
 
         // 1 parent in RecentRejectsReconsiderableFilter, the rest are confirmed
@@ -289,7 +289,7 @@ BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
             std::string err_msg;
             const bool ok = CheckOrphanBehavior(txdownload_impl, orphan, ret_1recon_conf, err_msg,
                                                 /*expect_orphan=*/true, /*expect_keep=*/true, /*expected_parents=*/expected_parents);
-            BOOST_CHECK_MESSAGE(ok, err_msg);
+            CHECK(ok, err_msg);
         }
 
         // 1 parent in RecentRejectsReconsiderableFilter, 1 other in {RecentRejectsReconsiderableFilter, RecentRejectsFilter}
@@ -311,7 +311,7 @@ BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
             std::string err_msg;
             const bool ok = CheckOrphanBehavior(txdownload_impl, orphan, ret_2_problems, err_msg,
                                                 /*expect_orphan=*/false, /*expect_keep=*/true, /*expected_parents=*/0);
-            BOOST_CHECK_MESSAGE(ok, err_msg);
+            CHECK(ok, err_msg);
         }
     }
 
@@ -334,9 +334,9 @@ BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
             std::string err_msg;
             const bool ok = CheckOrphanBehavior(txdownload_impl, orphan, ret_1p1c_2reconsiderable, err_msg,
                                                 /*expect_orphan=*/true, /*expect_keep=*/true, /*expected_parents=*/1);
-            BOOST_CHECK_MESSAGE(ok, err_msg);
+            CHECK(ok, err_msg);
         }
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

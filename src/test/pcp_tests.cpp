@@ -9,7 +9,7 @@
 #include <test/util/setup_common.h>
 #include <util/time.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <algorithm>
 #include <deque>
@@ -49,10 +49,10 @@ public:
         const std::optional<CService> local_ipv6{Lookup("2a10:1234:5678:9abc:def0:1234:5678:9abc", 1, false)};
         const std::optional<CService> gateway_ipv4{Lookup("192.168.0.1", 1, false)};
         const std::optional<CService> gateway_ipv6{Lookup("2a10:1234:5678:9abc:def0:0000:0000:0000", 1, false)};
-        BOOST_REQUIRE(local_ipv4);
-        BOOST_REQUIRE(local_ipv6);
-        BOOST_REQUIRE(gateway_ipv4);
-        BOOST_REQUIRE(gateway_ipv6);
+        REQUIRE(local_ipv4);
+        REQUIRE(local_ipv6);
+        REQUIRE(gateway_ipv4);
+        REQUIRE(gateway_ipv6);
         default_local_ipv4 = *local_ipv4;
         default_local_ipv6 = *local_ipv6;
         default_gateway_ipv4 = *gateway_ipv4;
@@ -233,7 +233,7 @@ private:
 
     bool AtEndOfScript() const { return m_script_ptr == m_script.size(); }
     const TestOp &CurOp() const {
-        BOOST_REQUIRE(m_script_ptr < m_script.size());
+        REQUIRE(m_script_ptr < m_script.size());
         return m_script[m_script_ptr];
     }
 
@@ -251,10 +251,10 @@ private:
     void FailScript() const { m_script_ptr = m_script.size(); }
 };
 
-BOOST_FIXTURE_TEST_SUITE(pcp_tests, PCPTestingSetup)
+TEST_SUITE_BEGIN(pcp_tests)
 
 // NAT-PMP IPv4 good-weather scenario.
-BOOST_AUTO_TEST_CASE(natpmp_ipv4)
+FIXTURE_TEST_CASE(natpmp_ipv4, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -297,15 +297,15 @@ BOOST_AUTO_TEST_CASE(natpmp_ipv4)
     auto res = NATPMPRequestPortMap(default_gateway_ipv4, 1234, 1000, g_interrupt, 1, 200ms);
 
     MappingResult* mapping = std::get_if<MappingResult>(&res);
-    BOOST_REQUIRE(mapping);
-    BOOST_CHECK_EQUAL(mapping->version, 0);
-    BOOST_CHECK_EQUAL(mapping->internal.ToStringAddrPort(), "192.168.0.6:1234");
-    BOOST_CHECK_EQUAL(mapping->external.ToStringAddrPort(), "1.2.3.4:1234");
-    BOOST_CHECK_EQUAL(mapping->lifetime, 500U);
+    REQUIRE(mapping);
+    CHECK(mapping->version == 0);
+    CHECK(mapping->internal.ToStringAddrPort() == "192.168.0.6:1234");
+    CHECK(mapping->external.ToStringAddrPort() == "1.2.3.4:1234");
+    CHECK(mapping->lifetime == 500U);
 }
 
 // PCP IPv4 good-weather scenario.
-BOOST_AUTO_TEST_CASE(pcp_ipv4)
+FIXTURE_TEST_CASE(pcp_ipv4, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -341,15 +341,15 @@ BOOST_AUTO_TEST_CASE(pcp_ipv4)
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv4, bind_any_ipv4, 1234, 1000, g_interrupt, 1, 1000ms);
 
     MappingResult* mapping = std::get_if<MappingResult>(&res);
-    BOOST_REQUIRE(mapping);
-    BOOST_CHECK_EQUAL(mapping->version, 2);
-    BOOST_CHECK_EQUAL(mapping->internal.ToStringAddrPort(), "192.168.0.6:1234");
-    BOOST_CHECK_EQUAL(mapping->external.ToStringAddrPort(), "1.2.3.4:1234");
-    BOOST_CHECK_EQUAL(mapping->lifetime, 500U);
+    REQUIRE(mapping);
+    CHECK(mapping->version == 2);
+    CHECK(mapping->internal.ToStringAddrPort() == "192.168.0.6:1234");
+    CHECK(mapping->external.ToStringAddrPort() == "1.2.3.4:1234");
+    CHECK(mapping->lifetime == 500U);
 }
 
 // PCP IPv6 good-weather scenario.
-BOOST_AUTO_TEST_CASE(pcp_ipv6)
+FIXTURE_TEST_CASE(pcp_ipv6, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -385,15 +385,15 @@ BOOST_AUTO_TEST_CASE(pcp_ipv6)
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv6, default_local_ipv6, 1234, 1000, g_interrupt, 1, 1000ms);
 
     MappingResult* mapping = std::get_if<MappingResult>(&res);
-    BOOST_REQUIRE(mapping);
-    BOOST_CHECK_EQUAL(mapping->version, 2);
-    BOOST_CHECK_EQUAL(mapping->internal.ToStringAddrPort(), "[2a10:1234:5678:9abc:def0:1234:5678:9abc]:1234");
-    BOOST_CHECK_EQUAL(mapping->external.ToStringAddrPort(), "[2a10:1234:5678:9abc:def0:1234:5678:9abc]:1234");
-    BOOST_CHECK_EQUAL(mapping->lifetime, 500U);
+    REQUIRE(mapping);
+    CHECK(mapping->version == 2);
+    CHECK(mapping->internal.ToStringAddrPort() == "[2a10:1234:5678:9abc:def0:1234:5678:9abc]:1234");
+    CHECK(mapping->external.ToStringAddrPort() == "[2a10:1234:5678:9abc:def0:1234:5678:9abc]:1234");
+    CHECK(mapping->lifetime == 500U);
 }
 
 // PCP timeout.
-BOOST_AUTO_TEST_CASE(pcp_timeout)
+FIXTURE_TEST_CASE(pcp_timeout, PCPTestingSetup)
 {
     const std::vector<TestOp> script{};
     CreateSock = [this, &script](int domain, int type, int protocol) {
@@ -408,12 +408,12 @@ BOOST_AUTO_TEST_CASE(pcp_timeout)
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv4, bind_any_ipv4, 1234, 1000, g_interrupt, 3, 2000ms);
 
     MappingError* err = std::get_if<MappingError>(&res);
-    BOOST_REQUIRE(err);
-    BOOST_CHECK_EQUAL(*err, MappingError::NETWORK_ERROR);
+    REQUIRE(err);
+    CHECK(*err == MappingError::NETWORK_ERROR);
 }
 
 // PCP failure receiving (router sends ICMP port closed).
-BOOST_AUTO_TEST_CASE(pcp_connrefused)
+FIXTURE_TEST_CASE(pcp_connrefused, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -437,12 +437,12 @@ BOOST_AUTO_TEST_CASE(pcp_connrefused)
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv4, bind_any_ipv4, 1234, 1000, g_interrupt, 3, 2000ms);
 
     MappingError* err = std::get_if<MappingError>(&res);
-    BOOST_REQUIRE(err);
-    BOOST_CHECK_EQUAL(*err, MappingError::NETWORK_ERROR);
+    REQUIRE(err);
+    CHECK(*err == MappingError::NETWORK_ERROR);
 }
 
 // PCP IPv6 success after one timeout.
-BOOST_AUTO_TEST_CASE(pcp_ipv6_timeout_success)
+FIXTURE_TEST_CASE(pcp_ipv6_timeout_success, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -496,11 +496,11 @@ BOOST_AUTO_TEST_CASE(pcp_ipv6_timeout_success)
 
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv6, default_local_ipv6, 1234, 1000, g_interrupt, 2, 2000ms);
 
-    BOOST_CHECK(std::get_if<MappingResult>(&res));
+    CHECK(std::get_if<MappingResult>(&res));
 }
 
 // PCP IPv4 failure (no resources).
-BOOST_AUTO_TEST_CASE(pcp_ipv4_fail_no_resources)
+FIXTURE_TEST_CASE(pcp_ipv4_fail_no_resources, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -536,12 +536,12 @@ BOOST_AUTO_TEST_CASE(pcp_ipv4_fail_no_resources)
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv4, bind_any_ipv4, 1234, 1000, g_interrupt, 3, 1000ms);
 
     MappingError* err = std::get_if<MappingError>(&res);
-    BOOST_REQUIRE(err);
-    BOOST_CHECK_EQUAL(*err, MappingError::NO_RESOURCES);
+    REQUIRE(err);
+    CHECK(*err == MappingError::NO_RESOURCES);
 }
 
 // PCP IPv4 failure (test NATPMP downgrade scenario).
-BOOST_AUTO_TEST_CASE(pcp_ipv4_fail_unsupported_version)
+FIXTURE_TEST_CASE(pcp_ipv4_fail_unsupported_version, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -572,12 +572,12 @@ BOOST_AUTO_TEST_CASE(pcp_ipv4_fail_unsupported_version)
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv4, bind_any_ipv4, 1234, 1000, g_interrupt, 3, 1000ms);
 
     MappingError* err = std::get_if<MappingError>(&res);
-    BOOST_REQUIRE(err);
-    BOOST_CHECK_EQUAL(*err, MappingError::UNSUPP_VERSION);
+    REQUIRE(err);
+    CHECK(*err == MappingError::UNSUPP_VERSION);
 }
 
 // NAT-PMP IPv4 protocol error scenarii.
-BOOST_AUTO_TEST_CASE(natpmp_protocol_error)
+FIXTURE_TEST_CASE(natpmp_protocol_error, PCPTestingSetup)
 {
     // First scenario: non-0 result code when requesting external IP.
     std::vector<TestOp> script{
@@ -604,8 +604,8 @@ BOOST_AUTO_TEST_CASE(natpmp_protocol_error)
     auto res = NATPMPRequestPortMap(default_gateway_ipv4, 1234, 1000, g_interrupt, 1, 200ms);
 
     MappingError* err = std::get_if<MappingError>(&res);
-    BOOST_REQUIRE(err);
-    BOOST_CHECK_EQUAL(*err, MappingError::PROTOCOL_ERROR);
+    REQUIRE(err);
+    CHECK(*err == MappingError::PROTOCOL_ERROR);
 
     // First scenario: non-0 result code when requesting port mapping.
     script = {
@@ -649,12 +649,12 @@ BOOST_AUTO_TEST_CASE(natpmp_protocol_error)
     res = NATPMPRequestPortMap(default_gateway_ipv4, 1234, 1000, g_interrupt, 1, 200ms);
 
     err = std::get_if<MappingError>(&res);
-    BOOST_REQUIRE(err);
-    BOOST_CHECK_EQUAL(*err, MappingError::PROTOCOL_ERROR);
+    REQUIRE(err);
+    CHECK(*err == MappingError::PROTOCOL_ERROR);
 }
 
 // PCP IPv4 protocol error scenario.
-BOOST_AUTO_TEST_CASE(pcp_protocol_error)
+FIXTURE_TEST_CASE(pcp_protocol_error, PCPTestingSetup)
 {
     const std::vector<TestOp> script{
         {
@@ -690,9 +690,9 @@ BOOST_AUTO_TEST_CASE(pcp_protocol_error)
     auto res = PCPRequestPortMap(TEST_NONCE, default_gateway_ipv4, bind_any_ipv4, 1234, 1000, g_interrupt, 1, 1000ms);
 
     MappingError* err = std::get_if<MappingError>(&res);
-    BOOST_REQUIRE(err);
-    BOOST_CHECK_EQUAL(*err, MappingError::PROTOCOL_ERROR);
+    REQUIRE(err);
+    CHECK(*err == MappingError::PROTOCOL_ERROR);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 

@@ -4,26 +4,26 @@
 
 #include <util/strencodings.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <algorithm>
 #include <string>
 
 using namespace std::literals;
 
-BOOST_AUTO_TEST_SUITE(base64_tests)
+TEST_SUITE_BEGIN(base64_tests)
 
-BOOST_AUTO_TEST_CASE(base64_testvectors)
+TEST_CASE(base64_testvectors)
 {
     static const std::string vstrIn[]  = {"","f","fo","foo","foob","fooba","foobar"};
     static const std::string vstrOut[] = {"","Zg==","Zm8=","Zm9v","Zm9vYg==","Zm9vYmE=","Zm9vYmFy"};
     for (unsigned int i=0; i<std::size(vstrIn); i++)
     {
         std::string strEnc = EncodeBase64(vstrIn[i]);
-        BOOST_CHECK_EQUAL(strEnc, vstrOut[i]);
+        CHECK(strEnc == vstrOut[i]);
         auto dec = DecodeBase64(strEnc);
-        BOOST_REQUIRE(dec);
-        BOOST_CHECK_MESSAGE(std::ranges::equal(*dec, vstrIn[i]), vstrOut[i]);
+        REQUIRE(dec);
+        CHECK(std::ranges::equal(*dec, vstrIn[i]), vstrOut[i]);
     }
 
     {
@@ -31,29 +31,29 @@ BOOST_AUTO_TEST_CASE(base64_testvectors)
         const std::vector<std::byte> in_b{std::byte{0xff}, std::byte{0x01}, std::byte{0xff}};
         const std::string in_s{"\xff\x01\xff"};
         const std::string out_exp{"/wH/"};
-        BOOST_CHECK_EQUAL(EncodeBase64(in_u), out_exp);
-        BOOST_CHECK_EQUAL(EncodeBase64(in_b), out_exp);
-        BOOST_CHECK_EQUAL(EncodeBase64(in_s), out_exp);
+        CHECK(EncodeBase64(in_u) == out_exp);
+        CHECK(EncodeBase64(in_b) == out_exp);
+        CHECK(EncodeBase64(in_s) == out_exp);
     }
 
-    BOOST_CHECK(DecodeBase64("nQB/pZw=")); // valid
+    CHECK(DecodeBase64("nQB/pZw=")); // valid
 
     // Decoding strings with embedded NUL characters should fail
-    BOOST_CHECK(!DecodeBase64("invalid\0"sv)); // correct size, invalid due to \0
-    BOOST_CHECK(!DecodeBase64("nQB/pZw=\0invalid"sv));
-    BOOST_CHECK(!DecodeBase64("nQB/pZw=invalid\0"sv)); // invalid, padding only allowed at the end
+    CHECK(!DecodeBase64("invalid\0"sv)); // correct size, invalid due to \0
+    CHECK(!DecodeBase64("nQB/pZw=\0invalid"sv));
+    CHECK(!DecodeBase64("nQB/pZw=invalid\0"sv)); // invalid, padding only allowed at the end
 }
 
-BOOST_AUTO_TEST_CASE(base64_padding)
+TEST_CASE(base64_padding)
 {
     // Is valid without padding
-    BOOST_CHECK_EQUAL(EncodeBase64("foobar"), "Zm9vYmFy");
+    CHECK(EncodeBase64("foobar") == "Zm9vYmFy");
 
     // Valid size
-    BOOST_CHECK(!DecodeBase64("===="));
-    BOOST_CHECK(!DecodeBase64("a==="));
-    BOOST_CHECK( DecodeBase64("YQ=="));
-    BOOST_CHECK( DecodeBase64("YWE="));
+    CHECK(!DecodeBase64("===="));
+    CHECK(!DecodeBase64("a==="));
+    CHECK( DecodeBase64("YQ=="));
+    CHECK( DecodeBase64("YWE="));
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

@@ -10,9 +10,9 @@
 
 #include <vector>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(cluster_linearize_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(cluster_linearize_tests)
 
 using namespace cluster_linearize;
 using namespace util::hex_literals;
@@ -44,14 +44,14 @@ void TestDepGraphSerialization(const std::vector<std::pair<FeeFrac, SetType>>& c
     std::vector<unsigned char> encoding;
     VectorWriter writer(encoding, 0);
     writer << Using<DepGraphFormatter>(depgraph);
-    BOOST_CHECK_EQUAL(HexStr(encoding), hexenc);
+    CHECK(HexStr(encoding) == hexenc);
 
     // Test that deserializing that encoding yields depgraph. This is effectively already implied
     // by the round-trip test above (if depgraph is acyclic), but verify it explicitly again here.
     SpanReader reader(encoding);
     DepGraph<SetType> depgraph_read;
     reader >> Using<DepGraphFormatter>(depgraph_read);
-    BOOST_CHECK(depgraph == depgraph_read);
+    CHECK(depgraph == depgraph_read);
 }
 
 void TestOptimalLinearization(std::span<const uint8_t> enc, std::initializer_list<DepGraphIndex> optimal_linearization)
@@ -95,10 +95,10 @@ void TestOptimalLinearization(std::span<const uint8_t> enc, std::initializer_lis
                 /*fallback_order=*/IndexTxOrder{},
                 /*old_linearization=*/lin,
                 /*is_topological=*/is_topological);
-            BOOST_CHECK(opt);
-            BOOST_CHECK(cost <= MaxOptimalLinearizationCost(depgraph.TxCount()));
+            CHECK(opt);
+            CHECK(cost <= MaxOptimalLinearizationCost(depgraph.TxCount()));
             SanityCheck(depgraph, lin);
-            BOOST_CHECK(std::ranges::equal(lin, optimal_linearization));
+            CHECK(std::ranges::equal(lin, optimal_linearization));
         }
         tx_count = depgraph.PositionRange();
     };
@@ -122,7 +122,7 @@ void TestOptimalLinearization(std::span<const uint8_t> enc, std::initializer_lis
 
 } // namespace
 
-BOOST_AUTO_TEST_CASE(depgraph_ser_tests)
+FIXTURE_TEST_CASE(depgraph_ser_tests, BasicTestingSetup)
 {
     // Empty cluster.
     TestDepGraphSerialization<TestBitSet>(
@@ -242,7 +242,7 @@ BOOST_AUTO_TEST_CASE(depgraph_ser_tests)
     );
 }
 
-BOOST_AUTO_TEST_CASE(depgraph_optimal_tests)
+FIXTURE_TEST_CASE(depgraph_optimal_tests, BasicTestingSetup)
 {
     // Compare linearizations with known-optimal chunk feerate diagrams.
 
@@ -482,4 +482,4 @@ BOOST_AUTO_TEST_CASE(depgraph_optimal_tests)
     TestOptimalLinearization("866faa23008646b71501851f96130282588f1103804d851c0000000003822097600100000003850a8f310200000003856e9201000000038656935f01000003855b8f5f020000018743923a0000000a812b810b010000098403a328020000068712970203000005833e98400400000200"_hex_u8, {11, 14, 1, 10, 4, 3, 5, 13, 9, 7, 6, 12, 8, 0, 2});
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

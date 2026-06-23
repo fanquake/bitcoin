@@ -9,7 +9,7 @@
 #include <test/util/setup_common.h>
 #include <util/byte_units.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <deque>
 #include <mutex>
@@ -30,13 +30,13 @@
  *  using BOOST_CHECK_CLOSE to fail.
  *
  */
-BOOST_FIXTURE_TEST_SUITE(cuckoocache_tests, BasicTestingSetup);
+TEST_SUITE_BEGIN(cuckoocache_tests);
 
 /* Test that no values not inserted into the cache are read out of it.
  *
  * There are no repeats in the first 200000 m_rng.rand256() calls
  */
-BOOST_AUTO_TEST_CASE(test_cuckoocache_no_fakes)
+FIXTURE_TEST_CASE(test_cuckoocache_no_fakes, BasicTestingSetup)
 {
     SeedRandomForTest(SeedRand::ZEROS);
     CuckooCache::cache<uint256, SignatureCacheHasher> cc{};
@@ -45,7 +45,7 @@ BOOST_AUTO_TEST_CASE(test_cuckoocache_no_fakes)
         cc.insert(m_rng.rand256());
     }
     for (int x = 0; x < 100000; ++x) {
-        BOOST_CHECK(!cc.contains(m_rng.rand256(), false));
+        CHECK(!cc.contains(m_rng.rand256(), false));
     }
 };
 
@@ -107,7 +107,7 @@ static double normalize_hit_rate(double hits, double load)
 }; // struct HitRateTest
 
 /** Check the hit rate on loads ranging from 0.1 to 1.6 */
-BOOST_FIXTURE_TEST_CASE(cuckoocache_hit_rate_ok, HitRateTest)
+FIXTURE_TEST_CASE(cuckoocache_hit_rate_ok, HitRateTest)
 {
     /** Arbitrarily selected Hit Rate threshold that happens to work for this test
      * as a lower bound on performance.
@@ -115,7 +115,7 @@ BOOST_FIXTURE_TEST_CASE(cuckoocache_hit_rate_ok, HitRateTest)
     double HitRateThresh = 0.98;
     for (double load = 0.1; load < 2; load *= 2) {
         double hits = test_cache<CuckooCache::cache<uint256, SignatureCacheHasher>>(4_MiB, load);
-        BOOST_CHECK(normalize_hit_rate(hits, load) > HitRateThresh);
+        CHECK(normalize_hit_rate(hits, load) > HitRateThresh);
     }
 }
 
@@ -149,7 +149,7 @@ void test_cache_erase(size_t bytes)
         set.insert(hashes_insert_copy[i]);
     /** Erase the first quarter */
     for (uint32_t i = 0; i < (n_insert / 4); ++i)
-        BOOST_CHECK(set.contains(hashes[i], true));
+        CHECK(set.contains(hashes[i], true));
     /** Insert the second half */
     for (uint32_t i = (n_insert / 2); i < n_insert; ++i)
         set.insert(hashes_insert_copy[i]);
@@ -173,14 +173,14 @@ void test_cache_erase(size_t bytes)
     double hit_rate_fresh = double(count_fresh) / (double(n_insert) / 2.0);
 
     // Check that our hit_rate_fresh is perfect
-    BOOST_CHECK_EQUAL(hit_rate_fresh, 1.0);
+    CHECK(hit_rate_fresh == 1.0);
     // Check that we have a more than 2x better hit rate on stale elements than
     // erased elements.
-    BOOST_CHECK(hit_rate_stale > 2 * hit_rate_erased_but_contained);
+    CHECK(hit_rate_stale > 2 * hit_rate_erased_but_contained);
 }
 }; // struct EraseTest
 
-BOOST_FIXTURE_TEST_CASE(cuckoocache_erase_ok, EraseTest)
+FIXTURE_TEST_CASE(cuckoocache_erase_ok, EraseTest)
 {
     test_cache_erase<CuckooCache::cache<uint256, SignatureCacheHasher>>(4_MiB);
 }
@@ -264,13 +264,13 @@ void test_cache_erase_parallel(size_t bytes)
     double hit_rate_fresh = double(count_fresh) / (double(n_insert) / 2.0);
 
     // Check that our hit_rate_fresh is perfect
-    BOOST_CHECK_EQUAL(hit_rate_fresh, 1.0);
+    CHECK(hit_rate_fresh == 1.0);
     // Check that we have a more than 2x better hit rate on stale elements than
     // erased elements.
-    BOOST_CHECK(hit_rate_stale > 2 * hit_rate_erased_but_contained);
+    CHECK(hit_rate_stale > 2 * hit_rate_erased_but_contained);
 }
 }; // struct EraseParallelTest
-BOOST_FIXTURE_TEST_CASE(cuckoocache_erase_parallel_ok, EraseParallelTest)
+FIXTURE_TEST_CASE(cuckoocache_erase_parallel_ok, EraseParallelTest)
 {
     test_cache_erase_parallel<CuckooCache::cache<uint256, SignatureCacheHasher>>(4_MiB);
 }
@@ -357,19 +357,19 @@ void test_cache_generations()
         // full yet.
         double hit = (double(count)) / (last_few.size() * POP_AMOUNT);
         // Loose Check that hit rate is above min_hit_rate
-        BOOST_CHECK(hit > min_hit_rate);
+        CHECK(hit > min_hit_rate);
         // Tighter check, count number of times we are less than tight_hit_rate
         // (and implicitly, greater than min_hit_rate)
         out_of_tight_tolerance += hit < tight_hit_rate;
     }
     // Check that being out of tolerance happens less than
     // max_rate_less_than_tight_hit_rate of the time
-    BOOST_CHECK(double(out_of_tight_tolerance) / double(total) < max_rate_less_than_tight_hit_rate);
+    CHECK(double(out_of_tight_tolerance) / double(total) < max_rate_less_than_tight_hit_rate);
 }
 }; // struct GenerationsTest
-BOOST_FIXTURE_TEST_CASE(cuckoocache_generations, GenerationsTest)
+FIXTURE_TEST_CASE(cuckoocache_generations, GenerationsTest)
 {
     test_cache_generations<CuckooCache::cache<uint256, SignatureCacheHasher>>();
 }
 
-BOOST_AUTO_TEST_SUITE_END();
+TEST_SUITE_END();

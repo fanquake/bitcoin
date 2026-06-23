@@ -24,7 +24,7 @@
 #include <array>
 #include <cstdint>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 static CService ip(uint32_t i)
 {
@@ -33,7 +33,7 @@ static CService ip(uint32_t i)
     return CService(CNetAddr(s), Params().GetDefaultPort());
 }
 
-BOOST_FIXTURE_TEST_SUITE(denialofservice_tests, TestingSetup)
+TEST_SUITE_BEGIN(denialofservice_tests)
 
 // Test eviction of an outbound peer whose chain never advances
 // Mock a node connection, and use mocktime to simulate a peer
@@ -43,7 +43,7 @@ BOOST_FIXTURE_TEST_SUITE(denialofservice_tests, TestingSetup)
 // this logic; this test takes advantage of that protection only
 // being applied to nodes which send headers with sufficient
 // work.
-BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
+FIXTURE_TEST_CASE(outbound_slow_chain_eviction, TestingSetup)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
@@ -77,33 +77,33 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
     // This test requires that we have a chain with non-zero work.
     {
         LOCK(cs_main);
-        BOOST_CHECK(m_node.chainman->ActiveChain().Tip() != nullptr);
-        BOOST_CHECK(m_node.chainman->ActiveChain().Tip()->nChainWork > 0);
+        CHECK(m_node.chainman->ActiveChain().Tip() != nullptr);
+        CHECK(m_node.chainman->ActiveChain().Tip()->nChainWork > 0);
     }
 
     // Test starts here
-    BOOST_CHECK(peerman.SendMessages(dummyNode1)); // should result in getheaders
+    CHECK(peerman.SendMessages(dummyNode1)); // should result in getheaders
 
     {
         LOCK(dummyNode1.cs_vSend);
         const auto& [to_send, _more, _msg_type] = dummyNode1.m_transport->GetBytesToSend(false);
-        BOOST_CHECK(!to_send.empty());
+        CHECK(!to_send.empty());
     }
     connman.FlushSendBuffer(dummyNode1);
 
     FakeNodeClock clock{};
     clock += 21min;
 
-    BOOST_CHECK(peerman.SendMessages(dummyNode1)); // should result in getheaders
+    CHECK(peerman.SendMessages(dummyNode1)); // should result in getheaders
     {
         LOCK(dummyNode1.cs_vSend);
         const auto& [to_send, _more, _msg_type] = dummyNode1.m_transport->GetBytesToSend(false);
-        BOOST_CHECK(!to_send.empty());
+        CHECK(!to_send.empty());
     }
 
     clock += 3min;
-    BOOST_CHECK(peerman.SendMessages(dummyNode1)); // should result in disconnect
-    BOOST_CHECK(dummyNode1.fDisconnect == true);
+    CHECK(peerman.SendMessages(dummyNode1)); // should result in disconnect
+    CHECK(dummyNode1.fDisconnect == true);
 
     peerman.FinalizeNode(dummyNode1);
 }
@@ -115,7 +115,7 @@ void AddRandomOutboundPeer(NodeId& id, std::vector<CNode*>& vNodes, PeerManager&
 
     if (onion_peer) {
         auto tor_addr{m_rng.randbytes(ADDR_TORV3_SIZE)};
-        BOOST_REQUIRE(addr.SetSpecial(OnionToString(tor_addr)));
+        REQUIRE(addr.SetSpecial(OnionToString(tor_addr)));
     }
 
     while (!addr.IsRoutable()) {
@@ -142,7 +142,7 @@ void AddRandomOutboundPeer(NodeId& id, std::vector<CNode*>& vNodes, PeerManager&
 }
 }; // struct OutboundTest
 
-BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
+FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
 {
     NodeId id{0};
     auto connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman, Params());
@@ -167,7 +167,7 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
 
     // No nodes should be marked for disconnection while we have no extra peers
     for (const CNode *node : vNodes) {
-        BOOST_CHECK(node->fDisconnect == false);
+        CHECK(node->fDisconnect == false);
     }
 
     clock += delta;
@@ -175,11 +175,11 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
     // Now tip should definitely be stale, and we should look for an extra
     // outbound peer
     peerLogic->CheckForStaleTipAndEvictPeers();
-    BOOST_CHECK(connman->GetTryNewOutboundPeer());
+    CHECK(connman->GetTryNewOutboundPeer());
 
     // Still no peers should be marked for disconnection
     for (const CNode *node : vNodes) {
-        BOOST_CHECK(node->fDisconnect == false);
+        CHECK(node->fDisconnect == false);
     }
 
     // If we add one more peer, something should get marked for eviction
@@ -191,10 +191,10 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
 
     peerLogic->CheckForStaleTipAndEvictPeers();
     for (int i = 0; i < max_outbound_full_relay; ++i) {
-        BOOST_CHECK(vNodes[i]->fDisconnect == false);
+        CHECK(vNodes[i]->fDisconnect == false);
     }
     // Last added node should get marked for eviction
-    BOOST_CHECK(vNodes.back()->fDisconnect == true);
+    CHECK(vNodes.back()->fDisconnect == true);
 
     vNodes.back()->fDisconnect = false;
 
@@ -204,10 +204,10 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
 
     peerLogic->CheckForStaleTipAndEvictPeers();
     for (int i = 0; i < max_outbound_full_relay - 1; ++i) {
-        BOOST_CHECK(vNodes[i]->fDisconnect == false);
+        CHECK(vNodes[i]->fDisconnect == false);
     }
-    BOOST_CHECK(vNodes[max_outbound_full_relay-1]->fDisconnect == true);
-    BOOST_CHECK(vNodes.back()->fDisconnect == false);
+    CHECK(vNodes[max_outbound_full_relay-1]->fDisconnect == true);
+    CHECK(vNodes.back()->fDisconnect == false);
 
     vNodes[max_outbound_full_relay - 1]->fDisconnect = false;
 
@@ -219,11 +219,11 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
     peerLogic->CheckForStaleTipAndEvictPeers();
 
     for (int i = 0; i < max_outbound_full_relay - 2; ++i) {
-        BOOST_CHECK(vNodes[i]->fDisconnect == false);
+        CHECK(vNodes[i]->fDisconnect == false);
     }
-    BOOST_CHECK(vNodes[max_outbound_full_relay - 2]->fDisconnect == false);
-    BOOST_CHECK(vNodes[max_outbound_full_relay - 1]->fDisconnect == true);
-    BOOST_CHECK(vNodes[max_outbound_full_relay]->fDisconnect == false);
+    CHECK(vNodes[max_outbound_full_relay - 2]->fDisconnect == false);
+    CHECK(vNodes[max_outbound_full_relay - 1]->fDisconnect == true);
+    CHECK(vNodes[max_outbound_full_relay]->fDisconnect == false);
 
     // Add a second onion peer which won't be protected
     clock.set(time_init);
@@ -231,7 +231,7 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
     clock += delta;
     peerLogic->CheckForStaleTipAndEvictPeers();
 
-    BOOST_CHECK(vNodes.back()->fDisconnect == true);
+    CHECK(vNodes.back()->fDisconnect == true);
 
     for (const CNode *node : vNodes) {
         peerLogic->FinalizeNode(*node);
@@ -240,7 +240,7 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
     connman->ClearTestNodes();
 }
 
-BOOST_FIXTURE_TEST_CASE(block_relay_only_eviction, OutboundTest)
+FIXTURE_TEST_CASE(block_relay_only_eviction, OutboundTest)
 {
     NodeId id{0};
     FakeNodeClock clock{};
@@ -262,7 +262,7 @@ BOOST_FIXTURE_TEST_CASE(block_relay_only_eviction, OutboundTest)
     peerLogic->CheckForStaleTipAndEvictPeers();
 
     for (int i = 0; i < max_outbound_block_relay; ++i) {
-        BOOST_CHECK(vNodes[i]->fDisconnect == false);
+        CHECK(vNodes[i]->fDisconnect == false);
     }
 
     // Add an extra block-relay-only peer breaking the limit (mocks logic in ThreadOpenConnections)
@@ -271,16 +271,16 @@ BOOST_FIXTURE_TEST_CASE(block_relay_only_eviction, OutboundTest)
 
     // The extra peer should only get marked for eviction after MINIMUM_CONNECT_TIME
     for (int i = 0; i < max_outbound_block_relay; ++i) {
-        BOOST_CHECK(vNodes[i]->fDisconnect == false);
+        CHECK(vNodes[i]->fDisconnect == false);
     }
-    BOOST_CHECK(vNodes.back()->fDisconnect == false);
+    CHECK(vNodes.back()->fDisconnect == false);
 
     clock += MINIMUM_CONNECT_TIME;
     peerLogic->CheckForStaleTipAndEvictPeers();
     for (int i = 0; i < max_outbound_block_relay; ++i) {
-        BOOST_CHECK(vNodes[i]->fDisconnect == false);
+        CHECK(vNodes[i]->fDisconnect == false);
     }
-    BOOST_CHECK(vNodes.back()->fDisconnect == true);
+    CHECK(vNodes.back()->fDisconnect == true);
 
     // Update the last block time for the extra peer,
     // and check that the next youngest peer gets evicted.
@@ -289,10 +289,10 @@ BOOST_FIXTURE_TEST_CASE(block_relay_only_eviction, OutboundTest)
 
     peerLogic->CheckForStaleTipAndEvictPeers();
     for (int i = 0; i < max_outbound_block_relay - 1; ++i) {
-        BOOST_CHECK(vNodes[i]->fDisconnect == false);
+        CHECK(vNodes[i]->fDisconnect == false);
     }
-    BOOST_CHECK(vNodes[max_outbound_block_relay - 1]->fDisconnect == true);
-    BOOST_CHECK(vNodes.back()->fDisconnect == false);
+    CHECK(vNodes[max_outbound_block_relay - 1]->fDisconnect == true);
+    CHECK(vNodes.back()->fDisconnect == false);
 
     for (const CNode* node : vNodes) {
         peerLogic->FinalizeNode(*node);
@@ -300,7 +300,7 @@ BOOST_FIXTURE_TEST_CASE(block_relay_only_eviction, OutboundTest)
     connman->ClearTestNodes();
 }
 
-BOOST_AUTO_TEST_CASE(peer_discouragement)
+FIXTURE_TEST_CASE(peer_discouragement, TestingSetup)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
@@ -309,7 +309,7 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     auto peerLogic = PeerManager::make(*connman, *m_node.addrman, banman.get(), *m_node.chainman, *m_node.mempool, *m_node.warnings, {});
 
     CNetAddr tor_netaddr;
-    BOOST_REQUIRE(
+    REQUIRE(
         tor_netaddr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion"));
     const CService tor_service{tor_netaddr, Params().GetDefaultPort()};
 
@@ -338,11 +338,11 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     nodes[0]->fSuccessfullyConnected = true;
     connman->AddTestNode(*nodes[0]);
     peerLogic->UnitTestMisbehaving(nodes[0]->GetId()); // Should be discouraged
-    BOOST_CHECK(peerLogic->SendMessages(*nodes[0]));
+    CHECK(peerLogic->SendMessages(*nodes[0]));
 
-    BOOST_CHECK(banman->IsDiscouraged(addr[0]));
-    BOOST_CHECK(nodes[0]->fDisconnect);
-    BOOST_CHECK(!banman->IsDiscouraged(other_addr)); // Different address, not discouraged
+    CHECK(banman->IsDiscouraged(addr[0]));
+    CHECK(nodes[0]->fDisconnect);
+    CHECK(!banman->IsDiscouraged(other_addr)); // Different address, not discouraged
 
     nodes[1] = new CNode{id++,
                          /*sock=*/nullptr,
@@ -358,20 +358,20 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     peerLogic->InitializeNode(*nodes[1], NODE_NETWORK);
     nodes[1]->fSuccessfullyConnected = true;
     connman->AddTestNode(*nodes[1]);
-    BOOST_CHECK(peerLogic->SendMessages(*nodes[1]));
+    CHECK(peerLogic->SendMessages(*nodes[1]));
     // [0] is still discouraged/disconnected.
-    BOOST_CHECK(banman->IsDiscouraged(addr[0]));
-    BOOST_CHECK(nodes[0]->fDisconnect);
+    CHECK(banman->IsDiscouraged(addr[0]));
+    CHECK(nodes[0]->fDisconnect);
     // [1] is not discouraged/disconnected yet.
-    BOOST_CHECK(!banman->IsDiscouraged(addr[1]));
-    BOOST_CHECK(!nodes[1]->fDisconnect);
+    CHECK(!banman->IsDiscouraged(addr[1]));
+    CHECK(!nodes[1]->fDisconnect);
     peerLogic->UnitTestMisbehaving(nodes[1]->GetId());
-    BOOST_CHECK(peerLogic->SendMessages(*nodes[1]));
+    CHECK(peerLogic->SendMessages(*nodes[1]));
     // Expect both [0] and [1] to be discouraged/disconnected now.
-    BOOST_CHECK(banman->IsDiscouraged(addr[0]));
-    BOOST_CHECK(nodes[0]->fDisconnect);
-    BOOST_CHECK(banman->IsDiscouraged(addr[1]));
-    BOOST_CHECK(nodes[1]->fDisconnect);
+    CHECK(banman->IsDiscouraged(addr[0]));
+    CHECK(nodes[0]->fDisconnect);
+    CHECK(banman->IsDiscouraged(addr[1]));
+    CHECK(nodes[1]->fDisconnect);
 
     // Make sure non-IP peers are discouraged and disconnected properly.
 
@@ -390,13 +390,13 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     nodes[2]->fSuccessfullyConnected = true;
     connman->AddTestNode(*nodes[2]);
     peerLogic->UnitTestMisbehaving(nodes[2]->GetId());
-    BOOST_CHECK(peerLogic->SendMessages(*nodes[2]));
-    BOOST_CHECK(banman->IsDiscouraged(addr[0]));
-    BOOST_CHECK(banman->IsDiscouraged(addr[1]));
-    BOOST_CHECK(banman->IsDiscouraged(addr[2]));
-    BOOST_CHECK(nodes[0]->fDisconnect);
-    BOOST_CHECK(nodes[1]->fDisconnect);
-    BOOST_CHECK(nodes[2]->fDisconnect);
+    CHECK(peerLogic->SendMessages(*nodes[2]));
+    CHECK(banman->IsDiscouraged(addr[0]));
+    CHECK(banman->IsDiscouraged(addr[1]));
+    CHECK(banman->IsDiscouraged(addr[2]));
+    CHECK(nodes[0]->fDisconnect);
+    CHECK(nodes[1]->fDisconnect);
+    CHECK(nodes[2]->fDisconnect);
 
     for (CNode* node : nodes) {
         peerLogic->FinalizeNode(*node);
@@ -404,7 +404,7 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     connman->ClearTestNodes();
 }
 
-BOOST_AUTO_TEST_CASE(DoS_bantime)
+FIXTURE_TEST_CASE(DoS_bantime, TestingSetup)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
@@ -432,10 +432,10 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
     dummyNode.fSuccessfullyConnected = true;
 
     peerLogic->UnitTestMisbehaving(dummyNode.GetId());
-    BOOST_CHECK(peerLogic->SendMessages(dummyNode));
-    BOOST_CHECK(banman->IsDiscouraged(addr));
+    CHECK(peerLogic->SendMessages(dummyNode));
+    CHECK(banman->IsDiscouraged(addr));
 
     peerLogic->FinalizeNode(dummyNode);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

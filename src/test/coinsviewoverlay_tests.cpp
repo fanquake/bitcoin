@@ -11,13 +11,13 @@
 #include <util/byte_units.h>
 #include <util/hasher.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <cstdint>
 #include <cstring>
 #include <ranges>
 
-BOOST_AUTO_TEST_SUITE(coinsviewoverlay_tests)
+TEST_SUITE_BEGIN(coinsviewoverlay_tests)
 
 namespace {
 
@@ -61,24 +61,24 @@ void CheckCache(const CBlock& block, const CCoinsViewCache& cache)
 
     for (const auto& tx : block.vtx) {
         if (tx->IsCoinBase()) {
-            BOOST_CHECK(!cache.HaveCoinInCache(tx->vin[0].prevout));
+            CHECK(!cache.HaveCoinInCache(tx->vin[0].prevout));
         } else {
             for (const auto& in : tx->vin) {
                 const auto& outpoint{in.prevout};
                 const auto& first{cache.AccessCoin(outpoint)};
                 const auto& second{cache.AccessCoin(outpoint)};
-                BOOST_CHECK_EQUAL(&first, &second);
+                CHECK(&first == &second);
                 ++counter;
-                BOOST_CHECK(cache.HaveCoinInCache(outpoint));
+                CHECK(cache.HaveCoinInCache(outpoint));
             }
         }
     }
-    BOOST_CHECK_EQUAL(cache.GetCacheSize(), counter);
+    CHECK(cache.GetCacheSize() == counter);
 }
 
 } // namespace
 
-BOOST_AUTO_TEST_CASE(fetch_inputs_from_db)
+TEST_CASE(fetch_inputs_from_db)
 {
     const auto block{CreateBlock()};
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
@@ -87,25 +87,25 @@ BOOST_AUTO_TEST_CASE(fetch_inputs_from_db)
     CoinsViewOverlay view{&main_cache};
     const auto& outpoint{block.vtx[1]->vin[0].prevout};
 
-    BOOST_CHECK(view.HaveCoin(outpoint));
-    BOOST_CHECK(view.GetCoin(outpoint).has_value());
-    BOOST_CHECK(!main_cache.HaveCoinInCache(outpoint));
+    CHECK(view.HaveCoin(outpoint));
+    CHECK(view.GetCoin(outpoint).has_value());
+    CHECK(!main_cache.HaveCoinInCache(outpoint));
 
     CheckCache(block, view);
     // Check that no coins have been moved up to main cache from db
     for (const auto& tx : block.vtx) {
         for (const auto& in : tx->vin) {
-            BOOST_CHECK(!main_cache.HaveCoinInCache(in.prevout));
+            CHECK(!main_cache.HaveCoinInCache(in.prevout));
         }
     }
 
     view.SetBestBlock(uint256::ONE);
-    BOOST_CHECK(view.SpendCoin(outpoint));
+    CHECK(view.SpendCoin(outpoint));
     view.Flush();
-    BOOST_CHECK(!main_cache.PeekCoin(outpoint).has_value());
+    CHECK(!main_cache.PeekCoin(outpoint).has_value());
 }
 
-BOOST_AUTO_TEST_CASE(fetch_inputs_from_cache)
+TEST_CASE(fetch_inputs_from_cache)
 {
     const auto block{CreateBlock()};
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
@@ -116,14 +116,14 @@ BOOST_AUTO_TEST_CASE(fetch_inputs_from_cache)
 
     const auto& outpoint{block.vtx[1]->vin[0].prevout};
     view.SetBestBlock(uint256::ONE);
-    BOOST_CHECK(view.SpendCoin(outpoint));
+    CHECK(view.SpendCoin(outpoint));
     view.Flush();
-    BOOST_CHECK(!main_cache.PeekCoin(outpoint).has_value());
+    CHECK(!main_cache.PeekCoin(outpoint).has_value());
 }
 
 // Test for the case where a block spends coins that are spent in the cache, but
 // the spentness has not been flushed to the db.
-BOOST_AUTO_TEST_CASE(fetch_no_double_spend)
+TEST_CASE(fetch_no_double_spend)
 {
     const auto block{CreateBlock()};
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
@@ -135,16 +135,16 @@ BOOST_AUTO_TEST_CASE(fetch_no_double_spend)
     for (const auto& tx : block.vtx) {
         for (const auto& in : tx->vin) {
             const auto& c{view.AccessCoin(in.prevout)};
-            BOOST_CHECK(c.IsSpent());
-            BOOST_CHECK(!view.HaveCoin(in.prevout));
-            BOOST_CHECK(!view.GetCoin(in.prevout));
+            CHECK(c.IsSpent());
+            CHECK(!view.HaveCoin(in.prevout));
+            CHECK(!view.GetCoin(in.prevout));
         }
     }
     // Coins are not added to the view, even though they exist unspent in the parent db
-    BOOST_CHECK_EQUAL(view.GetCacheSize(), 0U);
+    CHECK(view.GetCacheSize() == 0U);
 }
 
-BOOST_AUTO_TEST_CASE(fetch_no_inputs)
+TEST_CASE(fetch_no_inputs)
 {
     const auto block{CreateBlock()};
     CCoinsViewDB db{{.path = "", .cache_bytes = 1_MiB, .memory_only = true}, {}};
@@ -153,13 +153,13 @@ BOOST_AUTO_TEST_CASE(fetch_no_inputs)
     for (const auto& tx : block.vtx) {
         for (const auto& in : tx->vin) {
             const auto& c{view.AccessCoin(in.prevout)};
-            BOOST_CHECK(c.IsSpent());
-            BOOST_CHECK(!view.HaveCoin(in.prevout));
-            BOOST_CHECK(!view.GetCoin(in.prevout));
+            CHECK(c.IsSpent());
+            CHECK(!view.HaveCoin(in.prevout));
+            CHECK(!view.GetCoin(in.prevout));
         }
     }
-    BOOST_CHECK_EQUAL(view.GetCacheSize(), 0U);
+    CHECK(view.GetCacheSize() == 0U);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 

@@ -7,7 +7,7 @@
 #include <univalue.h>
 #include <wallet/rpc/util.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <optional>
 #include <string>
@@ -20,22 +20,22 @@ static std::string TestWalletName(const std::string& endpoint, std::optional<std
     return EnsureUniqueWalletName(req, parameter);
 }
 
-BOOST_FIXTURE_TEST_SUITE(wallet_rpc_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(wallet_rpc_tests)
 
-BOOST_AUTO_TEST_CASE(ensure_unique_wallet_name)
+FIXTURE_TEST_CASE(ensure_unique_wallet_name, BasicTestingSetup)
 {
     // EnsureUniqueWalletName should only return if exactly one unique wallet name is provided
-    BOOST_CHECK_EQUAL(TestWalletName("/wallet/foo"), "foo");
-    BOOST_CHECK_EQUAL(TestWalletName("/wallet/foo", "foo"), "foo");
-    BOOST_CHECK_EQUAL(TestWalletName("/", "foo"), "foo");
-    BOOST_CHECK_EQUAL(TestWalletName("/bar", "foo"), "foo");
+    CHECK(TestWalletName("/wallet/foo") == "foo");
+    CHECK(TestWalletName("/wallet/foo", "foo") == "foo");
+    CHECK(TestWalletName("/", "foo") == "foo");
+    CHECK(TestWalletName("/bar", "foo") == "foo");
 
-    BOOST_CHECK_THROW(TestWalletName("/"), UniValue);
-    BOOST_CHECK_THROW(TestWalletName("/foo"), UniValue);
-    BOOST_CHECK_THROW(TestWalletName("/wallet/foo", "bar"), UniValue);
-    BOOST_CHECK_THROW(TestWalletName("/wallet/foo", "foobar"), UniValue);
-    BOOST_CHECK_THROW(TestWalletName("/wallet/foobar", "foo"), UniValue);
+    CHECK_THROWS_AS(TestWalletName("/"), UniValue);
+    CHECK_THROWS_AS(TestWalletName("/foo"), UniValue);
+    CHECK_THROWS_AS(TestWalletName("/wallet/foo", "bar"), UniValue);
+    CHECK_THROWS_AS(TestWalletName("/wallet/foo", "foobar"), UniValue);
+    CHECK_THROWS_AS(TestWalletName("/wallet/foobar", "foo"), UniValue);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // namespace wallet

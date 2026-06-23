@@ -10,7 +10,7 @@
 #include <util/chaintype.h>
 #include <util/time.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -172,16 +172,16 @@ void CheckQueueTest::Correct_Queue_range(std::vector<size_t> range)
             total -= vChecks.size();
             control.Add(std::move(vChecks));
         }
-        BOOST_REQUIRE(!control.Complete().has_value());
-        BOOST_REQUIRE_EQUAL(FakeCheckCheckCompletion::n_calls, i);
+        REQUIRE(!control.Complete().has_value());
+        REQUIRE(FakeCheckCheckCompletion::n_calls == i);
     }
 }
 
-BOOST_FIXTURE_TEST_SUITE(checkqueue_tests, CheckQueueTest)
+TEST_SUITE_BEGIN(checkqueue_tests)
 
 /** Test that 0 checks is correct
  */
-BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Zero)
+FIXTURE_TEST_CASE(test_CheckQueue_Correct_Zero, CheckQueueTest)
 {
     std::vector<size_t> range;
     range.push_back(size_t{0});
@@ -189,7 +189,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Zero)
 }
 /** Test that 1 check is correct
  */
-BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_One)
+FIXTURE_TEST_CASE(test_CheckQueue_Correct_One, CheckQueueTest)
 {
     std::vector<size_t> range;
     range.push_back(size_t{1});
@@ -197,7 +197,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_One)
 }
 /** Test that MAX check is correct
  */
-BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Max)
+FIXTURE_TEST_CASE(test_CheckQueue_Correct_Max, CheckQueueTest)
 {
     std::vector<size_t> range;
     range.push_back(100000);
@@ -205,7 +205,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Max)
 }
 /** Test that random numbers of checks are correct
  */
-BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Random)
+FIXTURE_TEST_CASE(test_CheckQueue_Correct_Random, CheckQueueTest)
 {
     std::vector<size_t> range;
     range.reserve(100000/1000);
@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Random)
 
 
 /** Test that distinct failing checks are caught */
-BOOST_AUTO_TEST_CASE(test_CheckQueue_Catches_Failure)
+FIXTURE_TEST_CASE(test_CheckQueue_Catches_Failure, CheckQueueTest)
 {
     auto fixed_queue = std::make_unique<Fixed_Queue>(QUEUE_BATCH_SIZE, SCRIPT_CHECK_THREADS);
     for (size_t i = 0; i < 1001; ++i) {
@@ -233,16 +233,16 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Catches_Failure)
         }
         auto result = control.Complete();
         if (i > 0) {
-            BOOST_REQUIRE(result.has_value());
-            BOOST_REQUIRE(*result == static_cast<int>(17 * i));
+            REQUIRE(result.has_value());
+            REQUIRE(*result == static_cast<int>(17 * i));
         } else {
-            BOOST_REQUIRE(!result.has_value());
+            REQUIRE(!result.has_value());
         }
     }
 }
 // Test that a block validation which fails does not interfere with
 // future blocks, ie, the bad state is cleared.
-BOOST_AUTO_TEST_CASE(test_CheckQueue_Recovers_From_Failure)
+FIXTURE_TEST_CASE(test_CheckQueue_Recovers_From_Failure, CheckQueueTest)
 {
     auto fail_queue = std::make_unique<Fixed_Queue>(QUEUE_BATCH_SIZE, SCRIPT_CHECK_THREADS);
     for (auto times = 0; times < 10; ++times) {
@@ -255,7 +255,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Recovers_From_Failure)
                 control.Add(std::move(vChecks));
             }
             bool r = !control.Complete().has_value();
-            BOOST_REQUIRE(r != end_fails);
+            REQUIRE(r != end_fails);
         }
     }
 }
@@ -263,7 +263,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Recovers_From_Failure)
 // Test that unique checks are actually all called individually, rather than
 // just one check being called repeatedly. Test that checks are not called
 // more than once as well
-BOOST_AUTO_TEST_CASE(test_CheckQueue_UniqueCheck)
+FIXTURE_TEST_CASE(test_CheckQueue_UniqueCheck, CheckQueueTest)
 {
     auto queue = std::make_unique<Unique_Queue>(QUEUE_BATCH_SIZE, SCRIPT_CHECK_THREADS);
     size_t COUNT = 100000;
@@ -281,11 +281,11 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_UniqueCheck)
     {
         LOCK(UniqueCheck::m);
         bool r = true;
-        BOOST_REQUIRE_EQUAL(UniqueCheck::results.size(), COUNT);
+        REQUIRE(UniqueCheck::results.size() == COUNT);
         for (size_t i = 0; i < COUNT; ++i) {
             r = r && UniqueCheck::results.count(i) == 1;
         }
-        BOOST_REQUIRE(r);
+        REQUIRE(r);
     }
 }
 
@@ -295,7 +295,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_UniqueCheck)
 // This test attempts to catch a pathological case where by lazily freeing
 // checks might mean leaving a check un-swapped out, and decreasing by 1 each
 // time could leave the data hanging across a sequence of blocks.
-BOOST_AUTO_TEST_CASE(test_CheckQueue_Memory)
+FIXTURE_TEST_CASE(test_CheckQueue_Memory, CheckQueueTest)
 {
     auto queue = std::make_unique<Memory_Queue>(QUEUE_BATCH_SIZE, SCRIPT_CHECK_THREADS);
     for (size_t i = 0; i < 1000; ++i) {
@@ -314,13 +314,13 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Memory)
                 control.Add(std::move(vChecks));
             }
         }
-        BOOST_REQUIRE_EQUAL(MemoryCheck::fake_allocated_memory, 0U);
+        REQUIRE(MemoryCheck::fake_allocated_memory == 0U);
     }
 }
 
 // Test that a new verification cannot occur until all checks
 // have been destructed
-BOOST_AUTO_TEST_CASE(test_CheckQueue_FrozenCleanup)
+FIXTURE_TEST_CASE(test_CheckQueue_FrozenCleanup, CheckQueueTest)
 {
     auto queue = std::make_unique<FrozenCleanup_Queue>(QUEUE_BATCH_SIZE, SCRIPT_CHECK_THREADS);
     bool fails = false;
@@ -349,12 +349,12 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_FrozenCleanup)
     FrozenCleanupCheck::cv.notify_one();
     // Wait for control to finish
     t0.join();
-    BOOST_REQUIRE(!fails);
+    REQUIRE(!fails);
 }
 
 
 /** Test that CCheckQueueControl is threadsafe */
-BOOST_AUTO_TEST_CASE(test_CheckQueueControl_Locks)
+FIXTURE_TEST_CASE(test_CheckQueueControl_Locks, CheckQueueTest)
 {
     auto queue = std::make_unique<Standard_Queue>(QUEUE_BATCH_SIZE, SCRIPT_CHECK_THREADS);
     {
@@ -375,7 +375,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueueControl_Locks)
         for (auto& thread: tg) {
             if (thread.joinable()) thread.join();
         }
-        BOOST_REQUIRE_EQUAL(fails, 0);
+        REQUIRE(fails == 0);
     }
     {
         std::vector<std::thread> tg;
@@ -411,11 +411,11 @@ BOOST_AUTO_TEST_CASE(test_CheckQueueControl_Locks)
             // Acknowledge the done
             done_ack = true;
             cv.notify_one();
-            BOOST_REQUIRE(!fails);
+            REQUIRE(!fails);
         }
         for (auto& thread: tg) {
             if (thread.joinable()) thread.join();
         }
     }
 }
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

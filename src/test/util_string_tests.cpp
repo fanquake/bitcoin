@@ -5,14 +5,15 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <test/util/common.h>
 #include <tinyformat.h>
 
 using namespace util;
 using util::detail::CheckNumFormatSpecifiers;
 
-BOOST_AUTO_TEST_SUITE(util_string_tests)
+TEST_SUITE_BEGIN(util_string_tests)
 
 template <unsigned NumArgs>
 void TfmFormatZeroes(const std::string& fmt)
@@ -28,21 +29,21 @@ template <unsigned NumArgs>
 void PassFmt(ConstevalFormatString<NumArgs> fmt)
 {
     // Execute compile-time check again at run-time to get code coverage stats
-    BOOST_CHECK_NO_THROW(CheckNumFormatSpecifiers<NumArgs>(fmt.fmt));
+    CHECK_NOTHROW(CheckNumFormatSpecifiers<NumArgs>(fmt.fmt));
 
     // If ConstevalFormatString didn't throw above, make sure tinyformat doesn't
     // throw either for the same format string and parameter count combination.
     // Proves that we have some extent of protection from runtime errors
     // (tinyformat may still throw for some type mismatches).
-    BOOST_CHECK_NO_THROW(TfmFormatZeroes<NumArgs>(fmt.fmt));
+    CHECK_NOTHROW(TfmFormatZeroes<NumArgs>(fmt.fmt));
 }
 template <unsigned WrongNumArgs>
 void FailFmtWithError(const char* wrong_fmt, std::string_view error)
 {
-    BOOST_CHECK_EXCEPTION(CheckNumFormatSpecifiers<WrongNumArgs>(wrong_fmt), const char*, HasReason{error});
+    CHECK_EXCEPTION(CheckNumFormatSpecifiers<WrongNumArgs>(wrong_fmt), const char*, HasReason{error});
 }
 
-BOOST_AUTO_TEST_CASE(ConstevalFormatString_NumSpec)
+TEST_CASE(ConstevalFormatString_NumSpec)
 {
     PassFmt<0>("");
     PassFmt<0>("%%");
@@ -131,71 +132,71 @@ BOOST_AUTO_TEST_CASE(ConstevalFormatString_NumSpec)
 
     // Non-parity between tinyformat and ConstevalFormatString.
     // tinyformat throws but ConstevalFormatString does not.
-    BOOST_CHECK_EXCEPTION(tfm::format(ConstevalFormatString<1>{"%n"}, 0), tfm::format_error,
+    CHECK_EXCEPTION(tfm::format(ConstevalFormatString<1>{"%n"}, 0), tfm::format_error,
         HasReason{"tinyformat: %n conversion spec not supported"});
-    BOOST_CHECK_EXCEPTION(tfm::format(ConstevalFormatString<2>{"%*s"}, "hi", "hi"), tfm::format_error,
+    CHECK_EXCEPTION(tfm::format(ConstevalFormatString<2>{"%*s"}, "hi", "hi"), tfm::format_error,
         HasReason{"tinyformat: Cannot convert from argument type to integer for use as variable width or precision"});
-    BOOST_CHECK_EXCEPTION(tfm::format(ConstevalFormatString<2>{"%.*s"}, "hi", "hi"), tfm::format_error,
+    CHECK_EXCEPTION(tfm::format(ConstevalFormatString<2>{"%.*s"}, "hi", "hi"), tfm::format_error,
         HasReason{"tinyformat: Cannot convert from argument type to integer for use as variable width or precision"});
 
     // Ensure that tinyformat throws if format string contains wrong number
     // of specifiers. PassFmt relies on this to verify tinyformat successfully
     // formats the strings, and will need to be updated if tinyformat is changed
     // not to throw on failure.
-    BOOST_CHECK_EXCEPTION(TfmFormatZeroes<2>("%s"), tfm::format_error,
+    CHECK_EXCEPTION(TfmFormatZeroes<2>("%s"), tfm::format_error,
         HasReason{"tinyformat: Not enough conversion specifiers in format string"});
-    BOOST_CHECK_EXCEPTION(TfmFormatZeroes<1>("%s %s"), tfm::format_error,
+    CHECK_EXCEPTION(TfmFormatZeroes<1>("%s %s"), tfm::format_error,
         HasReason{"tinyformat: Too many conversion specifiers in format string"});
 }
 
-BOOST_AUTO_TEST_CASE(case_insensitive_equal_test)
+TEST_CASE(case_insensitive_equal_test)
 {
-    BOOST_CHECK(!CaseInsensitiveEqual("A", "B"));
-    BOOST_CHECK(!CaseInsensitiveEqual("A", "b"));
-    BOOST_CHECK(!CaseInsensitiveEqual("a", "B"));
-    BOOST_CHECK(!CaseInsensitiveEqual("B", "A"));
-    BOOST_CHECK(!CaseInsensitiveEqual("B", "a"));
-    BOOST_CHECK(!CaseInsensitiveEqual("b", "A"));
-    BOOST_CHECK(!CaseInsensitiveEqual("A", "AA"));
-    BOOST_CHECK(CaseInsensitiveEqual("A-A", "a-a"));
-    BOOST_CHECK(CaseInsensitiveEqual("A", "A"));
-    BOOST_CHECK(CaseInsensitiveEqual("A", "a"));
-    BOOST_CHECK(CaseInsensitiveEqual("a", "a"));
-    BOOST_CHECK(CaseInsensitiveEqual("B", "b"));
-    BOOST_CHECK(CaseInsensitiveEqual("ab", "aB"));
-    BOOST_CHECK(CaseInsensitiveEqual("Ab", "aB"));
-    BOOST_CHECK(CaseInsensitiveEqual("AB", "ab"));
+    CHECK(!CaseInsensitiveEqual("A", "B"));
+    CHECK(!CaseInsensitiveEqual("A", "b"));
+    CHECK(!CaseInsensitiveEqual("a", "B"));
+    CHECK(!CaseInsensitiveEqual("B", "A"));
+    CHECK(!CaseInsensitiveEqual("B", "a"));
+    CHECK(!CaseInsensitiveEqual("b", "A"));
+    CHECK(!CaseInsensitiveEqual("A", "AA"));
+    CHECK(CaseInsensitiveEqual("A-A", "a-a"));
+    CHECK(CaseInsensitiveEqual("A", "A"));
+    CHECK(CaseInsensitiveEqual("A", "a"));
+    CHECK(CaseInsensitiveEqual("a", "a"));
+    CHECK(CaseInsensitiveEqual("B", "b"));
+    CHECK(CaseInsensitiveEqual("ab", "aB"));
+    CHECK(CaseInsensitiveEqual("Ab", "aB"));
+    CHECK(CaseInsensitiveEqual("AB", "ab"));
 
     // Use a character with value > 127
     // to ensure we don't trigger implicit-integer-sign-change
-    BOOST_CHECK(!CaseInsensitiveEqual("a", "\xe4"));
+    CHECK(!CaseInsensitiveEqual("a", "\xe4"));
 }
 
-BOOST_AUTO_TEST_CASE(line_reader_test)
+TEST_CASE(line_reader_test)
 {
     {
         // Check three lines terminated by \n and \r\n, preserving whitespace
         std::string_view input = "once upon a time\n there was a dog \r\nwho liked food\n";
         LineReader reader(input, /*max_line_length=*/128);
-        BOOST_CHECK_EQUAL(reader.Consumed(), 0U);
-        BOOST_CHECK_EQUAL(reader.Remaining(), 51U);
+        CHECK(reader.Consumed() == 0U);
+        CHECK(reader.Remaining() == 51U);
         std::optional<std::string> line1{reader.ReadLine()};
-        BOOST_CHECK_EQUAL(reader.Consumed(), 17U);
-        BOOST_CHECK_EQUAL(reader.Remaining(), 34U);
+        CHECK(reader.Consumed() == 17U);
+        CHECK(reader.Remaining() == 34U);
         std::optional<std::string> line2{reader.ReadLine()};
-        BOOST_CHECK_EQUAL(reader.Consumed(), 36U);
-        BOOST_CHECK_EQUAL(reader.Remaining(), 15U);
+        CHECK(reader.Consumed() == 36U);
+        CHECK(reader.Remaining() == 15U);
         std::optional<std::string> line3{reader.ReadLine()};
         std::optional<std::string> line4{reader.ReadLine()};
-        BOOST_CHECK(line1);
-        BOOST_CHECK(line2);
-        BOOST_CHECK(line3);
-        BOOST_CHECK(!line4);
-        BOOST_CHECK_EQUAL(line1.value(), "once upon a time");
-        BOOST_CHECK_EQUAL(line2.value(), " there was a dog ");
-        BOOST_CHECK_EQUAL(line3.value(), "who liked food");
-        BOOST_CHECK_EQUAL(reader.Consumed(), 51U);
-        BOOST_CHECK_EQUAL(reader.Remaining(), 0U);
+        CHECK(line1);
+        CHECK(line2);
+        CHECK(line3);
+        CHECK(!line4);
+        CHECK(line1.value() == "once upon a time");
+        CHECK(line2.value() == " there was a dog ");
+        CHECK(line3.value() == "who liked food");
+        CHECK(reader.Consumed() == 51U);
+        CHECK(reader.Remaining() == 0U);
     }
     {
         // Do not exceed max_line_length + 1 while searching for \n
@@ -204,67 +205,67 @@ BOOST_AUTO_TEST_CASE(line_reader_test)
 
         LineReader reader1(input, /*max_line_length=*/22);
         // First line is exactly the length of max_line_length
-        BOOST_CHECK_EQUAL(reader1.ReadLine(), "once upon a time there");
+        CHECK(reader1.ReadLine() == "once upon a time there");
         // Second line is +1 character too long
-        BOOST_CHECK_EXCEPTION(reader1.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
+        CHECK_EXCEPTION(reader1.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
 
         // Increase max_line_length by 1
         LineReader reader2(input, /*max_line_length=*/23);
         // Both lines fit within limit
-        BOOST_CHECK_EQUAL(reader2.ReadLine(), "once upon a time there");
-        BOOST_CHECK_EQUAL(reader2.ReadLine(), "was a dog who liked tea");
+        CHECK(reader2.ReadLine() == "once upon a time there");
+        CHECK(reader2.ReadLine() == "was a dog who liked tea");
         // End of buffer reached
-        BOOST_CHECK(!reader2.ReadLine());
+        CHECK(!reader2.ReadLine());
     }
     {
         // Empty lines are empty
         std::string_view input = "\n";
         LineReader reader(input, /*max_line_length=*/1024);
-        BOOST_CHECK_EQUAL(reader.ReadLine(), "");
-        BOOST_CHECK(!reader.ReadLine());
+        CHECK(reader.ReadLine() == "");
+        CHECK(!reader.ReadLine());
     }
     {
         // Empty buffers are null
         std::string_view input;
         LineReader reader(input, /*max_line_length=*/1024);
-        BOOST_CHECK(!reader.ReadLine());
+        CHECK(!reader.ReadLine());
     }
     {
         // Don't trim any more than \r\n
         std::string_view input = "\r\r\n";
         LineReader reader(input, /*max_line_length=*/1024);
-        BOOST_CHECK_EQUAL(reader.ReadLine(), "\r");
-        BOOST_CHECK(!reader.ReadLine());
+        CHECK(reader.ReadLine() == "\r");
+        CHECK(!reader.ReadLine());
     }
     {
         // Even one character is too long, if it's not \n
         std::string_view input = "ab\n";
         LineReader reader(input, /*max_line_length=*/1);
         // First line is +1 character too long
-        BOOST_CHECK_EXCEPTION(reader.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
+        CHECK_EXCEPTION(reader.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
     }
     {
         std::string_view input = "a\nb\n";
         LineReader reader(input, /*max_line_length=*/1);
-        BOOST_CHECK_EQUAL(reader.ReadLine(), "a");
-        BOOST_CHECK_EQUAL(reader.ReadLine(), "b");
-        BOOST_CHECK(!reader.ReadLine());
+        CHECK(reader.ReadLine() == "a");
+        CHECK(reader.ReadLine() == "b");
+        CHECK(!reader.ReadLine());
     }
     {
         // If ReadLine fails, the iterator is reset and we can ReadLength instead
         std::string_view input = "a\nbaboon\n";
         LineReader reader(input, /*max_line_length=*/1);
-        BOOST_CHECK_EQUAL(reader.ReadLine(), "a");
+        CHECK(reader.ReadLine() == "a");
         // "baboon" is too long
-        BOOST_CHECK_EXCEPTION(reader.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
-        BOOST_CHECK_EQUAL(reader.ReadLength(1), "b");
-        BOOST_CHECK_EQUAL(reader.ReadLength(1), "a");
-        BOOST_CHECK_EQUAL(reader.ReadLength(2), "bo");
+        CHECK_EXCEPTION(reader.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
+        CHECK(reader.ReadLength(1) == "b");
+        CHECK(reader.ReadLength(1) == "a");
+        CHECK(reader.ReadLength(2) == "bo");
         // "on" is too long
-        BOOST_CHECK_EXCEPTION(reader.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
-        BOOST_CHECK_EQUAL(reader.ReadLength(1), "o");
-        BOOST_CHECK_EQUAL(reader.ReadLine(), "n"); // now the remainder of the buffer fits in one line
-        BOOST_CHECK(!reader.ReadLine());
+        CHECK_EXCEPTION(reader.ReadLine(), std::runtime_error, HasReason{"max_line_length exceeded by LineReader"});
+        CHECK(reader.ReadLength(1) == "o");
+        CHECK(reader.ReadLine() == "n"); // now the remainder of the buffer fits in one line
+        CHECK(!reader.ReadLine());
     }
     {
         // The end of the buffer (EOB) does not count as end of line \n
@@ -272,26 +273,26 @@ BOOST_AUTO_TEST_CASE(line_reader_test)
 
         LineReader reader(input, /*max_line_length=*/22);
         // First line is exactly the length of max_line_length, but that doesn't matter because \n is missing
-        BOOST_CHECK(!reader.ReadLine());
+        CHECK(!reader.ReadLine());
         // Data can still be read using ReadLength
-        BOOST_CHECK_EQUAL(reader.ReadLength(22), "once upon a time there");
+        CHECK(reader.ReadLength(22) == "once upon a time there");
         // End of buffer reached
-        BOOST_CHECK_EQUAL(reader.Remaining(), 0U);
+        CHECK(reader.Remaining() == 0U);
     }
     {
         // Read specific number of bytes regardless of max_line_length or \n unless buffer is too short
         std::string_view input = "once upon a time\n there was a dog \r\nwho liked food";
         LineReader reader(input, /*max_line_length=*/1);
-        BOOST_CHECK_EQUAL(reader.ReadLength(0), "");
-        BOOST_CHECK_EQUAL(reader.ReadLength(3), "onc");
-        BOOST_CHECK_EQUAL(reader.ReadLength(8), "e upon a");
-        BOOST_CHECK_EQUAL(reader.ReadLength(8), " time\n t");
-        BOOST_CHECK_EXCEPTION(reader.ReadLength(128), std::runtime_error, HasReason{"Not enough data in buffer"});
+        CHECK(reader.ReadLength(0) == "");
+        CHECK(reader.ReadLength(3) == "onc");
+        CHECK(reader.ReadLength(8) == "e upon a");
+        CHECK(reader.ReadLength(8) == " time\n t");
+        CHECK_EXCEPTION(reader.ReadLength(128), std::runtime_error, HasReason{"Not enough data in buffer"});
         // After the error the iterator is reset so we can try again
-        BOOST_CHECK_EQUAL(reader.ReadLength(31), "here was a dog \r\nwho liked food");
+        CHECK(reader.ReadLength(31) == "here was a dog \r\nwho liked food");
         // End of buffer reached
-        BOOST_CHECK_EQUAL(reader.Remaining(), 0U);
+        CHECK(reader.Remaining() == 0U);
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

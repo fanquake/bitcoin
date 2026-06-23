@@ -26,7 +26,7 @@
 #include <util/string.h>
 #include <validation.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -39,21 +39,21 @@ using namespace std::literals;
 using namespace util::hex_literals;
 using util::ToString;
 
-BOOST_FIXTURE_TEST_SUITE(net_tests, RegTestingSetup)
+TEST_SUITE_BEGIN(net_tests)
 
-BOOST_AUTO_TEST_CASE(cnode_listen_port)
+FIXTURE_TEST_CASE(cnode_listen_port, RegTestingSetup)
 {
     // test default
     uint16_t port{GetListenPort()};
-    BOOST_CHECK(port == Params().GetDefaultPort());
+    CHECK(port == Params().GetDefaultPort());
     // test set port
     uint16_t altPort = 12345;
-    BOOST_CHECK(gArgs.SoftSetArg("-port", ToString(altPort)));
+    CHECK(gArgs.SoftSetArg("-port", ToString(altPort)));
     port = GetListenPort();
-    BOOST_CHECK(port == altPort);
+    CHECK(port == altPort);
 }
 
-BOOST_AUTO_TEST_CASE(cnode_simple_test)
+FIXTURE_TEST_CASE(cnode_simple_test, RegTestingSetup)
 {
     NodeId id = 0;
 
@@ -73,14 +73,14 @@ BOOST_AUTO_TEST_CASE(cnode_simple_test)
                                                             ConnectionType::OUTBOUND_FULL_RELAY,
                                                             /*inbound_onion=*/false,
                                                             /*network_key=*/0);
-    BOOST_CHECK(pnode1->IsFullOutboundConn() == true);
-    BOOST_CHECK(pnode1->IsManualConn() == false);
-    BOOST_CHECK(pnode1->IsBlockOnlyConn() == false);
-    BOOST_CHECK(pnode1->IsFeelerConn() == false);
-    BOOST_CHECK(pnode1->IsAddrFetchConn() == false);
-    BOOST_CHECK(pnode1->IsInboundConn() == false);
-    BOOST_CHECK(pnode1->m_inbound_onion == false);
-    BOOST_CHECK_EQUAL(pnode1->ConnectedThroughNetwork(), Network::NET_IPV4);
+    CHECK(pnode1->IsFullOutboundConn() == true);
+    CHECK(pnode1->IsManualConn() == false);
+    CHECK(pnode1->IsBlockOnlyConn() == false);
+    CHECK(pnode1->IsFeelerConn() == false);
+    CHECK(pnode1->IsAddrFetchConn() == false);
+    CHECK(pnode1->IsInboundConn() == false);
+    CHECK(pnode1->m_inbound_onion == false);
+    CHECK(pnode1->ConnectedThroughNetwork() == Network::NET_IPV4);
 
     std::unique_ptr<CNode> pnode2 = std::make_unique<CNode>(id++,
                                                             /*sock=*/nullptr,
@@ -92,14 +92,14 @@ BOOST_AUTO_TEST_CASE(cnode_simple_test)
                                                             ConnectionType::INBOUND,
                                                             /*inbound_onion=*/false,
                                                             /*network_key=*/1);
-    BOOST_CHECK(pnode2->IsFullOutboundConn() == false);
-    BOOST_CHECK(pnode2->IsManualConn() == false);
-    BOOST_CHECK(pnode2->IsBlockOnlyConn() == false);
-    BOOST_CHECK(pnode2->IsFeelerConn() == false);
-    BOOST_CHECK(pnode2->IsAddrFetchConn() == false);
-    BOOST_CHECK(pnode2->IsInboundConn() == true);
-    BOOST_CHECK(pnode2->m_inbound_onion == false);
-    BOOST_CHECK_EQUAL(pnode2->ConnectedThroughNetwork(), Network::NET_IPV4);
+    CHECK(pnode2->IsFullOutboundConn() == false);
+    CHECK(pnode2->IsManualConn() == false);
+    CHECK(pnode2->IsBlockOnlyConn() == false);
+    CHECK(pnode2->IsFeelerConn() == false);
+    CHECK(pnode2->IsAddrFetchConn() == false);
+    CHECK(pnode2->IsInboundConn() == true);
+    CHECK(pnode2->m_inbound_onion == false);
+    CHECK(pnode2->ConnectedThroughNetwork() == Network::NET_IPV4);
 
     std::unique_ptr<CNode> pnode3 = std::make_unique<CNode>(id++,
                                                             /*sock=*/nullptr,
@@ -111,14 +111,14 @@ BOOST_AUTO_TEST_CASE(cnode_simple_test)
                                                             ConnectionType::OUTBOUND_FULL_RELAY,
                                                             /*inbound_onion=*/false,
                                                             /*network_key=*/2);
-    BOOST_CHECK(pnode3->IsFullOutboundConn() == true);
-    BOOST_CHECK(pnode3->IsManualConn() == false);
-    BOOST_CHECK(pnode3->IsBlockOnlyConn() == false);
-    BOOST_CHECK(pnode3->IsFeelerConn() == false);
-    BOOST_CHECK(pnode3->IsAddrFetchConn() == false);
-    BOOST_CHECK(pnode3->IsInboundConn() == false);
-    BOOST_CHECK(pnode3->m_inbound_onion == false);
-    BOOST_CHECK_EQUAL(pnode3->ConnectedThroughNetwork(), Network::NET_IPV4);
+    CHECK(pnode3->IsFullOutboundConn() == true);
+    CHECK(pnode3->IsManualConn() == false);
+    CHECK(pnode3->IsBlockOnlyConn() == false);
+    CHECK(pnode3->IsFeelerConn() == false);
+    CHECK(pnode3->IsAddrFetchConn() == false);
+    CHECK(pnode3->IsInboundConn() == false);
+    CHECK(pnode3->m_inbound_onion == false);
+    CHECK(pnode3->ConnectedThroughNetwork() == Network::NET_IPV4);
 
     std::unique_ptr<CNode> pnode4 = std::make_unique<CNode>(id++,
                                                             /*sock=*/nullptr,
@@ -130,64 +130,64 @@ BOOST_AUTO_TEST_CASE(cnode_simple_test)
                                                             ConnectionType::INBOUND,
                                                             /*inbound_onion=*/true,
                                                             /*network_key=*/3);
-    BOOST_CHECK(pnode4->IsFullOutboundConn() == false);
-    BOOST_CHECK(pnode4->IsManualConn() == false);
-    BOOST_CHECK(pnode4->IsBlockOnlyConn() == false);
-    BOOST_CHECK(pnode4->IsFeelerConn() == false);
-    BOOST_CHECK(pnode4->IsAddrFetchConn() == false);
-    BOOST_CHECK(pnode4->IsInboundConn() == true);
-    BOOST_CHECK(pnode4->m_inbound_onion == true);
-    BOOST_CHECK_EQUAL(pnode4->ConnectedThroughNetwork(), Network::NET_ONION);
+    CHECK(pnode4->IsFullOutboundConn() == false);
+    CHECK(pnode4->IsManualConn() == false);
+    CHECK(pnode4->IsBlockOnlyConn() == false);
+    CHECK(pnode4->IsFeelerConn() == false);
+    CHECK(pnode4->IsAddrFetchConn() == false);
+    CHECK(pnode4->IsInboundConn() == true);
+    CHECK(pnode4->m_inbound_onion == true);
+    CHECK(pnode4->ConnectedThroughNetwork() == Network::NET_ONION);
 }
 
-BOOST_AUTO_TEST_CASE(cnetaddr_basic)
+FIXTURE_TEST_CASE(cnetaddr_basic, RegTestingSetup)
 {
     CNetAddr addr;
 
     // IPv4, INADDR_ANY
     addr = LookupHost("0.0.0.0", false).value();
-    BOOST_REQUIRE(!addr.IsValid());
-    BOOST_REQUIRE(addr.IsIPv4());
+    REQUIRE(!addr.IsValid());
+    REQUIRE(addr.IsIPv4());
 
-    BOOST_CHECK(addr.IsBindAny());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "0.0.0.0");
+    CHECK(addr.IsBindAny());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "0.0.0.0");
 
     // IPv4, INADDR_NONE
     addr = LookupHost("255.255.255.255", false).value();
-    BOOST_REQUIRE(!addr.IsValid());
-    BOOST_REQUIRE(addr.IsIPv4());
+    REQUIRE(!addr.IsValid());
+    REQUIRE(addr.IsIPv4());
 
-    BOOST_CHECK(!addr.IsBindAny());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "255.255.255.255");
+    CHECK(!addr.IsBindAny());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "255.255.255.255");
 
     // IPv4, casual
     addr = LookupHost("12.34.56.78", false).value();
-    BOOST_REQUIRE(addr.IsValid());
-    BOOST_REQUIRE(addr.IsIPv4());
+    REQUIRE(addr.IsValid());
+    REQUIRE(addr.IsIPv4());
 
-    BOOST_CHECK(!addr.IsBindAny());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "12.34.56.78");
+    CHECK(!addr.IsBindAny());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "12.34.56.78");
 
     // IPv6, in6addr_any
     addr = LookupHost("::", false).value();
-    BOOST_REQUIRE(!addr.IsValid());
-    BOOST_REQUIRE(addr.IsIPv6());
+    REQUIRE(!addr.IsValid());
+    REQUIRE(addr.IsIPv6());
 
-    BOOST_CHECK(addr.IsBindAny());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "::");
+    CHECK(addr.IsBindAny());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "::");
 
     // IPv6, casual
     addr = LookupHost("1122:3344:5566:7788:9900:aabb:ccdd:eeff", false).value();
-    BOOST_REQUIRE(addr.IsValid());
-    BOOST_REQUIRE(addr.IsIPv6());
+    REQUIRE(addr.IsValid());
+    REQUIRE(addr.IsIPv6());
 
-    BOOST_CHECK(!addr.IsBindAny());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "1122:3344:5566:7788:9900:aabb:ccdd:eeff");
+    CHECK(!addr.IsBindAny());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "1122:3344:5566:7788:9900:aabb:ccdd:eeff");
 
     // IPv6, scoped/link-local. See https://tools.ietf.org/html/rfc4007
     // We support non-negative decimal integers (uint32_t) as zone id indices.
@@ -197,84 +197,84 @@ BOOST_AUTO_TEST_CASE(cnetaddr_basic)
     const std::string link_local{"fe80::1"};
     const std::string scoped_addr{link_local + "%32"};
     addr = LookupHost(scoped_addr, false).value();
-    BOOST_REQUIRE(addr.IsValid());
-    BOOST_REQUIRE(addr.IsIPv6());
-    BOOST_CHECK(!addr.IsBindAny());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), scoped_addr);
+    REQUIRE(addr.IsValid());
+    REQUIRE(addr.IsIPv6());
+    CHECK(!addr.IsBindAny());
+    CHECK(addr.ToStringAddr() == scoped_addr);
 
     // TORv2, no longer supported
-    BOOST_CHECK(!addr.SetSpecial("6hzph5hv6337r6p2.onion"));
+    CHECK(!addr.SetSpecial("6hzph5hv6337r6p2.onion"));
 
     // TORv3
     const char* torv3_addr = "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion";
-    BOOST_REQUIRE(addr.SetSpecial(torv3_addr));
-    BOOST_REQUIRE(addr.IsValid());
-    BOOST_REQUIRE(addr.IsTor());
+    REQUIRE(addr.SetSpecial(torv3_addr));
+    REQUIRE(addr.IsValid());
+    REQUIRE(addr.IsTor());
 
-    BOOST_CHECK(!addr.IsI2P());
-    BOOST_CHECK(!addr.IsBindAny());
-    BOOST_CHECK(!addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), torv3_addr);
+    CHECK(!addr.IsI2P());
+    CHECK(!addr.IsBindAny());
+    CHECK(!addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == torv3_addr);
 
     // TORv3, broken, with wrong checksum
-    BOOST_CHECK(!addr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscsad.onion"));
+    CHECK(!addr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscsad.onion"));
 
     // TORv3, broken, with wrong version
-    BOOST_CHECK(!addr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscrye.onion"));
+    CHECK(!addr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscrye.onion"));
 
     // TORv3, malicious
-    BOOST_CHECK(!addr.SetSpecial(std::string{
+    CHECK(!addr.SetSpecial(std::string{
         "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd\0wtf.onion", 66}));
 
     // TOR, bogus length
-    BOOST_CHECK(!addr.SetSpecial(std::string{"mfrggzak.onion"}));
+    CHECK(!addr.SetSpecial(std::string{"mfrggzak.onion"}));
 
     // TOR, invalid base32
-    BOOST_CHECK(!addr.SetSpecial(std::string{"mf*g zak.onion"}));
+    CHECK(!addr.SetSpecial(std::string{"mf*g zak.onion"}));
 
     // I2P
     const char* i2p_addr = "UDHDrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v4jna.b32.I2P";
-    BOOST_REQUIRE(addr.SetSpecial(i2p_addr));
-    BOOST_REQUIRE(addr.IsValid());
-    BOOST_REQUIRE(addr.IsI2P());
+    REQUIRE(addr.SetSpecial(i2p_addr));
+    REQUIRE(addr.IsValid());
+    REQUIRE(addr.IsI2P());
 
-    BOOST_CHECK(!addr.IsTor());
-    BOOST_CHECK(!addr.IsBindAny());
-    BOOST_CHECK(!addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), ToLower(i2p_addr));
+    CHECK(!addr.IsTor());
+    CHECK(!addr.IsBindAny());
+    CHECK(!addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == ToLower(i2p_addr));
 
     // I2P, correct length, but decodes to less than the expected number of bytes.
-    BOOST_CHECK(!addr.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v4jn=.b32.i2p"));
+    CHECK(!addr.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v4jn=.b32.i2p"));
 
     // I2P, extra unnecessary padding
-    BOOST_CHECK(!addr.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v4jna=.b32.i2p"));
+    CHECK(!addr.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v4jna=.b32.i2p"));
 
     // I2P, malicious
-    BOOST_CHECK(!addr.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v\0wtf.b32.i2p"s));
+    CHECK(!addr.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v\0wtf.b32.i2p"s));
 
     // I2P, valid but unsupported (56 Base32 characters)
     // See "Encrypted LS with Base 32 Addresses" in
     // https://geti2p.net/spec/encryptedleaseset.txt
-    BOOST_CHECK(
+    CHECK(
         !addr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscsad.b32.i2p"));
 
     // I2P, invalid base32
-    BOOST_CHECK(!addr.SetSpecial(std::string{"tp*szydbh4dp.b32.i2p"}));
+    CHECK(!addr.SetSpecial(std::string{"tp*szydbh4dp.b32.i2p"}));
 
     // Internal
     addr.SetInternal("esffpp");
-    BOOST_REQUIRE(!addr.IsValid()); // "internal" is considered invalid
-    BOOST_REQUIRE(addr.IsInternal());
+    REQUIRE(!addr.IsValid()); // "internal" is considered invalid
+    REQUIRE(addr.IsInternal());
 
-    BOOST_CHECK(!addr.IsBindAny());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "esffpvrt3wpeaygy.internal");
+    CHECK(!addr.IsBindAny());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "esffpvrt3wpeaygy.internal");
 
     // Totally bogus
-    BOOST_CHECK(!addr.SetSpecial("totally bogus"));
+    CHECK(!addr.SetSpecial("totally bogus"));
 }
 
-BOOST_AUTO_TEST_CASE(cnetaddr_tostring_canonical_ipv6)
+FIXTURE_TEST_CASE(cnetaddr_tostring_canonical_ipv6, RegTestingSetup)
 {
     // Test that CNetAddr::ToString formats IPv6 addresses with zero compression as described in
     // RFC 5952 ("A Recommendation for IPv6 Address Text Representation").
@@ -322,80 +322,80 @@ BOOST_AUTO_TEST_CASE(cnetaddr_tostring_canonical_ipv6)
     };
     for (const auto& [input_address, expected_canonical_representation_output] : canonical_representations_ipv6) {
         const std::optional<CNetAddr> net_addr{LookupHost(input_address, false)};
-        BOOST_REQUIRE(net_addr.value().IsIPv6());
-        BOOST_CHECK_EQUAL(net_addr.value().ToStringAddr(), expected_canonical_representation_output);
+        REQUIRE(net_addr.value().IsIPv6());
+        CHECK(net_addr.value().ToStringAddr() == expected_canonical_representation_output);
     }
 }
 
-BOOST_AUTO_TEST_CASE(cnetaddr_serialize_v1)
+FIXTURE_TEST_CASE(cnetaddr_serialize_v1, RegTestingSetup)
 {
     CNetAddr addr;
     DataStream s{};
     const auto ser_params{CAddress::V1_NETWORK};
 
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "00000000000000000000000000000000");
+    CHECK(HexStr(s) == "00000000000000000000000000000000");
     s.clear();
 
     addr = LookupHost("1.2.3.4", false).value();
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "00000000000000000000ffff01020304");
+    CHECK(HexStr(s) == "00000000000000000000ffff01020304");
     s.clear();
 
     addr = LookupHost("1a1b:2a2b:3a3b:4a4b:5a5b:6a6b:7a7b:8a8b", false).value();
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "1a1b2a2b3a3b4a4b5a5b6a6b7a7b8a8b");
+    CHECK(HexStr(s) == "1a1b2a2b3a3b4a4b5a5b6a6b7a7b8a8b");
     s.clear();
 
     // TORv2, no longer supported
-    BOOST_CHECK(!addr.SetSpecial("6hzph5hv6337r6p2.onion"));
+    CHECK(!addr.SetSpecial("6hzph5hv6337r6p2.onion"));
 
-    BOOST_REQUIRE(addr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion"));
+    REQUIRE(addr.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion"));
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "00000000000000000000000000000000");
+    CHECK(HexStr(s) == "00000000000000000000000000000000");
     s.clear();
 
     addr.SetInternal("a");
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "fd6b88c08724ca978112ca1bbdcafac2");
+    CHECK(HexStr(s) == "fd6b88c08724ca978112ca1bbdcafac2");
     s.clear();
 }
 
-BOOST_AUTO_TEST_CASE(cnetaddr_serialize_v2)
+FIXTURE_TEST_CASE(cnetaddr_serialize_v2, RegTestingSetup)
 {
     CNetAddr addr;
     DataStream s{};
     const auto ser_params{CAddress::V2_NETWORK};
 
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "021000000000000000000000000000000000");
+    CHECK(HexStr(s) == "021000000000000000000000000000000000");
     s.clear();
 
     addr = LookupHost("1.2.3.4", false).value();
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "010401020304");
+    CHECK(HexStr(s) == "010401020304");
     s.clear();
 
     addr = LookupHost("1a1b:2a2b:3a3b:4a4b:5a5b:6a6b:7a7b:8a8b", false).value();
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "02101a1b2a2b3a3b4a4b5a5b6a6b7a7b8a8b");
+    CHECK(HexStr(s) == "02101a1b2a2b3a3b4a4b5a5b6a6b7a7b8a8b");
     s.clear();
 
     // TORv2, no longer supported
-    BOOST_CHECK(!addr.SetSpecial("6hzph5hv6337r6p2.onion"));
+    CHECK(!addr.SetSpecial("6hzph5hv6337r6p2.onion"));
 
-    BOOST_REQUIRE(addr.SetSpecial("kpgvmscirrdqpekbqjsvw5teanhatztpp2gl6eee4zkowvwfxwenqaid.onion"));
+    REQUIRE(addr.SetSpecial("kpgvmscirrdqpekbqjsvw5teanhatztpp2gl6eee4zkowvwfxwenqaid.onion"));
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "042053cd5648488c4707914182655b7664034e09e66f7e8cbf1084e654eb56c5bd88");
+    CHECK(HexStr(s) == "042053cd5648488c4707914182655b7664034e09e66f7e8cbf1084e654eb56c5bd88");
     s.clear();
 
-    BOOST_REQUIRE(addr.SetInternal("a"));
+    REQUIRE(addr.SetInternal("a"));
     s << ser_params(addr);
-    BOOST_CHECK_EQUAL(HexStr(s), "0210fd6b88c08724ca978112ca1bbdcafac2");
+    CHECK(HexStr(s) == "0210fd6b88c08724ca978112ca1bbdcafac2");
     s.clear();
 }
 
-BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
+FIXTURE_TEST_CASE(cnetaddr_unserialize_v2, RegTestingSetup)
 {
     CNetAddr addr;
     DataStream s{};
@@ -406,36 +406,36 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "04"            // address length
          "01020304"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(addr.IsValid());
-    BOOST_CHECK(addr.IsIPv4());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "1.2.3.4");
-    BOOST_REQUIRE(s.empty());
+    CHECK(addr.IsValid());
+    CHECK(addr.IsIPv4());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "1.2.3.4");
+    REQUIRE(s.empty());
 
     // Invalid IPv4, valid length but address itself is shorter.
     s << "01"        // network type (IPv4)
          "04"        // address length
          "0102"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure, HasReason("end of data"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure, HasReason("end of data"));
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Invalid IPv4, with bogus length.
     s << "01"            // network type (IPv4)
          "05"            // address length
          "01020304"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
                           HasReason("BIP155 IPv4 address with length 5 (should be 4)"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Invalid IPv4, with extreme length.
     s << "01"            // network type (IPv4)
          "fd0102"        // address length (513 as CompactSize)
          "01020304"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
                           HasReason("Address too long: 513 > 512"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Valid IPv6.
@@ -443,11 +443,11 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "10"                                    // address length
          "0102030405060708090a0b0c0d0e0f10"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(addr.IsValid());
-    BOOST_CHECK(addr.IsIPv6());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "102:304:506:708:90a:b0c:d0e:f10");
-    BOOST_REQUIRE(s.empty());
+    CHECK(addr.IsValid());
+    CHECK(addr.IsIPv6());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "102:304:506:708:90a:b0c:d0e:f10");
+    REQUIRE(s.empty());
 
     // Valid IPv6, contains embedded "internal".
     s << "02"                                    // network type (IPv6)
@@ -455,18 +455,18 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "fd6b88c08724ca978112ca1bbdcafac2"_hex; // address: 0xfd + sha256("bitcoin")[0:5] +
                                                  // sha256(name)[0:10]
     s >> ser_params(addr);
-    BOOST_CHECK(addr.IsInternal());
-    BOOST_CHECK(addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "zklycewkdo64v6wc.internal");
-    BOOST_REQUIRE(s.empty());
+    CHECK(addr.IsInternal());
+    CHECK(addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "zklycewkdo64v6wc.internal");
+    REQUIRE(s.empty());
 
     // Invalid IPv6, with bogus length.
     s << "02"      // network type (IPv6)
          "04"      // address length
          "00"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
                           HasReason("BIP155 IPv6 address with length 4 (should be 16)"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Invalid IPv6, contains embedded IPv4.
@@ -474,24 +474,24 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "10"                                    // address length
          "00000000000000000000ffff01020304"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(!addr.IsValid());
-    BOOST_REQUIRE(s.empty());
+    CHECK(!addr.IsValid());
+    REQUIRE(s.empty());
 
     // Invalid IPv6, contains embedded TORv2.
     s << "02"                                    // network type (IPv6)
          "10"                                    // address length
          "fd87d87eeb430102030405060708090a"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(!addr.IsValid());
-    BOOST_REQUIRE(s.empty());
+    CHECK(!addr.IsValid());
+    REQUIRE(s.empty());
 
     // TORv2, no longer supported.
     s << "03"                        // network type (TORv2)
          "0a"                        // address length
          "f1f2f3f4f5f6f7f8f9fa"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(!addr.IsValid());
-    BOOST_REQUIRE(s.empty());
+    CHECK(!addr.IsValid());
+    REQUIRE(s.empty());
 
     // Valid TORv3.
     s << "04"                               // network type (TORv3)
@@ -499,20 +499,19 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "79bcc625184b05194975c28b66b66b04" // address
          "69f7f6556fb1ac3189a79b40dda32f1f"_hex;
     s >> ser_params(addr);
-    BOOST_CHECK(addr.IsValid());
-    BOOST_CHECK(addr.IsTor());
-    BOOST_CHECK(!addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(),
-                      "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion");
-    BOOST_REQUIRE(s.empty());
+    CHECK(addr.IsValid());
+    CHECK(addr.IsTor());
+    CHECK(!addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion");
+    REQUIRE(s.empty());
 
     // Invalid TORv3, with bogus length.
     s << "04"      // network type (TORv3)
          "00"      // address length
          "00"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
                           HasReason("BIP155 TORv3 address with length 0 (should be 32)"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Valid I2P.
@@ -521,20 +520,19 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "a2894dabaec08c0051a481a6dac88b64" // address
          "f98232ae42d4b6fd2fa81952dfe36a87"_hex;
     s >> ser_params(addr);
-    BOOST_CHECK(addr.IsValid());
-    BOOST_CHECK(addr.IsI2P());
-    BOOST_CHECK(!addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(),
-                      "ukeu3k5oycgaauneqgtnvselmt4yemvoilkln7jpvamvfx7dnkdq.b32.i2p");
-    BOOST_REQUIRE(s.empty());
+    CHECK(addr.IsValid());
+    CHECK(addr.IsI2P());
+    CHECK(!addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "ukeu3k5oycgaauneqgtnvselmt4yemvoilkln7jpvamvfx7dnkdq.b32.i2p");
+    REQUIRE(s.empty());
 
     // Invalid I2P, with bogus length.
     s << "05"      // network type (I2P)
          "03"      // address length
          "00"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
                           HasReason("BIP155 I2P address with length 3 (should be 32)"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Valid CJDNS.
@@ -542,37 +540,37 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "10"                                    // address length
          "fc000001000200030004000500060007"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(addr.IsValid());
-    BOOST_CHECK(addr.IsCJDNS());
-    BOOST_CHECK(!addr.IsAddrV1Compatible());
-    BOOST_CHECK_EQUAL(addr.ToStringAddr(), "fc00:1:2:3:4:5:6:7");
-    BOOST_REQUIRE(s.empty());
+    CHECK(addr.IsValid());
+    CHECK(addr.IsCJDNS());
+    CHECK(!addr.IsAddrV1Compatible());
+    CHECK(addr.ToStringAddr() == "fc00:1:2:3:4:5:6:7");
+    REQUIRE(s.empty());
 
     // Invalid CJDNS, wrong prefix.
     s << "06"                                    // network type (CJDNS)
          "10"                                    // address length
          "aa000001000200030004000500060007"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(addr.IsCJDNS());
-    BOOST_CHECK(!addr.IsValid());
-    BOOST_REQUIRE(s.empty());
+    CHECK(addr.IsCJDNS());
+    CHECK(!addr.IsValid());
+    REQUIRE(s.empty());
 
     // Invalid CJDNS, with bogus length.
     s << "06"      // network type (CJDNS)
          "01"      // address length
          "00"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
                           HasReason("BIP155 CJDNS address with length 1 (should be 16)"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Unknown, with extreme length.
     s << "aa"                  // network type (unknown)
          "fe00000002"          // address length (CompactSize's MAX_SIZE)
          "01020304050607"_hex; // address
-    BOOST_CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
+    CHECK_EXCEPTION(s >> ser_params(addr), std::ios_base::failure,
                           HasReason("Address too long: 33554432 > 512"));
-    BOOST_REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
+    REQUIRE(!s.empty()); // The stream is not consumed on invalid input.
     s.clear();
 
     // Unknown, with reasonable length.
@@ -580,20 +578,20 @@ BOOST_AUTO_TEST_CASE(cnetaddr_unserialize_v2)
          "04"            // address length
          "01020304"_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(!addr.IsValid());
-    BOOST_REQUIRE(s.empty());
+    CHECK(!addr.IsValid());
+    REQUIRE(s.empty());
 
     // Unknown, with zero length.
     s << "aa"    // network type (unknown)
          "00"    // address length
          ""_hex; // address
     s >> ser_params(addr);
-    BOOST_CHECK(!addr.IsValid());
-    BOOST_REQUIRE(s.empty());
+    CHECK(!addr.IsValid());
+    REQUIRE(s.empty());
 }
 
 // prior to PR #14728, this test triggers an undefined behavior
-BOOST_AUTO_TEST_CASE(ipv4_peer_with_ipv6_addrMe_test)
+FIXTURE_TEST_CASE(ipv4_peer_with_ipv6_addrMe_test, RegTestingSetup)
 {
     // set up local addresses; all that's necessary to reproduce the bug is
     // that a normal IPv4 address is among the entries, but if this address is
@@ -636,7 +634,7 @@ BOOST_AUTO_TEST_CASE(ipv4_peer_with_ipv6_addrMe_test)
     GetLocalAddrForPeer(*pnode);
 
     // suppress no-checks-run warning; if this test fails, it's by triggering a sanitizer
-    BOOST_CHECK(1);
+    CHECK(1);
 
     // Cleanup, so that we don't confuse other tests.
     {
@@ -645,7 +643,7 @@ BOOST_AUTO_TEST_CASE(ipv4_peer_with_ipv6_addrMe_test)
     }
 }
 
-BOOST_AUTO_TEST_CASE(get_local_addr_for_peer_port)
+FIXTURE_TEST_CASE(get_local_addr_for_peer_port, RegTestingSetup)
 {
     // Test that GetLocalAddrForPeer() properly selects the address to self-advertise:
     //
@@ -683,9 +681,9 @@ BOOST_AUTO_TEST_CASE(get_local_addr_for_peer_port)
 
     // Without the fix peer_us:8333 is chosen instead of the proper peer_us:bind_port.
     auto chosen_local_addr = GetLocalAddrForPeer(peer_out);
-    BOOST_REQUIRE(chosen_local_addr);
+    REQUIRE(chosen_local_addr);
     const CService expected{peer_us_addr, bind_port};
-    BOOST_CHECK(*chosen_local_addr == expected);
+    CHECK(*chosen_local_addr == expected);
 
     // Create a peer with a routable IPv4 address (inbound).
     in_addr peer_in_in_addr;
@@ -705,19 +703,19 @@ BOOST_AUTO_TEST_CASE(get_local_addr_for_peer_port)
 
     // Without the fix peer_us:8333 is chosen instead of the proper peer_us:peer_us.GetPort().
     chosen_local_addr = GetLocalAddrForPeer(peer_in);
-    BOOST_REQUIRE(chosen_local_addr);
-    BOOST_CHECK(*chosen_local_addr == peer_us);
+    REQUIRE(chosen_local_addr);
+    CHECK(*chosen_local_addr == peer_us);
 
     m_node.args->ForceSetArg("-bind", "");
 }
 
-BOOST_AUTO_TEST_CASE(LimitedAndReachable_Network)
+FIXTURE_TEST_CASE(LimitedAndReachable_Network, RegTestingSetup)
 {
-    BOOST_CHECK(g_reachable_nets.Contains(NET_IPV4));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_IPV6));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_ONION));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_I2P));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_CJDNS));
+    CHECK(g_reachable_nets.Contains(NET_IPV4));
+    CHECK(g_reachable_nets.Contains(NET_IPV6));
+    CHECK(g_reachable_nets.Contains(NET_ONION));
+    CHECK(g_reachable_nets.Contains(NET_I2P));
+    CHECK(g_reachable_nets.Contains(NET_CJDNS));
 
     g_reachable_nets.Remove(NET_IPV4);
     g_reachable_nets.Remove(NET_IPV6);
@@ -725,11 +723,11 @@ BOOST_AUTO_TEST_CASE(LimitedAndReachable_Network)
     g_reachable_nets.Remove(NET_I2P);
     g_reachable_nets.Remove(NET_CJDNS);
 
-    BOOST_CHECK(!g_reachable_nets.Contains(NET_IPV4));
-    BOOST_CHECK(!g_reachable_nets.Contains(NET_IPV6));
-    BOOST_CHECK(!g_reachable_nets.Contains(NET_ONION));
-    BOOST_CHECK(!g_reachable_nets.Contains(NET_I2P));
-    BOOST_CHECK(!g_reachable_nets.Contains(NET_CJDNS));
+    CHECK(!g_reachable_nets.Contains(NET_IPV4));
+    CHECK(!g_reachable_nets.Contains(NET_IPV6));
+    CHECK(!g_reachable_nets.Contains(NET_ONION));
+    CHECK(!g_reachable_nets.Contains(NET_I2P));
+    CHECK(!g_reachable_nets.Contains(NET_CJDNS));
 
     g_reachable_nets.Add(NET_IPV4);
     g_reachable_nets.Add(NET_IPV6);
@@ -737,23 +735,23 @@ BOOST_AUTO_TEST_CASE(LimitedAndReachable_Network)
     g_reachable_nets.Add(NET_I2P);
     g_reachable_nets.Add(NET_CJDNS);
 
-    BOOST_CHECK(g_reachable_nets.Contains(NET_IPV4));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_IPV6));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_ONION));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_I2P));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_CJDNS));
+    CHECK(g_reachable_nets.Contains(NET_IPV4));
+    CHECK(g_reachable_nets.Contains(NET_IPV6));
+    CHECK(g_reachable_nets.Contains(NET_ONION));
+    CHECK(g_reachable_nets.Contains(NET_I2P));
+    CHECK(g_reachable_nets.Contains(NET_CJDNS));
 }
 
-BOOST_AUTO_TEST_CASE(LimitedAndReachable_NetworkCaseUnroutableAndInternal)
+FIXTURE_TEST_CASE(LimitedAndReachable_NetworkCaseUnroutableAndInternal, RegTestingSetup)
 {
     // Should be reachable by default.
-    BOOST_CHECK(g_reachable_nets.Contains(NET_UNROUTABLE));
-    BOOST_CHECK(g_reachable_nets.Contains(NET_INTERNAL));
+    CHECK(g_reachable_nets.Contains(NET_UNROUTABLE));
+    CHECK(g_reachable_nets.Contains(NET_INTERNAL));
 
     g_reachable_nets.RemoveAll();
 
-    BOOST_CHECK(!g_reachable_nets.Contains(NET_UNROUTABLE));
-    BOOST_CHECK(!g_reachable_nets.Contains(NET_INTERNAL));
+    CHECK(!g_reachable_nets.Contains(NET_UNROUTABLE));
+    CHECK(!g_reachable_nets.Contains(NET_INTERNAL));
 
     g_reachable_nets.Add(NET_IPV4);
     g_reachable_nets.Add(NET_IPV6);
@@ -775,35 +773,35 @@ CNetAddr UtilBuildAddress(unsigned char p1, unsigned char p2, unsigned char p3, 
 }
 
 
-BOOST_AUTO_TEST_CASE(LimitedAndReachable_CNetAddr)
+FIXTURE_TEST_CASE(LimitedAndReachable_CNetAddr, RegTestingSetup)
 {
     CNetAddr addr = UtilBuildAddress(0x001, 0x001, 0x001, 0x001); // 1.1.1.1
 
     g_reachable_nets.Add(NET_IPV4);
-    BOOST_CHECK(g_reachable_nets.Contains(addr));
+    CHECK(g_reachable_nets.Contains(addr));
 
     g_reachable_nets.Remove(NET_IPV4);
-    BOOST_CHECK(!g_reachable_nets.Contains(addr));
+    CHECK(!g_reachable_nets.Contains(addr));
 
     g_reachable_nets.Add(NET_IPV4); // have to reset this, because this is stateful.
 }
 
 
-BOOST_AUTO_TEST_CASE(LocalAddress_BasicLifecycle)
+FIXTURE_TEST_CASE(LocalAddress_BasicLifecycle, RegTestingSetup)
 {
     CService addr = CService(UtilBuildAddress(0x002, 0x001, 0x001, 0x001), 1000); // 2.1.1.1:1000
 
     g_reachable_nets.Add(NET_IPV4);
 
-    BOOST_CHECK(!IsLocal(addr));
-    BOOST_CHECK(AddLocal(addr, 1000));
-    BOOST_CHECK(IsLocal(addr));
+    CHECK(!IsLocal(addr));
+    CHECK(AddLocal(addr, 1000));
+    CHECK(IsLocal(addr));
 
     RemoveLocal(addr);
-    BOOST_CHECK(!IsLocal(addr));
+    CHECK(!IsLocal(addr));
 }
 
-BOOST_AUTO_TEST_CASE(LocalAddress_nScore_Overflow)
+FIXTURE_TEST_CASE(LocalAddress_nScore_Overflow, RegTestingSetup)
 {
     g_reachable_nets.Add(NET_IPV4);
     const CService addr{UtilBuildAddress(0x002, 0x001, 0x001, 0x001), 1000}; // 2.1.1.1:1000
@@ -815,30 +813,30 @@ BOOST_AUTO_TEST_CASE(LocalAddress_nScore_Overflow)
     };
 
     const int initial_score = 1000;
-    BOOST_REQUIRE(AddLocal(addr, initial_score));
-    BOOST_REQUIRE(IsLocal(addr));
-    BOOST_CHECK_EQUAL(get_score(addr), initial_score);
+    REQUIRE(AddLocal(addr, initial_score));
+    REQUIRE(IsLocal(addr));
+    CHECK(get_score(addr) == initial_score);
 
     // SeenLocal should increment nScore by 1.
-    BOOST_CHECK(SeenLocal(addr));
-    BOOST_CHECK_EQUAL(get_score(addr), initial_score + 1);
+    CHECK(SeenLocal(addr));
+    CHECK(get_score(addr) == initial_score + 1);
 
     // AddLocal() saturates nScore when updating an existing entry at INT_MAX.
-    BOOST_REQUIRE(AddLocal(addr, std::numeric_limits<int>::max()));
-    BOOST_CHECK_EQUAL(get_score(addr), std::numeric_limits<int>::max());
+    REQUIRE(AddLocal(addr, std::numeric_limits<int>::max()));
+    CHECK(get_score(addr) == std::numeric_limits<int>::max());
 
-    BOOST_CHECK(AddLocal(addr, std::numeric_limits<int>::max()));
-    BOOST_CHECK_EQUAL(get_score(addr), std::numeric_limits<int>::max());
+    CHECK(AddLocal(addr, std::numeric_limits<int>::max()));
+    CHECK(get_score(addr) == std::numeric_limits<int>::max());
 
     // SeenLocal() also saturates at INT_MAX.
-    BOOST_CHECK(SeenLocal(addr));
-    BOOST_CHECK_EQUAL(get_score(addr), std::numeric_limits<int>::max());
+    CHECK(SeenLocal(addr));
+    CHECK(get_score(addr) == std::numeric_limits<int>::max());
 
     RemoveLocal(addr);
-    BOOST_CHECK(!IsLocal(addr));
+    CHECK(!IsLocal(addr));
 }
 
-BOOST_AUTO_TEST_CASE(initial_advertise_from_version_message)
+FIXTURE_TEST_CASE(initial_advertise_from_version_message, RegTestingSetup)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
     auto& connman{static_cast<ConnmanTestMsg&>(*m_node.connman)};
@@ -929,7 +927,7 @@ BOOST_AUTO_TEST_CASE(initial_advertise_from_version_message)
 
     m_node.peerman->SendMessages(peer);
 
-    BOOST_CHECK(sent);
+    CHECK(sent);
 
     CaptureMessage = CaptureMessageOrig;
     chainman.ResetIbd();
@@ -938,7 +936,7 @@ BOOST_AUTO_TEST_CASE(initial_advertise_from_version_message)
 }
 
 
-BOOST_AUTO_TEST_CASE(advertise_local_address)
+FIXTURE_TEST_CASE(advertise_local_address, RegTestingSetup)
 {
     auto CreatePeer = [](const CAddress& addr) {
         return std::make_unique<CNode>(/*id=*/0,
@@ -955,37 +953,37 @@ BOOST_AUTO_TEST_CASE(advertise_local_address)
     g_reachable_nets.Add(NET_CJDNS);
 
     CAddress addr_ipv4{Lookup("1.2.3.4", 8333, false).value(), NODE_NONE};
-    BOOST_REQUIRE(addr_ipv4.IsValid());
-    BOOST_REQUIRE(addr_ipv4.IsIPv4());
+    REQUIRE(addr_ipv4.IsValid());
+    REQUIRE(addr_ipv4.IsIPv4());
 
     CAddress addr_ipv6{Lookup("1122:3344:5566:7788:9900:aabb:ccdd:eeff", 8333, false).value(), NODE_NONE};
-    BOOST_REQUIRE(addr_ipv6.IsValid());
-    BOOST_REQUIRE(addr_ipv6.IsIPv6());
+    REQUIRE(addr_ipv6.IsValid());
+    REQUIRE(addr_ipv6.IsIPv6());
 
     CAddress addr_ipv6_tunnel{Lookup("2002:3344:5566:7788:9900:aabb:ccdd:eeff", 8333, false).value(), NODE_NONE};
-    BOOST_REQUIRE(addr_ipv6_tunnel.IsValid());
-    BOOST_REQUIRE(addr_ipv6_tunnel.IsIPv6());
-    BOOST_REQUIRE(addr_ipv6_tunnel.IsRFC3964());
+    REQUIRE(addr_ipv6_tunnel.IsValid());
+    REQUIRE(addr_ipv6_tunnel.IsIPv6());
+    REQUIRE(addr_ipv6_tunnel.IsRFC3964());
 
     CAddress addr_teredo{Lookup("2001:0000:5566:7788:9900:aabb:ccdd:eeff", 8333, false).value(), NODE_NONE};
-    BOOST_REQUIRE(addr_teredo.IsValid());
-    BOOST_REQUIRE(addr_teredo.IsIPv6());
-    BOOST_REQUIRE(addr_teredo.IsRFC4380());
+    REQUIRE(addr_teredo.IsValid());
+    REQUIRE(addr_teredo.IsIPv6());
+    REQUIRE(addr_teredo.IsRFC4380());
 
     CAddress addr_onion;
-    BOOST_REQUIRE(addr_onion.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion"));
-    BOOST_REQUIRE(addr_onion.IsValid());
-    BOOST_REQUIRE(addr_onion.IsTor());
+    REQUIRE(addr_onion.SetSpecial("pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion"));
+    REQUIRE(addr_onion.IsValid());
+    REQUIRE(addr_onion.IsTor());
 
     CAddress addr_i2p;
-    BOOST_REQUIRE(addr_i2p.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v4jna.b32.i2p"));
-    BOOST_REQUIRE(addr_i2p.IsValid());
-    BOOST_REQUIRE(addr_i2p.IsI2P());
+    REQUIRE(addr_i2p.SetSpecial("udhdrtrcetjm5sxzskjyr5ztpeszydbh4dpl3pl4utgqqw2v4jna.b32.i2p"));
+    REQUIRE(addr_i2p.IsValid());
+    REQUIRE(addr_i2p.IsI2P());
 
     CService service_cjdns{Lookup("fc00:3344:5566:7788:9900:aabb:ccdd:eeff", 8333, false).value(), NODE_NONE};
     CAddress addr_cjdns{MaybeFlipIPv6toCJDNS(service_cjdns), NODE_NONE};
-    BOOST_REQUIRE(addr_cjdns.IsValid());
-    BOOST_REQUIRE(addr_cjdns.IsCJDNS());
+    REQUIRE(addr_cjdns.IsValid());
+    REQUIRE(addr_cjdns.IsCJDNS());
 
     const auto peer_ipv4{CreatePeer(addr_ipv4)};
     const auto peer_ipv6{CreatePeer(addr_ipv6)};
@@ -997,25 +995,25 @@ BOOST_AUTO_TEST_CASE(advertise_local_address)
 
     // one local clearnet address - advertise to all but privacy peers
     AddLocal(addr_ipv4);
-    BOOST_CHECK(GetLocalAddress(*peer_ipv4) == addr_ipv4);
-    BOOST_CHECK(GetLocalAddress(*peer_ipv6) == addr_ipv4);
-    BOOST_CHECK(GetLocalAddress(*peer_ipv6_tunnel) == addr_ipv4);
-    BOOST_CHECK(GetLocalAddress(*peer_teredo) == addr_ipv4);
-    BOOST_CHECK(GetLocalAddress(*peer_cjdns) == addr_ipv4);
-    BOOST_CHECK(!GetLocalAddress(*peer_onion).IsValid());
-    BOOST_CHECK(!GetLocalAddress(*peer_i2p).IsValid());
+    CHECK(GetLocalAddress(*peer_ipv4) == addr_ipv4);
+    CHECK(GetLocalAddress(*peer_ipv6) == addr_ipv4);
+    CHECK(GetLocalAddress(*peer_ipv6_tunnel) == addr_ipv4);
+    CHECK(GetLocalAddress(*peer_teredo) == addr_ipv4);
+    CHECK(GetLocalAddress(*peer_cjdns) == addr_ipv4);
+    CHECK(!GetLocalAddress(*peer_onion).IsValid());
+    CHECK(!GetLocalAddress(*peer_i2p).IsValid());
     RemoveLocal(addr_ipv4);
 
     // local privacy addresses - don't advertise to clearnet peers
     AddLocal(addr_onion);
     AddLocal(addr_i2p);
-    BOOST_CHECK(!GetLocalAddress(*peer_ipv4).IsValid());
-    BOOST_CHECK(!GetLocalAddress(*peer_ipv6).IsValid());
-    BOOST_CHECK(!GetLocalAddress(*peer_ipv6_tunnel).IsValid());
-    BOOST_CHECK(!GetLocalAddress(*peer_teredo).IsValid());
-    BOOST_CHECK(!GetLocalAddress(*peer_cjdns).IsValid());
-    BOOST_CHECK(GetLocalAddress(*peer_onion) == addr_onion);
-    BOOST_CHECK(GetLocalAddress(*peer_i2p) == addr_i2p);
+    CHECK(!GetLocalAddress(*peer_ipv4).IsValid());
+    CHECK(!GetLocalAddress(*peer_ipv6).IsValid());
+    CHECK(!GetLocalAddress(*peer_ipv6_tunnel).IsValid());
+    CHECK(!GetLocalAddress(*peer_teredo).IsValid());
+    CHECK(!GetLocalAddress(*peer_cjdns).IsValid());
+    CHECK(GetLocalAddress(*peer_onion) == addr_onion);
+    CHECK(GetLocalAddress(*peer_i2p) == addr_i2p);
     RemoveLocal(addr_onion);
     RemoveLocal(addr_i2p);
 
@@ -1027,13 +1025,13 @@ BOOST_AUTO_TEST_CASE(advertise_local_address)
     AddLocal(addr_onion);
     AddLocal(addr_i2p);
     AddLocal(addr_cjdns);
-    BOOST_CHECK(GetLocalAddress(*peer_ipv4) == addr_ipv4);
-    BOOST_CHECK(GetLocalAddress(*peer_ipv6) == addr_ipv6);
-    BOOST_CHECK(GetLocalAddress(*peer_ipv6_tunnel) == addr_ipv6);
-    BOOST_CHECK(GetLocalAddress(*peer_teredo) == addr_ipv4);
-    BOOST_CHECK(GetLocalAddress(*peer_onion) == addr_onion);
-    BOOST_CHECK(GetLocalAddress(*peer_i2p) == addr_i2p);
-    BOOST_CHECK(GetLocalAddress(*peer_cjdns) == addr_cjdns);
+    CHECK(GetLocalAddress(*peer_ipv4) == addr_ipv4);
+    CHECK(GetLocalAddress(*peer_ipv6) == addr_ipv6);
+    CHECK(GetLocalAddress(*peer_ipv6_tunnel) == addr_ipv6);
+    CHECK(GetLocalAddress(*peer_teredo) == addr_ipv4);
+    CHECK(GetLocalAddress(*peer_onion) == addr_onion);
+    CHECK(GetLocalAddress(*peer_i2p) == addr_i2p);
+    CHECK(GetLocalAddress(*peer_cjdns) == addr_cjdns);
     RemoveLocal(addr_ipv4);
     RemoveLocal(addr_ipv6);
     RemoveLocal(addr_ipv6_tunnel);
@@ -1208,7 +1206,7 @@ public:
     void ReceiveKey()
     {
         // When processing a key, enough bytes need to have been received already.
-        BOOST_REQUIRE(m_received.size() >= EllSwiftPubKey::size());
+        REQUIRE(m_received.size() >= EllSwiftPubKey::size());
         // Initialize the cipher using it (acting as the opposite side of the tested transport).
         m_cipher.Initialize(MakeByteSpan(m_received).first(EllSwiftPubKey::size()), !m_test_initiator);
         // Strip the processed bytes off the front of the receive buffer.
@@ -1257,11 +1255,11 @@ public:
         // Loop as long as there are ignored packets that are to be skipped.
         while (true) {
             // When processing a packet, at least enough bytes for its length descriptor must be received.
-            BOOST_REQUIRE(m_received.size() >= BIP324Cipher::LENGTH_LEN);
+            REQUIRE(m_received.size() >= BIP324Cipher::LENGTH_LEN);
             // Decrypt the content length.
             size_t size = m_cipher.DecryptLength(MakeByteSpan(std::span{m_received}.first(BIP324Cipher::LENGTH_LEN)));
             // Check that the full packet is in the receive buffer.
-            BOOST_REQUIRE(m_received.size() >= size + BIP324Cipher::EXPANSION);
+            REQUIRE(m_received.size() >= size + BIP324Cipher::EXPANSION);
             // Decrypt the packet contents.
             contents.resize(size);
             bool ignore{false};
@@ -1271,7 +1269,7 @@ public:
                 /*aad=*/aad,
                 /*ignore=*/ignore,
                 /*contents=*/MakeWritableByteSpan(contents));
-            BOOST_CHECK(ret);
+            CHECK(ret);
             // Don't expect AAD in further packets.
             aad = {};
             // Strip the processed packet's bytes off the front of the receive buffer.
@@ -1289,7 +1287,7 @@ public:
         // Figure out the garbage length.
         size_t garblen;
         for (garblen = 0; garblen <= V2Transport::MAX_GARBAGE_LEN; ++garblen) {
-            BOOST_REQUIRE(m_received.size() >= garblen + BIP324Cipher::GARBAGE_TERMINATOR_LEN);
+            REQUIRE(m_received.size() >= garblen + BIP324Cipher::GARBAGE_TERMINATOR_LEN);
             auto term_span = MakeByteSpan(std::span{m_received}.subspan(garblen, BIP324Cipher::GARBAGE_TERMINATOR_LEN));
             if (std::ranges::equal(term_span, m_cipher.GetReceiveGarbageTerminator())) break;
         }
@@ -1306,7 +1304,7 @@ public:
         // Version packets from real BIP324 peers are expected to be empty, despite the fact that
         // this class supports *sending* non-empty version packets (to test that BIP324 peers
         // correctly ignore version packet contents).
-        BOOST_CHECK(contents.empty());
+        CHECK(contents.empty());
     }
 
     /** Expect application packet to have been received, with specified short id and payload.
@@ -1314,9 +1312,9 @@ public:
     void ReceiveMessage(uint8_t short_id, std::span<const uint8_t> payload)
     {
         auto ret = ReceivePacket();
-        BOOST_CHECK(ret.size() == payload.size() + 1);
-        BOOST_CHECK(ret[0] == short_id);
-        BOOST_CHECK(std::ranges::equal(std::span{ret}.subspan(1), payload));
+        CHECK(ret.size() == payload.size() + 1);
+        CHECK(ret[0] == short_id);
+        CHECK(std::ranges::equal(std::span{ret}.subspan(1), payload));
     }
 
     /** Expect application packet to have been received, with specified 12-char message type and
@@ -1324,16 +1322,16 @@ public:
     void ReceiveMessage(const std::string& m_type, std::span<const uint8_t> payload)
     {
         auto ret = ReceivePacket();
-        BOOST_REQUIRE(ret.size() == payload.size() + 1 + CMessageHeader::MESSAGE_TYPE_SIZE);
-        BOOST_CHECK(ret[0] == 0);
+        REQUIRE(ret.size() == payload.size() + 1 + CMessageHeader::MESSAGE_TYPE_SIZE);
+        CHECK(ret[0] == 0);
         for (unsigned i = 0; i < 12; ++i) {
             if (i < m_type.size()) {
-                BOOST_CHECK(ret[1 + i] == m_type[i]);
+                CHECK(ret[1 + i] == m_type[i]);
             } else {
-                BOOST_CHECK(ret[1 + i] == 0);
+                CHECK(ret[1 + i] == 0);
             }
         }
-        BOOST_CHECK(std::ranges::equal(std::span{ret}.subspan(1 + CMessageHeader::MESSAGE_TYPE_SIZE), payload));
+        CHECK(std::ranges::equal(std::span{ret}.subspan(1 + CMessageHeader::MESSAGE_TYPE_SIZE), payload));
     }
 
     /** Schedule an encrypted packet with specified message type and payload to be sent to
@@ -1364,8 +1362,8 @@ public:
     void CompareSessionIDs() const
     {
         auto info = m_transport.GetInfo();
-        BOOST_CHECK(info.session_id);
-        BOOST_CHECK(uint256(MakeUCharSpan(m_cipher.GetSessionID())) == *info.session_id);
+        CHECK(info.session_id);
+        CHECK(uint256(MakeUCharSpan(m_cipher.GetSessionID())) == *info.session_id);
     }
 
     /** Introduce a bit error in the data scheduled to be sent. */
@@ -1377,22 +1375,22 @@ public:
 
 } // namespace
 
-BOOST_AUTO_TEST_CASE(v2transport_test)
+FIXTURE_TEST_CASE(v2transport_test, RegTestingSetup)
 {
     // A mostly normal scenario, testing a transport in initiator mode.
     for (int i = 0; i < 10; ++i) {
         V2TransportTester tester(m_rng, true);
         auto ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.SendKey();
         tester.SendGarbage();
         tester.ReceiveKey();
         tester.SendGarbageTerm();
         tester.SendVersion();
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.ReceiveGarbage();
         tester.ReceiveVersion();
         tester.CompareSessionIDs();
@@ -1402,15 +1400,15 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendMessage(0, {}); // Invalidly encoded message
         tester.SendMessage("tx", msg_data_2); // 12-character encoded message type
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 3U);
-        BOOST_CHECK((*ret)[0]);
-        BOOST_CHECK((*ret)[0]->m_type == "cmpctblock");
-        BOOST_CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
-        BOOST_CHECK(!(*ret)[1]);
-        BOOST_CHECK((*ret)[2]);
-        BOOST_CHECK((*ret)[2]->m_type == "tx");
-        BOOST_CHECK(std::ranges::equal((*ret)[2]->m_recv, MakeByteSpan(msg_data_2)));
+        REQUIRE(ret);
+        REQUIRE(ret->size() == 3U);
+        CHECK((*ret)[0]);
+        CHECK((*ret)[0]->m_type == "cmpctblock");
+        CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
+        CHECK(!(*ret)[1]);
+        CHECK((*ret)[2]);
+        CHECK((*ret)[2]->m_type == "tx");
+        CHECK(std::ranges::equal((*ret)[2]->m_recv, MakeByteSpan(msg_data_2)));
 
         // Then send a message with a bit error, expecting failure. It's possible this failure does
         // not occur immediately (when the length descriptor was modified), but it should come
@@ -1420,7 +1418,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         while (true) {
             ret = tester.Interact();
             if (!ret) break; // failure
-            BOOST_CHECK(ret->size() == 0U); // no message can be delivered
+            CHECK(ret->size() == 0U); // no message can be delivered
             // Send another message.
             auto msg_data_3 = m_rng.randbytes<uint8_t>(m_rng.randrange(10000));
             tester.SendMessage(uint8_t(12), msg_data_3); // getheaders short id
@@ -1433,14 +1431,14 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendKey();
         tester.SendGarbage();
         auto ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.ReceiveKey();
         tester.SendGarbageTerm();
         tester.SendVersion();
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.ReceiveGarbage();
         tester.ReceiveVersion();
         tester.CompareSessionIDs();
@@ -1449,20 +1447,20 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendMessage(uint8_t(14), msg_data_1); // inv short id
         tester.SendMessage(uint8_t(19), msg_data_2); // pong short id
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 2U);
-        BOOST_CHECK((*ret)[0]);
-        BOOST_CHECK((*ret)[0]->m_type == "inv");
-        BOOST_CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
-        BOOST_CHECK((*ret)[1]);
-        BOOST_CHECK((*ret)[1]->m_type == "pong");
-        BOOST_CHECK(std::ranges::equal((*ret)[1]->m_recv, MakeByteSpan(msg_data_2)));
+        REQUIRE(ret);
+        REQUIRE(ret->size() == 2U);
+        CHECK((*ret)[0]);
+        CHECK((*ret)[0]->m_type == "inv");
+        CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
+        CHECK((*ret)[1]);
+        CHECK((*ret)[1]->m_type == "pong");
+        CHECK(std::ranges::equal((*ret)[1]->m_recv, MakeByteSpan(msg_data_2)));
 
         // Then send a too-large message.
         auto msg_data_3 = m_rng.randbytes<uint8_t>(4005000);
         tester.SendMessage(uint8_t(11), msg_data_3); // getdata short id
         ret = tester.Interact();
-        BOOST_CHECK(!ret);
+        CHECK(!ret);
     }
 
     // Various valid but unusual scenarios.
@@ -1485,8 +1483,8 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
             tester.SendGarbage(garb_len);
         }
         auto ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         if (!send_immediately) {
             tester.SendKey();
             tester.SendGarbage(garb_len);
@@ -1500,8 +1498,8 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         }
         tester.SendVersion(ver_data, false);
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.ReceiveGarbage();
         tester.ReceiveVersion();
         tester.CompareSessionIDs();
@@ -1522,18 +1520,18 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendMessage("foobar", {}); // test receiving unknown message type
         tester.AddMessage("barfoo", {}); // test sending unknown message type
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 4U);
-        BOOST_CHECK((*ret)[0]);
-        BOOST_CHECK((*ret)[0]->m_type == "addrv2");
-        BOOST_CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
-        BOOST_CHECK((*ret)[1]);
-        BOOST_CHECK((*ret)[1]->m_type == "headers");
-        BOOST_CHECK(std::ranges::equal((*ret)[1]->m_recv, MakeByteSpan(msg_data_2)));
-        BOOST_CHECK(!(*ret)[2]);
-        BOOST_CHECK((*ret)[3]);
-        BOOST_CHECK((*ret)[3]->m_type == "foobar");
-        BOOST_CHECK((*ret)[3]->m_recv.empty());
+        REQUIRE(ret);
+        REQUIRE(ret->size() == 4U);
+        CHECK((*ret)[0]);
+        CHECK((*ret)[0]->m_type == "addrv2");
+        CHECK(std::ranges::equal((*ret)[0]->m_recv, MakeByteSpan(msg_data_1)));
+        CHECK((*ret)[1]);
+        CHECK((*ret)[1]->m_type == "headers");
+        CHECK(std::ranges::equal((*ret)[1]->m_recv, MakeByteSpan(msg_data_2)));
+        CHECK(!(*ret)[2]);
+        CHECK((*ret)[3]);
+        CHECK((*ret)[3]->m_type == "foobar");
+        CHECK((*ret)[3]->m_recv.empty());
         tester.ReceiveMessage("barfoo", {});
     }
 
@@ -1541,14 +1539,14 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
     {
         V2TransportTester tester(m_rng, true);
         auto ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.SendKey();
         tester.SendGarbage(V2Transport::MAX_GARBAGE_LEN + 1);
         tester.ReceiveKey();
         tester.SendGarbageTerm();
         ret = tester.Interact();
-        BOOST_CHECK(!ret);
+        CHECK(!ret);
     }
 
     // Too long garbage (responder).
@@ -1557,20 +1555,20 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendKey();
         tester.SendGarbage(V2Transport::MAX_GARBAGE_LEN + 1);
         auto ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.ReceiveKey();
         tester.SendGarbageTerm();
         ret = tester.Interact();
-        BOOST_CHECK(!ret);
+        CHECK(!ret);
     }
 
     // Send garbage that includes the first 15 garbage terminator bytes somewhere.
     {
         V2TransportTester tester(m_rng, true);
         auto ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.SendKey();
         tester.ReceiveKey();
         /** The number of random garbage bytes before the included first 15 bytes of terminator. */
@@ -1589,8 +1587,8 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendGarbageTerm();
         tester.SendVersion();
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->empty());
+        REQUIRE(ret);
+        REQUIRE(ret->empty());
         tester.ReceiveGarbage();
         tester.ReceiveVersion();
         tester.CompareSessionIDs();
@@ -1600,12 +1598,12 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.SendMessage(uint8_t(2), msg_data_1); // "block" short id
         tester.AddMessage("blocktxn", msg_data_2); // schedule blocktxn to be sent to us
         ret = tester.Interact();
-        BOOST_REQUIRE(ret);
-        BOOST_REQUIRE(ret->size() == 2U);
-        BOOST_CHECK(!(*ret)[0]);
-        BOOST_CHECK((*ret)[1]);
-        BOOST_CHECK((*ret)[1]->m_type == "block");
-        BOOST_CHECK(std::ranges::equal((*ret)[1]->m_recv, MakeByteSpan(msg_data_1)));
+        REQUIRE(ret);
+        REQUIRE(ret->size() == 2U);
+        CHECK(!(*ret)[0]);
+        CHECK((*ret)[1]);
+        CHECK((*ret)[1]->m_type == "block");
+        CHECK(std::ranges::equal((*ret)[1]->m_recv, MakeByteSpan(msg_data_1)));
         tester.ReceiveMessage(uint8_t(3), msg_data_2); // "blocktxn" short id
     }
 
@@ -1614,7 +1612,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         V2TransportTester tester(m_rng, false);
         tester.SendV1Version(Params().MessageStart());
         auto ret = tester.Interact();
-        BOOST_CHECK(ret);
+        CHECK(ret);
     }
 
     // Send wrong network's V1 header
@@ -1622,17 +1620,17 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         V2TransportTester tester(m_rng, false);
         tester.SendV1Version(CChainParams::Main()->MessageStart());
         auto ret = tester.Interact();
-        BOOST_CHECK(!ret);
+        CHECK(!ret);
     }
 }
 
-BOOST_AUTO_TEST_CASE(private_broadcast_version_does_not_update_addrman_services)
+FIXTURE_TEST_CASE(private_broadcast_version_does_not_update_addrman_services, RegTestingSetup)
 {
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
     const CNetAddr source{LookupHost("2.3.4.5", /*fAllowLookup=*/false).value()};
     const CAddress addr{Lookup("1.2.3.4", 8333, /*fAllowLookup=*/false).value(), NODE_NONE};
-    BOOST_REQUIRE(m_node.addrman->Add({addr}, source));
+    REQUIRE(m_node.addrman->Add({addr}, source));
     CNode node{/*id=*/0,
                /*sock=*/nullptr,
                /*addrIn=*/addr,
@@ -1652,8 +1650,8 @@ BOOST_AUTO_TEST_CASE(private_broadcast_version_does_not_update_addrman_services)
                       /*version=*/PROTOCOL_VERSION,
                       /*relay_txs=*/true);
 
-    BOOST_CHECK_EQUAL(m_node.addrman->Select().first.nServices, NODE_NONE);
+    CHECK(m_node.addrman->Select().first.nServices == NODE_NONE);
     m_node.peerman->FinalizeNode(node);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

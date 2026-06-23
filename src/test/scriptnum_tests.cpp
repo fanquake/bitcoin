@@ -6,11 +6,12 @@
 #include <test/scriptnum10.h>
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <climits>
 #include <cstdint>
 
-BOOST_FIXTURE_TEST_SUITE(scriptnum_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(scriptnum_tests)
 
 /** A selection of numbers that do not trigger int64_t overflow
  *  when added/subtracted. */
@@ -27,25 +28,25 @@ static void CheckCreateVch(const int64_t& num)
 {
     CScriptNum10 bignum(num);
     CScriptNum scriptnum(num);
-    BOOST_CHECK(verify(bignum, scriptnum));
+    CHECK(verify(bignum, scriptnum));
 
     CScriptNum10 bignum2(bignum.getvch(), false);
     CScriptNum scriptnum2(scriptnum.getvch(), false);
-    BOOST_CHECK(verify(bignum2, scriptnum2));
+    CHECK(verify(bignum2, scriptnum2));
 
     CScriptNum10 bignum3(scriptnum2.getvch(), false);
     CScriptNum scriptnum3(bignum2.getvch(), false);
-    BOOST_CHECK(verify(bignum3, scriptnum3));
+    CHECK(verify(bignum3, scriptnum3));
 }
 
 static void CheckCreateInt(const int64_t& num)
 {
     CScriptNum10 bignum(num);
     CScriptNum scriptnum(num);
-    BOOST_CHECK(verify(bignum, scriptnum));
-    BOOST_CHECK(verify(CScriptNum10(bignum.getint()), CScriptNum(scriptnum.getint())));
-    BOOST_CHECK(verify(CScriptNum10(scriptnum.getint()), CScriptNum(bignum.getint())));
-    BOOST_CHECK(verify(CScriptNum10(CScriptNum10(scriptnum.getint()).getint()), CScriptNum(CScriptNum(bignum.getint()).getint())));
+    CHECK(verify(bignum, scriptnum));
+    CHECK(verify(CScriptNum10(bignum.getint()), CScriptNum(scriptnum.getint())));
+    CHECK(verify(CScriptNum10(scriptnum.getint()), CScriptNum(bignum.getint())));
+    CHECK(verify(CScriptNum10(CScriptNum10(scriptnum.getint()).getint()), CScriptNum(CScriptNum(bignum.getint()).getint())));
 }
 
 
@@ -65,9 +66,9 @@ static void CheckAdd(const int64_t& num1, const int64_t& num2)
                     ((num2 < 0) && (num1 < (std::numeric_limits<int64_t>::min() - num2))));
     if (!invalid)
     {
-        BOOST_CHECK(verify(bignum1 + bignum2, scriptnum1 + scriptnum2));
-        BOOST_CHECK(verify(bignum1 + bignum2, scriptnum1 + num2));
-        BOOST_CHECK(verify(bignum1 + bignum2, scriptnum2 + num1));
+        CHECK(verify(bignum1 + bignum2, scriptnum1 + scriptnum2));
+        CHECK(verify(bignum1 + bignum2, scriptnum1 + num2));
+        CHECK(verify(bignum1 + bignum2, scriptnum2 + num1));
     }
 }
 
@@ -78,7 +79,7 @@ static void CheckNegate(const int64_t& num)
 
     // -INT64_MIN is undefined
     if (num != std::numeric_limits<int64_t>::min())
-        BOOST_CHECK(verify(-bignum, -scriptnum));
+        CHECK(verify(-bignum, -scriptnum));
 }
 
 static void CheckSubtract(const int64_t& num1, const int64_t& num2)
@@ -93,16 +94,16 @@ static void CheckSubtract(const int64_t& num1, const int64_t& num2)
                     (num2 < 0 && num1 > std::numeric_limits<int64_t>::max() + num2));
     if (!invalid)
     {
-        BOOST_CHECK(verify(bignum1 - bignum2, scriptnum1 - scriptnum2));
-        BOOST_CHECK(verify(bignum1 - bignum2, scriptnum1 - num2));
+        CHECK(verify(bignum1 - bignum2, scriptnum1 - scriptnum2));
+        CHECK(verify(bignum1 - bignum2, scriptnum1 - num2));
     }
 
     invalid = ((num1 > 0 && num2 < std::numeric_limits<int64_t>::min() + num1) ||
                (num1 < 0 && num2 > std::numeric_limits<int64_t>::max() + num1));
     if (!invalid)
     {
-        BOOST_CHECK(verify(bignum2 - bignum1, scriptnum2 - scriptnum1));
-        BOOST_CHECK(verify(bignum2 - bignum1, scriptnum2 - num1));
+        CHECK(verify(bignum2 - bignum1, scriptnum2 - scriptnum1));
+        CHECK(verify(bignum2 - bignum1, scriptnum2 - num1));
     }
 }
 
@@ -113,33 +114,33 @@ static void CheckCompare(const int64_t& num1, const int64_t& num2)
     const CScriptNum scriptnum1(num1);
     const CScriptNum scriptnum2(num2);
 
-    BOOST_CHECK((bignum1 == bignum1) == (scriptnum1 == scriptnum1));
-    BOOST_CHECK((bignum1 != bignum1) ==  (scriptnum1 != scriptnum1));
-    BOOST_CHECK((bignum1 < bignum1) ==  (scriptnum1 < scriptnum1));
-    BOOST_CHECK((bignum1 > bignum1) ==  (scriptnum1 > scriptnum1));
-    BOOST_CHECK((bignum1 >= bignum1) ==  (scriptnum1 >= scriptnum1));
-    BOOST_CHECK((bignum1 <= bignum1) ==  (scriptnum1 <= scriptnum1));
+    CHECK((bignum1 == bignum1) == (scriptnum1 == scriptnum1));
+    CHECK((bignum1 != bignum1) ==  (scriptnum1 != scriptnum1));
+    CHECK((bignum1 < bignum1) ==  (scriptnum1 < scriptnum1));
+    CHECK((bignum1 > bignum1) ==  (scriptnum1 > scriptnum1));
+    CHECK((bignum1 >= bignum1) ==  (scriptnum1 >= scriptnum1));
+    CHECK((bignum1 <= bignum1) ==  (scriptnum1 <= scriptnum1));
 
-    BOOST_CHECK((bignum1 == bignum1) == (scriptnum1 == num1));
-    BOOST_CHECK((bignum1 != bignum1) ==  (scriptnum1 != num1));
-    BOOST_CHECK((bignum1 < bignum1) ==  (scriptnum1 < num1));
-    BOOST_CHECK((bignum1 > bignum1) ==  (scriptnum1 > num1));
-    BOOST_CHECK((bignum1 >= bignum1) ==  (scriptnum1 >= num1));
-    BOOST_CHECK((bignum1 <= bignum1) ==  (scriptnum1 <= num1));
+    CHECK((bignum1 == bignum1) == (scriptnum1 == num1));
+    CHECK((bignum1 != bignum1) ==  (scriptnum1 != num1));
+    CHECK((bignum1 < bignum1) ==  (scriptnum1 < num1));
+    CHECK((bignum1 > bignum1) ==  (scriptnum1 > num1));
+    CHECK((bignum1 >= bignum1) ==  (scriptnum1 >= num1));
+    CHECK((bignum1 <= bignum1) ==  (scriptnum1 <= num1));
 
-    BOOST_CHECK((bignum1 == bignum2) ==  (scriptnum1 == scriptnum2));
-    BOOST_CHECK((bignum1 != bignum2) ==  (scriptnum1 != scriptnum2));
-    BOOST_CHECK((bignum1 < bignum2) ==  (scriptnum1 < scriptnum2));
-    BOOST_CHECK((bignum1 > bignum2) ==  (scriptnum1 > scriptnum2));
-    BOOST_CHECK((bignum1 >= bignum2) ==  (scriptnum1 >= scriptnum2));
-    BOOST_CHECK((bignum1 <= bignum2) ==  (scriptnum1 <= scriptnum2));
+    CHECK((bignum1 == bignum2) ==  (scriptnum1 == scriptnum2));
+    CHECK((bignum1 != bignum2) ==  (scriptnum1 != scriptnum2));
+    CHECK((bignum1 < bignum2) ==  (scriptnum1 < scriptnum2));
+    CHECK((bignum1 > bignum2) ==  (scriptnum1 > scriptnum2));
+    CHECK((bignum1 >= bignum2) ==  (scriptnum1 >= scriptnum2));
+    CHECK((bignum1 <= bignum2) ==  (scriptnum1 <= scriptnum2));
 
-    BOOST_CHECK((bignum1 == bignum2) ==  (scriptnum1 == num2));
-    BOOST_CHECK((bignum1 != bignum2) ==  (scriptnum1 != num2));
-    BOOST_CHECK((bignum1 < bignum2) ==  (scriptnum1 < num2));
-    BOOST_CHECK((bignum1 > bignum2) ==  (scriptnum1 > num2));
-    BOOST_CHECK((bignum1 >= bignum2) ==  (scriptnum1 >= num2));
-    BOOST_CHECK((bignum1 <= bignum2) ==  (scriptnum1 <= num2));
+    CHECK((bignum1 == bignum2) ==  (scriptnum1 == num2));
+    CHECK((bignum1 != bignum2) ==  (scriptnum1 != num2));
+    CHECK((bignum1 < bignum2) ==  (scriptnum1 < num2));
+    CHECK((bignum1 > bignum2) ==  (scriptnum1 > num2));
+    CHECK((bignum1 >= bignum2) ==  (scriptnum1 >= num2));
+    CHECK((bignum1 <= bignum2) ==  (scriptnum1 <= num2));
 }
 
 static void RunCreate(const int64_t& num)
@@ -150,7 +151,7 @@ static void RunCreate(const int64_t& num)
         CheckCreateVch(num);
     else
     {
-        BOOST_CHECK_THROW (CheckCreateVch(num), scriptnum10_error);
+        CHECK_THROWS_AS(CheckCreateVch(num), scriptnum10_error);
     }
 }
 
@@ -162,7 +163,7 @@ static void RunOperators(const int64_t& num1, const int64_t& num2)
     CheckCompare(num1, num2);
 }
 
-BOOST_AUTO_TEST_CASE(creation)
+FIXTURE_TEST_CASE(creation, BasicTestingSetup)
 {
     for(size_t i = 0; i < std::size(values); ++i)
     {
@@ -175,7 +176,7 @@ BOOST_AUTO_TEST_CASE(creation)
     }
 }
 
-BOOST_AUTO_TEST_CASE(operators)
+FIXTURE_TEST_CASE(operators, BasicTestingSetup)
 {
     for(size_t i = 0; i < std::size(values); ++i)
     {
@@ -197,4 +198,4 @@ BOOST_AUTO_TEST_CASE(operators)
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

@@ -2,21 +2,22 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <core_memusage.h>
 #include <kernel/disconnected_transactions.h>
 #include <test/util/setup_common.h>
 
-BOOST_AUTO_TEST_SUITE(disconnected_transactions)
+TEST_SUITE_BEGIN(disconnected_transactions)
 
 //! Tests that DisconnectedBlockTransactions limits its own memory properly
-BOOST_FIXTURE_TEST_CASE(disconnectpool_memory_limits, TestChain100Setup)
+FIXTURE_TEST_CASE(disconnectpool_memory_limits, TestChain100Setup)
 {
     // Use the coinbase transactions from TestChain100Setup. It doesn't matter whether these
     // transactions would realistically be in a block together, they just need distinct txids and
     // uniform size for this test to work.
     std::vector<CTransactionRef> block_vtx(m_coinbase_txns);
-    BOOST_CHECK_EQUAL(block_vtx.size(), 100U);
+    CHECK(block_vtx.size() == 100U);
 
     // Roughly estimate sizes to sanity check that DisconnectedBlockTransactions::DynamicMemoryUsage
     // is within an expected range.
@@ -30,7 +31,7 @@ BOOST_FIXTURE_TEST_CASE(disconnectpool_memory_limits, TestChain100Setup)
 
     const size_t TX_USAGE{RecursiveDynamicUsage(block_vtx.front())};
     for (const auto& tx : block_vtx)
-        BOOST_CHECK_EQUAL(RecursiveDynamicUsage(tx), TX_USAGE);
+        CHECK(RecursiveDynamicUsage(tx) == TX_USAGE);
 
     // Our overall formula is unordered map overhead + usage per entry.
     // Implementations may vary, but we're trying to guess the usage of data structures.
@@ -49,12 +50,12 @@ BOOST_FIXTURE_TEST_CASE(disconnectpool_memory_limits, TestChain100Setup)
         // to a minimum and avoid all (instead of all but 1) transactions getting evicted.
         std::vector<CTransactionRef> two_txns({block_vtx.at(0), block_vtx.at(1)});
         auto evicted_txns{disconnectpool.AddTransactionsFromBlock(two_txns)};
-        BOOST_CHECK(disconnectpool.DynamicMemoryUsage() <= MAP_1 + ENTRY_USAGE_ESTIMATE);
+        CHECK(disconnectpool.DynamicMemoryUsage() <= MAP_1 + ENTRY_USAGE_ESTIMATE);
 
         // Only 1 transaction can be kept
-        BOOST_CHECK_EQUAL(1U, evicted_txns.size());
+        CHECK(1U == evicted_txns.size());
         // Transactions are added from back to front and eviction is FIFO.
-        BOOST_CHECK_EQUAL(block_vtx.at(1), evicted_txns.front());
+        CHECK(block_vtx.at(1) == evicted_txns.front());
 
         disconnectpool.clear();
     }
@@ -66,8 +67,8 @@ BOOST_FIXTURE_TEST_CASE(disconnectpool_memory_limits, TestChain100Setup)
         const size_t USAGE_100_OVERESTIMATE{MAP_100 + ENTRY_USAGE_ESTIMATE * 100};
         DisconnectedBlockTransactions disconnectpool{USAGE_100_OVERESTIMATE};
         auto evicted_txns{disconnectpool.AddTransactionsFromBlock(block_vtx)};
-        BOOST_CHECK_EQUAL(evicted_txns.size(), 0U);
-        BOOST_CHECK(disconnectpool.DynamicMemoryUsage() <= USAGE_100_OVERESTIMATE);
+        CHECK(evicted_txns.size() == 0U);
+        CHECK(disconnectpool.DynamicMemoryUsage() <= USAGE_100_OVERESTIMATE);
 
         usage_full = disconnectpool.DynamicMemoryUsage();
 
@@ -79,17 +80,17 @@ BOOST_FIXTURE_TEST_CASE(disconnectpool_memory_limits, TestChain100Setup)
         const size_t MAX_MEMUSAGE_99{usage_full - sizeof(void*)};
         DisconnectedBlockTransactions disconnectpool{MAX_MEMUSAGE_99};
         auto evicted_txns{disconnectpool.AddTransactionsFromBlock(block_vtx)};
-        BOOST_CHECK(disconnectpool.DynamicMemoryUsage() <= MAX_MEMUSAGE_99);
+        CHECK(disconnectpool.DynamicMemoryUsage() <= MAX_MEMUSAGE_99);
 
         // Only 1 transaction needed to be evicted
-        BOOST_CHECK_EQUAL(1U, evicted_txns.size());
+        CHECK(1U == evicted_txns.size());
 
         // Transactions are added from back to front and eviction is FIFO.
         // The last transaction of block_vtx should be the first to be evicted.
-        BOOST_CHECK_EQUAL(block_vtx.back(), evicted_txns.front());
+        CHECK(block_vtx.back() == evicted_txns.front());
 
         disconnectpool.clear();
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

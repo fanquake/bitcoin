@@ -9,12 +9,12 @@
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(walletdb_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(walletdb_tests)
 
-BOOST_AUTO_TEST_CASE(walletdb_readkeyvalue)
+FIXTURE_TEST_CASE(walletdb_readkeyvalue, BasicTestingSetup)
 {
     /**
      * When ReadKeyValue() reads from either a "key" or "wkey" it first reads the DataStream into a
@@ -26,8 +26,8 @@ BOOST_AUTO_TEST_CASE(walletdb_readkeyvalue)
      */
     DataStream ssValue{};
     uint256 dummy;
-    BOOST_CHECK_THROW(ssValue >> dummy, std::ios_base::failure);
+    CHECK_THROWS_AS(ssValue >> dummy, std::ios_base::failure);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // namespace wallet

@@ -9,7 +9,7 @@
 
 #include <vector>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 using namespace util::hex_literals;
 
@@ -26,12 +26,10 @@ static void TestPassphraseSingle(const std::span<const unsigned char> salt, cons
     crypt.SetKeyFromPassphrase(passphrase, salt, rounds, 0);
 
     if (!correct_key.empty()) {
-        BOOST_CHECK_MESSAGE(memcmp(crypt.vchKey.data(), correct_key.data(), crypt.vchKey.size()) == 0,
-            HexStr(crypt.vchKey) + std::string(" != ") + HexStr(correct_key));
+        CHECK(memcmp(crypt.vchKey.data(), correct_key.data(), crypt.vchKey.size()) == 0, HexStr(crypt.vchKey) + std::string(" != ") + HexStr(correct_key));
     }
     if (!correct_iv.empty()) {
-        BOOST_CHECK_MESSAGE(memcmp(crypt.vchIV.data(), correct_iv.data(), crypt.vchIV.size()) == 0,
-            HexStr(crypt.vchIV) + std::string(" != ") + HexStr(correct_iv));
+        CHECK(memcmp(crypt.vchIV.data(), correct_iv.data(), crypt.vchIV.size()) == 0, HexStr(crypt.vchIV) + std::string(" != ") + HexStr(correct_iv));
     }
 }
 
@@ -51,7 +49,7 @@ static void TestDecrypt(const CCrypter& crypt, const std::span<const unsigned ch
     CKeyingMaterial decrypted;
     crypt.Decrypt(ciphertext, decrypted);
     if (!correct_plaintext.empty()) {
-        BOOST_CHECK_EQUAL_COLLECTIONS(decrypted.begin(), decrypted.end(), correct_plaintext.begin(), correct_plaintext.end());
+        CHECK_EQUAL_RANGES(decrypted, correct_plaintext);
     }
 }
 
@@ -62,7 +60,7 @@ static void TestEncryptSingle(const CCrypter& crypt, const CKeyingMaterial& plai
     crypt.Encrypt(plaintext, ciphertext);
 
     if (!correct_ciphertext.empty()) {
-        BOOST_CHECK_EQUAL_COLLECTIONS(ciphertext.begin(), ciphertext.end(), correct_ciphertext.begin(), correct_ciphertext.end());
+        CHECK_EQUAL_RANGES(ciphertext, correct_ciphertext);
     }
 
     TestDecrypt(crypt, ciphertext, /*correct_plaintext=*/plaintext);
@@ -79,9 +77,9 @@ static void TestEncrypt(const CCrypter& crypt, const std::span<const unsigned ch
 
 };
 
-BOOST_FIXTURE_TEST_SUITE(wallet_crypto_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(wallet_crypto_tests)
 
-BOOST_AUTO_TEST_CASE(passphrase) {
+FIXTURE_TEST_CASE(passphrase, BasicTestingSetup) {
     // These are expensive.
 
     TestCrypter::TestPassphrase("0000deadbeef0000"_hex_u8, "test", CMasterKey::DEFAULT_DERIVE_ITERATIONS,
@@ -97,7 +95,7 @@ BOOST_AUTO_TEST_CASE(passphrase) {
     TestCrypter::TestPassphrase(vchSalt, SecureString(hash.begin(), hash.end()), rounds);
 }
 
-BOOST_AUTO_TEST_CASE(encrypt) {
+FIXTURE_TEST_CASE(encrypt, BasicTestingSetup) {
     constexpr std::array<uint8_t, WALLET_CRYPTO_SALT_SIZE> salt{"0000deadbeef0000"_hex_u8};
     CCrypter crypt;
     crypt.SetKeyFromPassphrase("passphrase", salt, CMasterKey::DEFAULT_DERIVE_ITERATIONS, 0);
@@ -111,7 +109,7 @@ BOOST_AUTO_TEST_CASE(encrypt) {
 
 }
 
-BOOST_AUTO_TEST_CASE(decrypt) {
+FIXTURE_TEST_CASE(decrypt, BasicTestingSetup) {
     constexpr std::array<uint8_t, WALLET_CRYPTO_SALT_SIZE> salt{"0000deadbeef0000"_hex_u8};
     CCrypter crypt;
     crypt.SetKeyFromPassphrase("passphrase", salt, CMasterKey::DEFAULT_DERIVE_ITERATIONS, 0);
@@ -131,5 +129,5 @@ BOOST_AUTO_TEST_CASE(decrypt) {
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // namespace wallet

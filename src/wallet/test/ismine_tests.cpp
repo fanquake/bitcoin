@@ -13,14 +13,14 @@
 #include <wallet/wallet.h>
 #include <wallet/test/util.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 using namespace util::hex_literals;
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(ismine_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(ismine_tests)
 
-BOOST_AUTO_TEST_CASE(ismine_standard)
+FIXTURE_TEST_CASE(ismine_standard, BasicTestingSetup)
 {
     CKey keys[2];
     CPubKey pubkeys[2];
@@ -45,7 +45,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
 
         scriptPubKey = GetScriptForRawPubKey(pubkeys[0]);
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2PK uncompressed - Descriptor
@@ -57,7 +57,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
 
         scriptPubKey = GetScriptForRawPubKey(uncompressedPubkey);
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2PKH compressed - Descriptor
@@ -69,7 +69,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
 
         scriptPubKey = GetScriptForDestination(PKHash(pubkeys[0]));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2PKH uncompressed - Descriptor
@@ -81,7 +81,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
 
         scriptPubKey = GetScriptForDestination(PKHash(uncompressedPubkey));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2SH - Descriptor
@@ -94,7 +94,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         CScript redeemScript = GetScriptForDestination(PKHash(pubkeys[0]));
         scriptPubKey = GetScriptForDestination(ScriptHash(redeemScript));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // (P2PKH inside) P2SH inside P2SH (invalid) - Descriptor
@@ -103,7 +103,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         std::string desc_str = "sh(sh(" + EncodeSecret(keys[0]) + "))";
 
         auto spk_manager = CreateDescriptor(keystore, desc_str, false);
-        BOOST_CHECK_EQUAL(spk_manager, nullptr);
+        CHECK(spk_manager == nullptr);
     }
 
     // (P2PKH inside) P2SH inside P2WSH (invalid) - Descriptor
@@ -112,7 +112,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         std::string desc_str = "wsh(sh(" + EncodeSecret(keys[0]) + "))";
 
         auto spk_manager = CreateDescriptor(keystore, desc_str, false);
-        BOOST_CHECK_EQUAL(spk_manager, nullptr);
+        CHECK(spk_manager == nullptr);
     }
 
     // P2WPKH inside P2WSH (invalid) - Descriptor
@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         std::string desc_str = "wsh(wpkh(" + EncodeSecret(keys[0]) + "))";
 
         auto spk_manager = CreateDescriptor(keystore, desc_str, false);
-        BOOST_CHECK_EQUAL(spk_manager, nullptr);
+        CHECK(spk_manager == nullptr);
     }
 
     // (P2PKH inside) P2WSH inside P2WSH (invalid) - Descriptor
@@ -130,7 +130,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         std::string desc_str = "wsh(wsh(" + EncodeSecret(keys[0]) + "))";
 
         auto spk_manager = CreateDescriptor(keystore, desc_str, false);
-        BOOST_CHECK_EQUAL(spk_manager, nullptr);
+        CHECK(spk_manager == nullptr);
     }
 
     // P2WPKH compressed - Descriptor
@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
 
         scriptPubKey = GetScriptForDestination(WitnessV0KeyHash(pubkeys[0]));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2WPKH uncompressed (invalid) - Descriptor
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         std::string desc_str = "wpkh(" + EncodeSecret(uncompressedKey) + ")";
 
         auto spk_manager = CreateDescriptor(keystore, desc_str, false);
-        BOOST_CHECK_EQUAL(spk_manager, nullptr);
+        CHECK(spk_manager == nullptr);
     }
 
     // scriptPubKey multisig - Descriptor
@@ -163,7 +163,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
 
         scriptPubKey = GetScriptForMultisig(2, {uncompressedPubkey, pubkeys[1]});
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2SH multisig - Descriptor
@@ -177,7 +177,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         CScript redeemScript = GetScriptForMultisig(2, {uncompressedPubkey, pubkeys[1]});
         scriptPubKey = GetScriptForDestination(ScriptHash(redeemScript));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2WSH multisig with compressed keys - Descriptor
@@ -191,7 +191,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         CScript redeemScript = GetScriptForMultisig(2, {pubkeys[0], pubkeys[1]});
         scriptPubKey = GetScriptForDestination(WitnessV0ScriptHash(redeemScript));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // P2WSH multisig with uncompressed key (invalid) - Descriptor
@@ -201,7 +201,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         std::string desc_str = "wsh(multi(2," + EncodeSecret(uncompressedKey) + "," + EncodeSecret(keys[1]) + "))";
 
         auto spk_manager = CreateDescriptor(keystore, desc_str, false);
-        BOOST_CHECK_EQUAL(spk_manager, nullptr);
+        CHECK(spk_manager == nullptr);
     }
 
     // P2WSH multisig wrapped in P2SH - Descriptor
@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         CScript redeemScript = GetScriptForDestination(WitnessV0ScriptHash(witnessScript));
         scriptPubKey = GetScriptForDestination(ScriptHash(redeemScript));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 
     // Combo - Descriptor
@@ -229,28 +229,28 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
 
         // Test P2PK
         result = spk_manager->IsMine(GetScriptForRawPubKey(pubkeys[0]));
-        BOOST_CHECK(result);
+        CHECK(result);
 
         // Test P2PKH
         result = spk_manager->IsMine(GetScriptForDestination(PKHash(pubkeys[0])));
-        BOOST_CHECK(result);
+        CHECK(result);
 
         // Test P2SH (combo descriptor does not describe P2SH)
         CScript redeemScript = GetScriptForDestination(PKHash(pubkeys[0]));
         scriptPubKey = GetScriptForDestination(ScriptHash(redeemScript));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(!result);
+        CHECK(!result);
 
         // Test P2WPKH
         scriptPubKey = GetScriptForDestination(WitnessV0KeyHash(pubkeys[0]));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
 
         // P2SH-P2WPKH output
         redeemScript = GetScriptForDestination(WitnessV0KeyHash(pubkeys[0]));
         scriptPubKey = GetScriptForDestination(ScriptHash(redeemScript));
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
 
         // Test P2TR (combo descriptor does not describe P2TR)
         XOnlyPubKey xpk(pubkeys[0]);
@@ -260,7 +260,7 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         WitnessV1Taproot output = builder.GetOutput();
         scriptPubKey = GetScriptForDestination(output);
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(!result);
+        CHECK(!result);
     }
 
     // Taproot - Descriptor
@@ -278,9 +278,9 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         WitnessV1Taproot output = builder.GetOutput();
         scriptPubKey = GetScriptForDestination(output);
         result = spk_manager->IsMine(scriptPubKey);
-        BOOST_CHECK(result);
+        CHECK(result);
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // namespace wallet

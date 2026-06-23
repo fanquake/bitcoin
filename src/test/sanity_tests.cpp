@@ -5,13 +5,13 @@
 #include <key.h>
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(sanity_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(sanity_tests)
 
-BOOST_AUTO_TEST_CASE(basic_sanity)
+FIXTURE_TEST_CASE(basic_sanity, BasicTestingSetup)
 {
-  BOOST_CHECK_MESSAGE(ECC_InitSanityCheck() == true, "secp256k1 sanity test");
+  CHECK(ECC_InitSanityCheck() == true, "secp256k1 sanity test");
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <vector>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 namespace {
 
@@ -58,15 +58,15 @@ void TestBIP324PacketVector(
 
     // Instantiate encryption BIP324 cipher.
     BIP324Cipher cipher(key, ellswift_ours);
-    BOOST_CHECK(!cipher);
-    BOOST_CHECK(cipher.GetOurPubKey() == ellswift_ours);
+    CHECK(!cipher);
+    CHECK(cipher.GetOurPubKey() == ellswift_ours);
     cipher.Initialize(ellswift_theirs, in_initiating);
-    BOOST_CHECK(cipher);
+    CHECK(cipher);
 
     // Compare session variables.
-    BOOST_CHECK(std::ranges::equal(out_session_id, cipher.GetSessionID()));
-    BOOST_CHECK(std::ranges::equal(mid_send_garbage, cipher.GetSendGarbageTerminator()));
-    BOOST_CHECK(std::ranges::equal(mid_recv_garbage, cipher.GetReceiveGarbageTerminator()));
+    CHECK(std::ranges::equal(out_session_id, cipher.GetSessionID()));
+    CHECK(std::ranges::equal(mid_send_garbage, cipher.GetSendGarbageTerminator()));
+    CHECK(std::ranges::equal(mid_recv_garbage, cipher.GetReceiveGarbageTerminator()));
 
     // Vector of encrypted empty messages, encrypted in order to seek to the right position.
     std::vector<std::vector<std::byte>> dummies(in_idx);
@@ -88,10 +88,10 @@ void TestBIP324PacketVector(
     // Verify ciphertext. Note that the test vectors specify either out_ciphertext (for short
     // messages) or out_ciphertext_endswith (for long messages), so only check the relevant one.
     if (!out_ciphertext.empty()) {
-        BOOST_CHECK(out_ciphertext == ciphertext);
+        CHECK(out_ciphertext == ciphertext);
     } else {
-        BOOST_CHECK(ciphertext.size() >= out_ciphertext_endswith.size());
-        BOOST_CHECK(std::ranges::equal(out_ciphertext_endswith, std::span{ciphertext}.last(out_ciphertext_endswith.size())));
+        CHECK(ciphertext.size() >= out_ciphertext_endswith.size());
+        CHECK(std::ranges::equal(out_ciphertext_endswith, std::span{ciphertext}.last(out_ciphertext_endswith.size())));
     }
 
     for (unsigned error = 0; error <= 12; ++error) {
@@ -105,15 +105,15 @@ void TestBIP324PacketVector(
 
         // Instantiate self-decrypting BIP324 cipher.
         BIP324Cipher dec_cipher(key, ellswift_ours);
-        BOOST_CHECK(!dec_cipher);
-        BOOST_CHECK(dec_cipher.GetOurPubKey() == ellswift_ours);
+        CHECK(!dec_cipher);
+        CHECK(dec_cipher.GetOurPubKey() == ellswift_ours);
         dec_cipher.Initialize(ellswift_theirs, (error == 1) ^ in_initiating, /*self_decrypt=*/true);
-        BOOST_CHECK(dec_cipher);
+        CHECK(dec_cipher);
 
         // Compare session variables.
-        BOOST_CHECK(std::ranges::equal(out_session_id, dec_cipher.GetSessionID()) == (error != 1));
-        BOOST_CHECK(std::ranges::equal(mid_send_garbage, dec_cipher.GetSendGarbageTerminator()) == (error != 1));
-        BOOST_CHECK(std::ranges::equal(mid_recv_garbage, dec_cipher.GetReceiveGarbageTerminator()) == (error != 1));
+        CHECK(std::ranges::equal(out_session_id, dec_cipher.GetSessionID()) == (error != 1));
+        CHECK(std::ranges::equal(mid_send_garbage, dec_cipher.GetSendGarbageTerminator()) == (error != 1));
+        CHECK(std::ranges::equal(mid_recv_garbage, dec_cipher.GetReceiveGarbageTerminator()) == (error != 1));
 
         // Seek to the numbered packet.
         if (in_idx == 0 && error == 12) continue;
@@ -150,10 +150,10 @@ void TestBIP324PacketVector(
         bool dec_ok = dec_cipher.Decrypt(std::span{to_decrypt}.subspan(cipher.LENGTH_LEN), dec_aad, dec_ignore, decrypted);
 
         // Verify result.
-        BOOST_CHECK(dec_ok == !error);
+        CHECK(dec_ok == !error);
         if (dec_ok) {
-            BOOST_CHECK(decrypted == contents);
-            BOOST_CHECK(dec_ignore == in_ignore);
+            CHECK(decrypted == contents);
+            CHECK(dec_ignore == in_ignore);
         }
     }
 }
@@ -161,9 +161,9 @@ void TestBIP324PacketVector(
 
 }  // namespace
 
-BOOST_FIXTURE_TEST_SUITE(bip324_tests, BIP324Test)
+TEST_SUITE_BEGIN(bip324_tests)
 
-BOOST_AUTO_TEST_CASE(packet_test_vectors) {
+FIXTURE_TEST_CASE(packet_test_vectors, BIP324Test) {
     // BIP324 key derivation uses network magic in the HKDF process. We use mainnet params here
     // as that is what the test vectors are written for.
     SelectParams(ChainType::MAIN);
@@ -300,4 +300,4 @@ BOOST_AUTO_TEST_CASE(packet_test_vectors) {
         "1a7f3fb83ad2b050b663b8df6b7c2cc2d8e169a869a58bf7ef5ab5db97a505c84a812e100d9445da4fc39a1176d6aed3995f6868631224b86f10603217c8d13270e0c6d054ad9e0d0b7dc0c8e59a37cd05a0a45faa14b4ffc8d12b641f62e6f1b71c1f72b737e9ce3fe74be779b25e70bf11d98766b3876d0fa28d3c669087fc");
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

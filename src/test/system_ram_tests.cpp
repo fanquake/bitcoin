@@ -5,23 +5,23 @@
 #include <common/system.h>
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <cstdint>
 #include <optional>
 
-BOOST_AUTO_TEST_SUITE(system_ram_tests)
+TEST_SUITE_BEGIN(system_ram_tests)
 
-BOOST_AUTO_TEST_CASE(total_ram)
+TEST_CASE(total_ram)
 {
     const auto total{GetTotalRAM()};
     if (!total) {
-        BOOST_WARN_MESSAGE(false, "skipping total_ram: total RAM unknown");
+        WARN_MESSAGE(false, "skipping total_ram: total RAM unknown");
         return;
     }
 
-    BOOST_CHECK_GE(*total, 1000_MiB);
-    BOOST_CHECK_LT(*total, 10'000_GiB); // ~10 TiB memory is unlikely
+    CHECK(*total >= 1000_MiB);
+    CHECK(*total < 10'000_GiB); // ~10 TiB memory is unlikely
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

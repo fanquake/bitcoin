@@ -13,11 +13,11 @@
 
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(policyestimator_tests, ChainTestingSetup)
+TEST_SUITE_BEGIN(policyestimator_tests)
 
-BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
+FIXTURE_TEST_CASE(BlockPolicyEstimates, ChainTestingSetup)
 {
     CBlockPolicyEstimator feeEst{FeeestPath(*m_node.args), DEFAULT_ACCEPT_STALE_FEE_ESTIMATES};
     CTxMemPool& mpool = *Assert(m_node.mempool);
@@ -106,9 +106,9 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
             // At this point we should need to combine 3 buckets to get enough data points
             // So estimateFee(1) should fail and estimateFee(2) should return somewhere around
             // 9*baserate.  estimateFee(2) %'s are 100,100,90 = average 97%
-            BOOST_CHECK(feeEst.estimateFee(1) == CFeeRate(0));
-            BOOST_CHECK(feeEst.estimateFee(2).GetFeePerK() < 9*baseRate.GetFeePerK() + deltaFee);
-            BOOST_CHECK(feeEst.estimateFee(2).GetFeePerK() > 9*baseRate.GetFeePerK() - deltaFee);
+            CHECK(feeEst.estimateFee(1) == CFeeRate(0));
+            CHECK(feeEst.estimateFee(2).GetFeePerK() < 9*baseRate.GetFeePerK() + deltaFee);
+            CHECK(feeEst.estimateFee(2).GetFeePerK() > 9*baseRate.GetFeePerK() - deltaFee);
         }
     }
 
@@ -125,12 +125,12 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     for (int i = 1; i < 10;i++) {
         origFeeEst.push_back(feeEst.estimateFee(i).GetFeePerK());
         if (i > 2) { // Fee estimates should be monotonically decreasing
-            BOOST_CHECK(origFeeEst[i-1] <= origFeeEst[i-2]);
+            CHECK(origFeeEst[i-1] <= origFeeEst[i-2]);
         }
         int mult = 11-i;
         if (i % 2 == 0) { //At scale 2, test logic is only correct for even targets
-            BOOST_CHECK(origFeeEst[i-1] < mult*baseRate.GetFeePerK() + deltaFee);
-            BOOST_CHECK(origFeeEst[i-1] > mult*baseRate.GetFeePerK() - deltaFee);
+            CHECK(origFeeEst[i-1] < mult*baseRate.GetFeePerK() + deltaFee);
+            CHECK(origFeeEst[i-1] > mult*baseRate.GetFeePerK() - deltaFee);
         }
     }
     // Fill out rest of the original estimates
@@ -148,10 +148,10 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     // Wait for fee estimator to catch up
     m_node.validation_signals->SyncWithValidationInterfaceQueue();
 
-    BOOST_CHECK(feeEst.estimateFee(1) == CFeeRate(0));
+    CHECK(feeEst.estimateFee(1) == CFeeRate(0));
     for (int i = 2; i < 10;i++) {
-        BOOST_CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] + deltaFee);
-        BOOST_CHECK(feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee);
+        CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] + deltaFee);
+        CHECK(feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee);
     }
 
 
@@ -190,7 +190,7 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     m_node.validation_signals->SyncWithValidationInterfaceQueue();
 
     for (int i = 1; i < 10;i++) {
-        BOOST_CHECK((feeEst.estimateFee(i) == CFeeRate(0) || feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee));
+        CHECK((feeEst.estimateFee(i) == CFeeRate(0) || feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee));
     }
 
     // Mine all those transactions
@@ -213,9 +213,9 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     // Wait for fee estimator to catch up
     m_node.validation_signals->SyncWithValidationInterfaceQueue();
 
-    BOOST_CHECK(feeEst.estimateFee(1) == CFeeRate(0));
+    CHECK(feeEst.estimateFee(1) == CFeeRate(0));
     for (int i = 2; i < 10;i++) {
-        BOOST_CHECK((feeEst.estimateFee(i) == CFeeRate(0) || feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee));
+        CHECK((feeEst.estimateFee(i) == CFeeRate(0) || feeEst.estimateFee(i).GetFeePerK() > origFeeEst[i-1] - deltaFee));
     }
 
     // Mine 400 more blocks where everything is mined every block
@@ -256,10 +256,10 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     }
     // Wait for fee estimator to catch up
     m_node.validation_signals->SyncWithValidationInterfaceQueue();
-    BOOST_CHECK(feeEst.estimateFee(1) == CFeeRate(0));
+    CHECK(feeEst.estimateFee(1) == CFeeRate(0));
     for (int i = 2; i < 9; i++) { // At 9, the original estimate was already at the bottom (b/c scale = 2)
-        BOOST_CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] - deltaFee);
+        CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] - deltaFee);
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

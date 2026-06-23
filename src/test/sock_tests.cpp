@@ -9,14 +9,14 @@
 #include <util/sock.h>
 #include <util/threadinterrupt.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <cassert>
 #include <thread>
 
 using namespace std::chrono_literals;
 
-BOOST_FIXTURE_TEST_SUITE(sock_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(sock_tests)
 
 static bool SocketIsClosed(const SOCKET& s)
 {
@@ -31,55 +31,55 @@ static bool SocketIsClosed(const SOCKET& s)
 static SOCKET CreateSocket()
 {
     const SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    BOOST_REQUIRE(s != static_cast<SOCKET>(SOCKET_ERROR));
+    REQUIRE(s != static_cast<SOCKET>(SOCKET_ERROR));
     return s;
 }
 
-BOOST_AUTO_TEST_CASE(constructor_and_destructor)
+FIXTURE_TEST_CASE(constructor_and_destructor, BasicTestingSetup)
 {
     const SOCKET s = CreateSocket();
     Sock* sock = new Sock(s);
-    BOOST_CHECK(*sock == s);
-    BOOST_CHECK(!SocketIsClosed(s));
+    CHECK(*sock == s);
+    CHECK(!SocketIsClosed(s));
     delete sock;
-    BOOST_CHECK(SocketIsClosed(s));
+    CHECK(SocketIsClosed(s));
 }
 
-BOOST_AUTO_TEST_CASE(move_constructor)
+FIXTURE_TEST_CASE(move_constructor, BasicTestingSetup)
 {
     const SOCKET s = CreateSocket();
     Sock* sock1 = new Sock(s);
     Sock* sock2 = new Sock(std::move(*sock1));
     delete sock1;
-    BOOST_CHECK(!SocketIsClosed(s));
-    BOOST_CHECK(*sock2 == s);
+    CHECK(!SocketIsClosed(s));
+    CHECK(*sock2 == s);
     delete sock2;
-    BOOST_CHECK(SocketIsClosed(s));
+    CHECK(SocketIsClosed(s));
 }
 
-BOOST_AUTO_TEST_CASE(move_assignment)
+FIXTURE_TEST_CASE(move_assignment, BasicTestingSetup)
 {
     const SOCKET s1 = CreateSocket();
     const SOCKET s2 = CreateSocket();
     Sock* sock1 = new Sock(s1);
     Sock* sock2 = new Sock(s2);
 
-    BOOST_CHECK(!SocketIsClosed(s1));
-    BOOST_CHECK(!SocketIsClosed(s2));
+    CHECK(!SocketIsClosed(s1));
+    CHECK(!SocketIsClosed(s2));
 
     *sock2 = std::move(*sock1);
-    BOOST_CHECK(!SocketIsClosed(s1));
-    BOOST_CHECK(SocketIsClosed(s2));
-    BOOST_CHECK(*sock2 == s1);
+    CHECK(!SocketIsClosed(s1));
+    CHECK(SocketIsClosed(s2));
+    CHECK(*sock2 == s1);
 
     delete sock1;
-    BOOST_CHECK(!SocketIsClosed(s1));
-    BOOST_CHECK(SocketIsClosed(s2));
-    BOOST_CHECK(*sock2 == s1);
+    CHECK(!SocketIsClosed(s1));
+    CHECK(SocketIsClosed(s2));
+    CHECK(*sock2 == s1);
 
     delete sock2;
-    BOOST_CHECK(SocketIsClosed(s1));
-    BOOST_CHECK(SocketIsClosed(s2));
+    CHECK(SocketIsClosed(s1));
+    CHECK(SocketIsClosed(s2));
 }
 
 struct TcpSocketPair {
@@ -105,19 +105,19 @@ struct TcpSocketPair {
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         addr.sin_port = 0;
 
-        BOOST_REQUIRE_EQUAL(receiver.Bind(reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
-        BOOST_REQUIRE_EQUAL(receiver.Listen(1), 0);
+        REQUIRE(receiver.Bind(reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+        REQUIRE(receiver.Listen(1) == 0);
 
         // Get the address of the listener.
         sockaddr_in bound{};
         socklen_t blen = sizeof(bound);
-        BOOST_REQUIRE_EQUAL(receiver.GetSockName(reinterpret_cast<sockaddr*>(&bound), &blen), 0);
-        BOOST_REQUIRE_EQUAL(static_cast<size_t>(blen), sizeof(bound));
+        REQUIRE(receiver.GetSockName(reinterpret_cast<sockaddr*>(&bound), &blen) == 0);
+        REQUIRE(static_cast<size_t>(blen) == sizeof(bound));
 
-        BOOST_REQUIRE_EQUAL(sender.Connect(reinterpret_cast<sockaddr*>(&bound), sizeof(bound)), 0);
+        REQUIRE(sender.Connect(reinterpret_cast<sockaddr*>(&bound), sizeof(bound)) == 0);
 
         std::unique_ptr<Sock> accepted = receiver.Accept(nullptr, nullptr);
-        BOOST_REQUIRE(accepted != nullptr);
+        REQUIRE(accepted != nullptr);
 
         receiver = std::move(*accepted);
     }
@@ -128,13 +128,13 @@ struct TcpSocketPair {
         constexpr ssize_t msg_len = 4;
         char recv_buf[10];
 
-        BOOST_CHECK_EQUAL(sender.Send(msg, msg_len, 0), msg_len);
-        BOOST_CHECK_EQUAL(receiver.Recv(recv_buf, sizeof(recv_buf), 0), msg_len);
-        BOOST_CHECK_EQUAL(strncmp(msg, recv_buf, msg_len), 0);
+        CHECK(sender.Send(msg, msg_len, 0) == msg_len);
+        CHECK(receiver.Recv(recv_buf, sizeof(recv_buf), 0) == msg_len);
+        CHECK(strncmp(msg, recv_buf, msg_len) == 0);
     }
 };
 
-BOOST_AUTO_TEST_CASE(send_and_receive)
+FIXTURE_TEST_CASE(send_and_receive, BasicTestingSetup)
 {
     TcpSocketPair socks{};
     socks.send_and_receive();
@@ -144,18 +144,18 @@ BOOST_AUTO_TEST_CASE(send_and_receive)
     socks_moved.send_and_receive();
 }
 
-BOOST_AUTO_TEST_CASE(wait)
+FIXTURE_TEST_CASE(wait, BasicTestingSetup)
 {
     TcpSocketPair socks = TcpSocketPair{};
 
     std::thread waiter([&socks]() { (void)socks.receiver.Wait(24h, Sock::RECV); });
 
-    BOOST_REQUIRE_EQUAL(socks.sender.Send("a", 1, 0), 1);
+    REQUIRE(socks.sender.Send("a", 1, 0) == 1);
 
     waiter.join();
 }
 
-BOOST_AUTO_TEST_CASE(recv_until_terminator_limit)
+FIXTURE_TEST_CASE(recv_until_terminator_limit, BasicTestingSetup)
 {
     constexpr auto timeout = 1min; // High enough so that it is never hit.
     CThreadInterrupt interrupt;
@@ -165,7 +165,7 @@ BOOST_AUTO_TEST_CASE(recv_until_terminator_limit)
     std::thread receiver([&socks, &timeout, &interrupt]() {
         constexpr size_t max_data{10};
         bool threw_as_expected{false};
-        // BOOST_CHECK_EXCEPTION() writes to some variables shared with the main thread which
+        // CHECK_EXCEPTION() writes to some variables shared with the main thread which
         // creates a data race. So mimic it manually.
         try {
             (void)socks.receiver.RecvUntilTerminator('\n', timeout, interrupt, max_data);
@@ -175,10 +175,10 @@ BOOST_AUTO_TEST_CASE(recv_until_terminator_limit)
         assert(threw_as_expected);
     });
 
-    BOOST_REQUIRE_NO_THROW(socks.sender.SendComplete("1234567", timeout, interrupt));
-    BOOST_REQUIRE_NO_THROW(socks.sender.SendComplete("89a\n", timeout, interrupt));
+    REQUIRE_NOTHROW(socks.sender.SendComplete("1234567", timeout, interrupt));
+    REQUIRE_NOTHROW(socks.sender.SendComplete("89a\n", timeout, interrupt));
 
     receiver.join();
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

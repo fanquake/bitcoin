@@ -7,21 +7,21 @@
 #include <test/util/common.h>
 #include <wallet/test/wallet_test_fixture.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(wallet_transaction_tests, WalletTestingSetup)
+TEST_SUITE_BEGIN(wallet_transaction_tests)
 
-BOOST_AUTO_TEST_CASE(roundtrip)
+FIXTURE_TEST_CASE(roundtrip, WalletTestingSetup)
 {
     for (uint8_t hash = 0; hash < 5; ++hash) {
         for (int index = -2; index < 3; ++index) {
             TxState state = TxStateInterpretSerialized(TxStateUnrecognized{uint256{hash}, index});
-            BOOST_CHECK_EQUAL(TxStateSerializedBlockHash(state), uint256{hash});
-            BOOST_CHECK_EQUAL(TxStateSerializedIndex(state), index);
+            CHECK(TxStateSerializedBlockHash(state) == uint256{hash});
+            CHECK(TxStateSerializedIndex(state) == index);
         }
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // namespace wallet

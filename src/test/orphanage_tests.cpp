@@ -19,9 +19,9 @@
 #include <array>
 #include <cstdint>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(orphanage_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(orphanage_tests)
 
 static void MakeNewKeyWithFastRandomContext(CKey& key, FastRandomContext& rand_ctx)
 {
@@ -74,7 +74,7 @@ static bool EqualTxns(const std::set<CTransactionRef>& set_txns, const std::vect
     return true;
 }
 
-BOOST_AUTO_TEST_CASE(peer_dos_limits)
+FIXTURE_TEST_CASE(peer_dos_limits, BasicTestingSetup)
 {
     FastRandomContext det_rand{true};
 
@@ -89,7 +89,7 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
     for (unsigned int i{0}; i < NUM_TXNS_CREATED; ++i) {
         auto ptx = MakeTransactionSpending({}, det_rand);
         txns.emplace_back(ptx);
-        BOOST_CHECK_EQUAL(TX_SIZE, GetTransactionWeight(*ptx));
+        CHECK(TX_SIZE == GetTransactionWeight(*ptx));
     }
 
     // Single peer: eviction is triggered if either limit is hit
@@ -108,10 +108,10 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
         orphanage_low_mem->AddTx(txns.at(1), peer);
 
         // The older transaction is evicted.
-        BOOST_CHECK(!orphanage_low_ann->HaveTx(txns.at(0)->GetWitnessHash()));
-        BOOST_CHECK(!orphanage_low_mem->HaveTx(txns.at(0)->GetWitnessHash()));
-        BOOST_CHECK(orphanage_low_ann->HaveTx(txns.at(1)->GetWitnessHash()));
-        BOOST_CHECK(orphanage_low_mem->HaveTx(txns.at(1)->GetWitnessHash()));
+        CHECK(!orphanage_low_ann->HaveTx(txns.at(0)->GetWitnessHash()));
+        CHECK(!orphanage_low_mem->HaveTx(txns.at(0)->GetWitnessHash()));
+        CHECK(orphanage_low_ann->HaveTx(txns.at(1)->GetWitnessHash()));
+        CHECK(orphanage_low_mem->HaveTx(txns.at(1)->GetWitnessHash()));
 
         orphanage_low_ann->SanityCheck();
         orphanage_low_mem->SanityCheck();
@@ -135,8 +135,8 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
         orphanage_low_ann->AddTx(ptx, peer);
 
         // The older transaction is evicted.
-        BOOST_CHECK(!orphanage_low_ann->HaveTx(txns.at(0)->GetWitnessHash()));
-        BOOST_CHECK(orphanage_low_ann->HaveTx(ptx->GetWitnessHash()));
+        CHECK(!orphanage_low_ann->HaveTx(txns.at(0)->GetWitnessHash()));
+        CHECK(orphanage_low_ann->HaveTx(ptx->GetWitnessHash()));
 
         orphanage_low_ann->SanityCheck();
     }
@@ -166,49 +166,49 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
 
         // Make child0 ready to reconsider
         const std::vector<std::pair<Wtxid, NodeId>> expected_set_c0{std::make_pair(children.at(0)->GetWitnessHash(), peer)};
-        BOOST_CHECK(orphanage->AddChildrenToWorkSet(*parents.at(0), det_rand) == expected_set_c0);
-        BOOST_CHECK(orphanage->HaveTxToReconsider(peer));
+        CHECK(orphanage->AddChildrenToWorkSet(*parents.at(0), det_rand) == expected_set_c0);
+        CHECK(orphanage->HaveTxToReconsider(peer));
 
         // Add 1 more orphan, causing the orphanage to be oversize. child1 is evicted.
         orphanage->AddTx(children.at(3), peer);
-        BOOST_CHECK(orphanage->HaveTx(children.at(0)->GetWitnessHash()));
-        BOOST_CHECK(!orphanage->HaveTx(children.at(1)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(2)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(0)->GetWitnessHash()));
+        CHECK(!orphanage->HaveTx(children.at(1)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(2)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
         orphanage->SanityCheck();
 
         // Add 1 more... child2 is evicted.
         orphanage->AddTx(children.at(4), peer);
-        BOOST_CHECK(orphanage->HaveTx(children.at(0)->GetWitnessHash()));
-        BOOST_CHECK(!orphanage->HaveTx(children.at(2)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(4)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(0)->GetWitnessHash()));
+        CHECK(!orphanage->HaveTx(children.at(2)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(4)->GetWitnessHash()));
 
         // Eviction order is FIFO within the orphans that are read
         const std::vector<std::pair<Wtxid, NodeId>> expected_set_c4{std::make_pair(children.at(4)->GetWitnessHash(), peer)};
-        BOOST_CHECK(orphanage->AddChildrenToWorkSet(*parents.at(4), det_rand) == expected_set_c4);
+        CHECK(orphanage->AddChildrenToWorkSet(*parents.at(4), det_rand) == expected_set_c4);
         const std::vector<std::pair<Wtxid, NodeId>> expected_set_c3{std::make_pair(children.at(3)->GetWitnessHash(), peer)};
-        BOOST_CHECK(orphanage->AddChildrenToWorkSet(*parents.at(3), det_rand) == expected_set_c3);
+        CHECK(orphanage->AddChildrenToWorkSet(*parents.at(3), det_rand) == expected_set_c3);
 
         // child5 is evicted immediately because it is the only non-reconsiderable orphan.
         orphanage->AddTx(children.at(5), peer);
-        BOOST_CHECK(orphanage->HaveTx(children.at(0)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(4)->GetWitnessHash()));
-        BOOST_CHECK(!orphanage->HaveTx(children.at(5)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(0)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(4)->GetWitnessHash()));
+        CHECK(!orphanage->HaveTx(children.at(5)->GetWitnessHash()));
 
         // Transactions are marked non-reconsiderable again when returned through GetTxToReconsider
-        BOOST_CHECK_EQUAL(orphanage->GetTxToReconsider(peer), children.at(0));
+        CHECK(orphanage->GetTxToReconsider(peer) == children.at(0));
         orphanage->AddTx(children.at(6), peer);
-        BOOST_CHECK(!orphanage->HaveTx(children.at(0)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(4)->GetWitnessHash()));
-        BOOST_CHECK(orphanage->HaveTx(children.at(6)->GetWitnessHash()));
+        CHECK(!orphanage->HaveTx(children.at(0)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(3)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(4)->GetWitnessHash()));
+        CHECK(orphanage->HaveTx(children.at(6)->GetWitnessHash()));
 
         // The first transaction returned from GetTxToReconsider is the older one, not the one that was marked for
         // reconsideration earlier.
-        BOOST_CHECK_EQUAL(orphanage->GetTxToReconsider(peer), children.at(3));
-        BOOST_CHECK_EQUAL(orphanage->GetTxToReconsider(peer), children.at(4));
+        CHECK(orphanage->GetTxToReconsider(peer) == children.at(3));
+        CHECK(orphanage->GetTxToReconsider(peer) == children.at(4));
 
         orphanage->SanityCheck();
     }
@@ -228,9 +228,9 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
             orphanage->AddTx(txns.at(i), peer_dosy);
         }
         orphanage->SanityCheck();
-        BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer_dosy), max_announcements);
-        BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer1), 0U);
-        BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer2), 0U);
+        CHECK(orphanage->AnnouncementsFromPeer(peer_dosy) == max_announcements);
+        CHECK(orphanage->AnnouncementsFromPeer(peer1) == 0U);
+        CHECK(orphanage->AnnouncementsFromPeer(peer2) == 0U);
 
         // Add 10 unique transactions from peer1.
         // LimitOrphans should evict from peer_dosy, because that's the one exceeding announcement limits.
@@ -239,29 +239,29 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
             orphanage->AddTx(txns.at(max_announcements + i), peer1);
             // The announcement limit per peer has halved, but LimitOrphans does not evict beyond what is necessary to
             // bring the total announcements within its global limit.
-            BOOST_CHECK(orphanage->AnnouncementsFromPeer(peer_dosy) > orphanage->MaxPeerLatencyScore());
+            CHECK(orphanage->AnnouncementsFromPeer(peer_dosy) > orphanage->MaxPeerLatencyScore());
 
-            BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer1), i + 1);
-            BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer_dosy), max_announcements - i - 1);
+            CHECK(orphanage->AnnouncementsFromPeer(peer1) == i + 1);
+            CHECK(orphanage->AnnouncementsFromPeer(peer_dosy) == max_announcements - i - 1);
 
             // Evictions are FIFO within a peer, so the ith transaction sent by peer_dosy is the one that was evicted.
-            BOOST_CHECK(!orphanage->HaveTx(txns.at(i)->GetWitnessHash()));
+            CHECK(!orphanage->HaveTx(txns.at(i)->GetWitnessHash()));
         }
         // Add 10 transactions that are duplicates of the ones sent by peer_dosy. We need to add 10 because the first 10
         // were just evicted in the previous block additions.
         for (unsigned int i{num_from_peer1}; i < num_from_peer1 + 10; ++i) {
             // Tx has already been sent by peer_dosy
-            BOOST_CHECK(orphanage->HaveTxFromPeer(txns.at(i)->GetWitnessHash(), peer_dosy));
+            CHECK(orphanage->HaveTxFromPeer(txns.at(i)->GetWitnessHash(), peer_dosy));
             orphanage->AddTx(txns.at(i), peer2);
 
             // peer_dosy is still the only one getting evicted
-            BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer_dosy), max_announcements - i - 1);
-            BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer1), num_from_peer1);
-            BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer2), i + 1 - num_from_peer1);
+            CHECK(orphanage->AnnouncementsFromPeer(peer_dosy) == max_announcements - i - 1);
+            CHECK(orphanage->AnnouncementsFromPeer(peer1) == num_from_peer1);
+            CHECK(orphanage->AnnouncementsFromPeer(peer2) == i + 1 - num_from_peer1);
 
             // Evictions are FIFO within a peer, so the ith transaction sent by peer_dosy is the one that was evicted.
-            BOOST_CHECK(!orphanage->HaveTxFromPeer(txns.at(i)->GetWitnessHash(), peer_dosy));
-            BOOST_CHECK(orphanage->HaveTx(txns.at(i)->GetWitnessHash()));
+            CHECK(!orphanage->HaveTxFromPeer(txns.at(i)->GetWitnessHash(), peer_dosy));
+            CHECK(orphanage->HaveTx(txns.at(i)->GetWitnessHash()));
         }
 
         // With 6 peers, each can add 10, and still only peer_dosy's orphans are evicted.
@@ -271,11 +271,11 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
             for (unsigned int i{0}; i < max_per_peer; ++i) {
                 // Each addition causes 1 eviction.
                 orphanage->AddTx(txns.at(peer * max_per_peer + i), peer);
-                BOOST_CHECK_EQUAL(orphanage->CountAnnouncements(), num_announcements);
+                CHECK(orphanage->CountAnnouncements() == num_announcements);
             }
         }
         for (NodeId peer{0}; peer < 6; ++peer) {
-            BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer), max_per_peer);
+            CHECK(orphanage->AnnouncementsFromPeer(peer) == max_per_peer);
         }
         orphanage->SanityCheck();
     }
@@ -284,55 +284,55 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
     {
         auto orphanage{node::MakeTxOrphanage()};
         // These stay the same regardless of number of peers
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
-        BOOST_CHECK_EQUAL(orphanage->ReservedPeerUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxGlobalLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->ReservedPeerUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
 
         // These change with number of peers
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxPeerLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->MaxGlobalUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxPeerLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
 
         // Number of peers = 1
         orphanage->AddTx(txns.at(0), 0);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
-        BOOST_CHECK_EQUAL(orphanage->ReservedPeerUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxPeerLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->MaxGlobalLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->ReservedPeerUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxGlobalUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxPeerLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
 
         // Number of peers = 2
         orphanage->AddTx(txns.at(1), 1);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
-        BOOST_CHECK_EQUAL(orphanage->ReservedPeerUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 2);
-        BOOST_CHECK_EQUAL(orphanage->MaxPeerLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 2);
+        CHECK(orphanage->MaxGlobalLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->ReservedPeerUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxGlobalUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 2);
+        CHECK(orphanage->MaxPeerLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 2);
 
         // Number of peers = 3
         orphanage->AddTx(txns.at(2), 2);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
-        BOOST_CHECK_EQUAL(orphanage->ReservedPeerUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 3);
-        BOOST_CHECK_EQUAL(orphanage->MaxPeerLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 3);
+        CHECK(orphanage->MaxGlobalLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->ReservedPeerUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxGlobalUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 3);
+        CHECK(orphanage->MaxPeerLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 3);
 
         // Number of peers didn't change.
         orphanage->AddTx(txns.at(3), 2);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
-        BOOST_CHECK_EQUAL(orphanage->ReservedPeerUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 3);
-        BOOST_CHECK_EQUAL(orphanage->MaxPeerLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 3);
+        CHECK(orphanage->MaxGlobalLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->ReservedPeerUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxGlobalUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 3);
+        CHECK(orphanage->MaxPeerLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 3);
 
         // Once a peer has no orphans, it is not considered in the limits.
         // Number of peers = 2
         orphanage->EraseForPeer(2);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
-        BOOST_CHECK_EQUAL(orphanage->ReservedPeerUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 2);
-        BOOST_CHECK_EQUAL(orphanage->MaxPeerLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 2);
+        CHECK(orphanage->MaxGlobalLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->ReservedPeerUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxGlobalUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER * 2);
+        CHECK(orphanage->MaxPeerLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE / 2);
 
         // Number of peers = 1
         orphanage->EraseTx(txns.at(0)->GetWitnessHash());
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
-        BOOST_CHECK_EQUAL(orphanage->ReservedPeerUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxGlobalUsage(), node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
-        BOOST_CHECK_EQUAL(orphanage->MaxPeerLatencyScore(), node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->MaxGlobalLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
+        CHECK(orphanage->ReservedPeerUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxGlobalUsage() == node::DEFAULT_RESERVED_ORPHAN_WEIGHT_PER_PEER);
+        CHECK(orphanage->MaxPeerLatencyScore() == node::DEFAULT_MAX_ORPHANAGE_LATENCY_SCORE);
 
         orphanage->SanityCheck();
     }
@@ -346,8 +346,8 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
         auto ptx_large = MakeTransactionRef(tx_large);
 
         const auto large_tx_size = GetTransactionWeight(*ptx_large);
-        BOOST_CHECK(large_tx_size > 10 * TX_SIZE);
-        BOOST_CHECK(large_tx_size < 11 * TX_SIZE);
+        CHECK(large_tx_size > 10 * TX_SIZE);
+        CHECK(large_tx_size < 11 * TX_SIZE);
 
         auto orphanage = node::MakeTxOrphanage(20, large_tx_size);
         // One peer sends 10 normal size transactions. The other peer sends 10 normal transactions and 1 very large one
@@ -356,17 +356,17 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
         for (unsigned int i = 0; i < 20; i++) {
             orphanage->AddTx(txns.at(i), i < 10 ? peer_normal : peer_large);
         }
-        BOOST_CHECK(orphanage->TotalLatencyScore() <= orphanage->MaxGlobalLatencyScore());
-        BOOST_CHECK(orphanage->TotalOrphanUsage() <= orphanage->MaxGlobalUsage());
+        CHECK(orphanage->TotalLatencyScore() <= orphanage->MaxGlobalLatencyScore());
+        CHECK(orphanage->TotalOrphanUsage() <= orphanage->MaxGlobalUsage());
 
         // Add the large transaction. This should cause evictions of all the previous 10 transactions from that peer.
         orphanage->AddTx(ptx_large, peer_large);
 
         // peer_normal should still have 10 transactions, and peer_large should have 1.
-        BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer_normal), 10U);
-        BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(peer_large), 1U);
-        BOOST_CHECK(orphanage->HaveTxFromPeer(ptx_large->GetWitnessHash(), peer_large));
-        BOOST_CHECK_EQUAL(orphanage->CountAnnouncements(), 11U);
+        CHECK(orphanage->AnnouncementsFromPeer(peer_normal) == 10U);
+        CHECK(orphanage->AnnouncementsFromPeer(peer_large) == 1U);
+        CHECK(orphanage->HaveTxFromPeer(ptx_large->GetWitnessHash(), peer_large));
+        CHECK(orphanage->CountAnnouncements() == 11U);
 
         orphanage->SanityCheck();
     }
@@ -384,8 +384,8 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
             auto ptx = MakeTransactionSpending(outpoints_9, m_rng);
             orphanage->AddTx(ptx, 0);
         }
-        BOOST_CHECK_EQUAL(orphanage->CountAnnouncements(), 10U);
-        BOOST_CHECK_EQUAL(orphanage->TotalLatencyScore(), 10U);
+        CHECK(orphanage->CountAnnouncements() == 10U);
+        CHECK(orphanage->TotalLatencyScore() == 10U);
 
         // Add 10 transactions with 50 inputs each.
         std::vector<COutPoint> outpoints_50;
@@ -397,26 +397,26 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
             CMutableTransaction tx;
             std::shuffle(outpoints_50.begin(), outpoints_50.end(), m_rng);
             auto ptx = MakeTransactionSpending(outpoints_50, m_rng);
-            BOOST_CHECK(orphanage->AddTx(ptx, 0));
-            if (i < 5) BOOST_CHECK(!orphanage->AddTx(ptx, 1));
+            CHECK(orphanage->AddTx(ptx, 0));
+            if (i < 5) CHECK(!orphanage->AddTx(ptx, 1));
         }
         // 10 of the 9-input transactions + 10 of the 50-input transactions + 5 more announcements of the 50-input transactions
-        BOOST_CHECK_EQUAL(orphanage->CountAnnouncements(), 25U);
+        CHECK(orphanage->CountAnnouncements() == 25U);
         // Base of 25 announcements, plus 10 * 5 for the 50-input transactions (counted just once)
-        BOOST_CHECK_EQUAL(orphanage->TotalLatencyScore(), 25U + 50U);
+        CHECK(orphanage->TotalLatencyScore() == 25U + 50U);
 
         // Peer 0 sent all 20 transactions
-        BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(0), 20U);
-        BOOST_CHECK_EQUAL(orphanage->LatencyScoreFromPeer(0), 20U + 10U * 5U);
+        CHECK(orphanage->AnnouncementsFromPeer(0) == 20U);
+        CHECK(orphanage->LatencyScoreFromPeer(0) == 20U + 10U * 5U);
 
         // Peer 1 sent 5 of the 10 transactions with many inputs
-        BOOST_CHECK_EQUAL(orphanage->AnnouncementsFromPeer(1), 5U);
-        BOOST_CHECK_EQUAL(orphanage->LatencyScoreFromPeer(1), 5U + 5U * 5U);
+        CHECK(orphanage->AnnouncementsFromPeer(1) == 5U);
+        CHECK(orphanage->LatencyScoreFromPeer(1) == 5U + 5U * 5U);
 
         orphanage->SanityCheck();
     }
 }
-BOOST_AUTO_TEST_CASE(DoS_mapOrphans)
+FIXTURE_TEST_CASE(DoS_mapOrphans, BasicTestingSetup)
 {
     // This test had non-deterministic coverage due to
     // randomly selected seeds.
@@ -430,7 +430,7 @@ BOOST_AUTO_TEST_CASE(DoS_mapOrphans)
     CKey key;
     MakeNewKeyWithFastRandomContext(key, m_rng);
     FillableSigningProvider keystore;
-    BOOST_CHECK(keystore.AddKey(key));
+    CHECK(keystore.AddKey(key));
 
     FakeNodeClock clock{};
 
@@ -466,7 +466,7 @@ BOOST_AUTO_TEST_CASE(DoS_mapOrphans)
         tx.vout[0].nValue = i*CENT;
         tx.vout[0].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
         SignatureData empty;
-        BOOST_CHECK(SignSignature(keystore, *txPrev, tx, 0, SIGHASH_ALL, empty));
+        CHECK(SignSignature(keystore, *txPrev, tx, 0, SIGHASH_ALL, empty));
 
         auto ptx = MakeTransactionRef(tx);
         orphanage->AddTx(ptx, i);
@@ -489,20 +489,20 @@ BOOST_AUTO_TEST_CASE(DoS_mapOrphans)
             tx.vin[j].prevout.hash = txPrev->GetHash();
         }
         SignatureData empty;
-        BOOST_CHECK(SignSignature(keystore, *txPrev, tx, 0, SIGHASH_ALL, empty));
+        CHECK(SignSignature(keystore, *txPrev, tx, 0, SIGHASH_ALL, empty));
         // Reuse same signature for other inputs
         // (they don't have to be valid for this test)
         for (unsigned int j = 1; j < tx.vin.size(); j++)
             tx.vin[j].scriptSig = tx.vin[0].scriptSig;
 
-        BOOST_CHECK(!orphanage->AddTx(MakeTransactionRef(tx), i));
+        CHECK(!orphanage->AddTx(MakeTransactionRef(tx), i));
     }
 
     size_t expected_num_orphans = orphanage->CountUniqueOrphans();
 
     // Non-existent peer; nothing should be deleted
     orphanage->EraseForPeer(/*peer=*/-1);
-    BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_num_orphans);
+    CHECK(orphanage->CountUniqueOrphans() == expected_num_orphans);
 
     // Each of first three peers stored
     // two transactions each.
@@ -510,11 +510,11 @@ BOOST_AUTO_TEST_CASE(DoS_mapOrphans)
     {
         orphanage->EraseForPeer(i);
         expected_num_orphans -= 2;
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_num_orphans);
+        CHECK(orphanage->CountUniqueOrphans() == expected_num_orphans);
     }
 }
 
-BOOST_AUTO_TEST_CASE(same_txid_diff_witness)
+FIXTURE_TEST_CASE(same_txid_diff_witness, BasicTestingSetup)
 {
     FastRandomContext det_rand{true};
     std::unique_ptr<node::TxOrphanage> orphanage{node::MakeTxOrphanage()};
@@ -529,37 +529,37 @@ BOOST_AUTO_TEST_CASE(same_txid_diff_witness)
 
     const auto& normal_wtxid = child_normal->GetWitnessHash();
     const auto& mutated_wtxid = child_mutated->GetWitnessHash();
-    BOOST_CHECK(normal_wtxid != mutated_wtxid);
+    CHECK(normal_wtxid != mutated_wtxid);
 
-    BOOST_CHECK(orphanage->AddTx(child_normal, peer));
+    CHECK(orphanage->AddTx(child_normal, peer));
     // EraseTx fails as transaction by this wtxid doesn't exist.
-    BOOST_CHECK_EQUAL(orphanage->EraseTx(mutated_wtxid), 0);
-    BOOST_CHECK(orphanage->HaveTx(normal_wtxid));
-    BOOST_CHECK(orphanage->GetTx(normal_wtxid) == child_normal);
-    BOOST_CHECK(!orphanage->HaveTx(mutated_wtxid));
-    BOOST_CHECK(orphanage->GetTx(mutated_wtxid) == nullptr);
+    CHECK(orphanage->EraseTx(mutated_wtxid) == 0);
+    CHECK(orphanage->HaveTx(normal_wtxid));
+    CHECK(orphanage->GetTx(normal_wtxid) == child_normal);
+    CHECK(!orphanage->HaveTx(mutated_wtxid));
+    CHECK(orphanage->GetTx(mutated_wtxid) == nullptr);
 
     // Must succeed. Both transactions should be present in orphanage.
-    BOOST_CHECK(orphanage->AddTx(child_mutated, peer));
-    BOOST_CHECK(orphanage->HaveTx(normal_wtxid));
-    BOOST_CHECK(orphanage->HaveTx(mutated_wtxid));
+    CHECK(orphanage->AddTx(child_mutated, peer));
+    CHECK(orphanage->HaveTx(normal_wtxid));
+    CHECK(orphanage->HaveTx(mutated_wtxid));
 
     // Outpoints map should track all entries: check that both are returned as children of the parent.
     std::set<CTransactionRef> expected_children{child_normal, child_mutated};
-    BOOST_CHECK(EqualTxns(expected_children, orphanage->GetChildrenFromSamePeer(parent, peer)));
+    CHECK(EqualTxns(expected_children, orphanage->GetChildrenFromSamePeer(parent, peer)));
 
     // Erase by wtxid: mutated first
-    BOOST_CHECK_EQUAL(orphanage->EraseTx(mutated_wtxid), 1);
-    BOOST_CHECK(orphanage->HaveTx(normal_wtxid));
-    BOOST_CHECK(!orphanage->HaveTx(mutated_wtxid));
+    CHECK(orphanage->EraseTx(mutated_wtxid) == 1);
+    CHECK(orphanage->HaveTx(normal_wtxid));
+    CHECK(!orphanage->HaveTx(mutated_wtxid));
 
-    BOOST_CHECK_EQUAL(orphanage->EraseTx(normal_wtxid), 1);
-    BOOST_CHECK(!orphanage->HaveTx(normal_wtxid));
-    BOOST_CHECK(!orphanage->HaveTx(mutated_wtxid));
+    CHECK(orphanage->EraseTx(normal_wtxid) == 1);
+    CHECK(!orphanage->HaveTx(normal_wtxid));
+    CHECK(!orphanage->HaveTx(mutated_wtxid));
 }
 
 
-BOOST_AUTO_TEST_CASE(get_children)
+FIXTURE_TEST_CASE(get_children, BasicTestingSetup)
 {
     FastRandomContext det_rand{true};
     std::vector<COutPoint> empty_outpoints;
@@ -588,39 +588,39 @@ BOOST_AUTO_TEST_CASE(get_children)
     // All orphans provided by node1
     {
         auto orphanage{node::MakeTxOrphanage()};
-        BOOST_CHECK(orphanage->AddTx(child_p1n0, node1));
-        BOOST_CHECK(orphanage->AddTx(child_p2n1, node1));
-        BOOST_CHECK(orphanage->AddTx(child_p1n0_p1n1, node1));
-        BOOST_CHECK(orphanage->AddTx(child_p1n0_p2n0, node1));
+        CHECK(orphanage->AddTx(child_p1n0, node1));
+        CHECK(orphanage->AddTx(child_p2n1, node1));
+        CHECK(orphanage->AddTx(child_p1n0_p1n1, node1));
+        CHECK(orphanage->AddTx(child_p1n0_p2n0, node1));
 
         // Also add some other announcers for the same transactions
-        BOOST_CHECK(!orphanage->AddTx(child_p1n0_p1n1, node0));
-        BOOST_CHECK(!orphanage->AddTx(child_p2n1, node0));
-        BOOST_CHECK(!orphanage->AddTx(child_p1n0, node3));
+        CHECK(!orphanage->AddTx(child_p1n0_p1n1, node0));
+        CHECK(!orphanage->AddTx(child_p2n1, node0));
+        CHECK(!orphanage->AddTx(child_p1n0, node3));
 
 
         std::vector<CTransactionRef> expected_parent1_children{child_p1n0_p2n0, child_p1n0_p1n1, child_p1n0};
         std::vector<CTransactionRef> expected_parent2_children{child_p1n0_p2n0, child_p2n1};
 
-        BOOST_CHECK(expected_parent1_children == orphanage->GetChildrenFromSamePeer(parent1, node1));
-        BOOST_CHECK(expected_parent2_children == orphanage->GetChildrenFromSamePeer(parent2, node1));
+        CHECK(expected_parent1_children == orphanage->GetChildrenFromSamePeer(parent1, node1));
+        CHECK(expected_parent2_children == orphanage->GetChildrenFromSamePeer(parent2, node1));
 
         // The peer must match
-        BOOST_CHECK(orphanage->GetChildrenFromSamePeer(parent1, node2).empty());
-        BOOST_CHECK(orphanage->GetChildrenFromSamePeer(parent2, node2).empty());
+        CHECK(orphanage->GetChildrenFromSamePeer(parent1, node2).empty());
+        CHECK(orphanage->GetChildrenFromSamePeer(parent2, node2).empty());
 
         // There shouldn't be any children of this tx in the orphanage
-        BOOST_CHECK(orphanage->GetChildrenFromSamePeer(child_p1n0_p2n0, node1).empty());
-        BOOST_CHECK(orphanage->GetChildrenFromSamePeer(child_p1n0_p2n0, node2).empty());
+        CHECK(orphanage->GetChildrenFromSamePeer(child_p1n0_p2n0, node1).empty());
+        CHECK(orphanage->GetChildrenFromSamePeer(child_p1n0_p2n0, node2).empty());
     }
 
     // Orphans provided by node1 and node2
     {
         std::unique_ptr<node::TxOrphanage> orphanage{node::MakeTxOrphanage()};
-        BOOST_CHECK(orphanage->AddTx(child_p1n0, node1));
-        BOOST_CHECK(orphanage->AddTx(child_p2n1, node1));
-        BOOST_CHECK(orphanage->AddTx(child_p1n0_p1n1, node2));
-        BOOST_CHECK(orphanage->AddTx(child_p1n0_p2n0, node2));
+        CHECK(orphanage->AddTx(child_p1n0, node1));
+        CHECK(orphanage->AddTx(child_p2n1, node1));
+        CHECK(orphanage->AddTx(child_p1n0_p1n1, node2));
+        CHECK(orphanage->AddTx(child_p1n0_p2n0, node2));
 
         // +----------------+---------------+----------------------------------+
         // |                | sender=node1  |           sender=node2           |
@@ -633,38 +633,38 @@ BOOST_AUTO_TEST_CASE(get_children)
         {
             std::set<CTransactionRef> expected_parent1_node1{child_p1n0};
 
-            BOOST_CHECK_EQUAL(orphanage->GetChildrenFromSamePeer(parent1, node1).size(), 1U);
-            BOOST_CHECK(orphanage->HaveTxFromPeer(child_p1n0->GetWitnessHash(), node1));
-            BOOST_CHECK(EqualTxns(expected_parent1_node1, orphanage->GetChildrenFromSamePeer(parent1, node1)));
+            CHECK(orphanage->GetChildrenFromSamePeer(parent1, node1).size() == 1U);
+            CHECK(orphanage->HaveTxFromPeer(child_p1n0->GetWitnessHash(), node1));
+            CHECK(EqualTxns(expected_parent1_node1, orphanage->GetChildrenFromSamePeer(parent1, node1)));
         }
 
         // Children of parent2 from node1:
         {
             std::set<CTransactionRef> expected_parent2_node1{child_p2n1};
 
-            BOOST_CHECK(EqualTxns(expected_parent2_node1, orphanage->GetChildrenFromSamePeer(parent2, node1)));
+            CHECK(EqualTxns(expected_parent2_node1, orphanage->GetChildrenFromSamePeer(parent2, node1)));
         }
 
         // Children of parent1 from node2: newest returned first.
         {
             std::vector<CTransactionRef> expected_parent1_node2{child_p1n0_p2n0, child_p1n0_p1n1};
-            BOOST_CHECK(orphanage->HaveTxFromPeer(child_p1n0_p1n1->GetWitnessHash(), node2));
-            BOOST_CHECK(orphanage->HaveTxFromPeer(child_p1n0_p2n0->GetWitnessHash(), node2));
-            BOOST_CHECK(expected_parent1_node2 == orphanage->GetChildrenFromSamePeer(parent1, node2));
+            CHECK(orphanage->HaveTxFromPeer(child_p1n0_p1n1->GetWitnessHash(), node2));
+            CHECK(orphanage->HaveTxFromPeer(child_p1n0_p2n0->GetWitnessHash(), node2));
+            CHECK(expected_parent1_node2 == orphanage->GetChildrenFromSamePeer(parent1, node2));
         }
 
         // Children of parent2 from node2:
         {
             std::set<CTransactionRef> expected_parent2_node2{child_p1n0_p2n0};
 
-            BOOST_CHECK_EQUAL(1U, orphanage->GetChildrenFromSamePeer(parent2, node2).size());
-            BOOST_CHECK(orphanage->HaveTxFromPeer(child_p1n0_p2n0->GetWitnessHash(), node2));
-            BOOST_CHECK(EqualTxns(expected_parent2_node2, orphanage->GetChildrenFromSamePeer(parent2, node2)));
+            CHECK(1U == orphanage->GetChildrenFromSamePeer(parent2, node2).size());
+            CHECK(orphanage->HaveTxFromPeer(child_p1n0_p2n0->GetWitnessHash(), node2));
+            CHECK(EqualTxns(expected_parent2_node2, orphanage->GetChildrenFromSamePeer(parent2, node2)));
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(too_large_orphan_tx)
+FIXTURE_TEST_CASE(too_large_orphan_tx, BasicTestingSetup)
 {
     std::unique_ptr<node::TxOrphanage> orphanage{node::MakeTxOrphanage()};
     CMutableTransaction tx;
@@ -672,16 +672,16 @@ BOOST_AUTO_TEST_CASE(too_large_orphan_tx)
 
     // check that txs larger than MAX_STANDARD_TX_WEIGHT are not added to the orphanage
     BulkTransaction(tx, MAX_STANDARD_TX_WEIGHT + 4);
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(tx)), MAX_STANDARD_TX_WEIGHT + 4);
-    BOOST_CHECK(!orphanage->AddTx(MakeTransactionRef(tx), 0));
+    CHECK(GetTransactionWeight(CTransaction(tx)) == MAX_STANDARD_TX_WEIGHT + 4);
+    CHECK(!orphanage->AddTx(MakeTransactionRef(tx), 0));
 
     tx.vout.clear();
     BulkTransaction(tx, MAX_STANDARD_TX_WEIGHT);
-    BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(tx)), MAX_STANDARD_TX_WEIGHT);
-    BOOST_CHECK(orphanage->AddTx(MakeTransactionRef(tx), 0));
+    CHECK(GetTransactionWeight(CTransaction(tx)) == MAX_STANDARD_TX_WEIGHT);
+    CHECK(orphanage->AddTx(MakeTransactionRef(tx), 0));
 }
 
-BOOST_AUTO_TEST_CASE(process_block)
+FIXTURE_TEST_CASE(process_block, BasicTestingSetup)
 {
     FastRandomContext det_rand{true};
     std::unique_ptr<node::TxOrphanage> orphanage{node::MakeTxOrphanage()};
@@ -699,10 +699,10 @@ BOOST_AUTO_TEST_CASE(process_block)
     const NodeId node{0};
 
     auto control_tx = MakeTransactionSpending({}, det_rand);
-    BOOST_CHECK(orphanage->AddTx(control_tx, node));
+    CHECK(orphanage->AddTx(control_tx, node));
 
     auto bo_tx_same_txid = MakeTransactionSpending({outpoints.at(0)}, det_rand);
-    BOOST_CHECK(orphanage->AddTx(bo_tx_same_txid, node));
+    CHECK(orphanage->AddTx(bo_tx_same_txid, node));
     block.vtx.emplace_back(bo_tx_same_txid);
 
     // 2 transactions with the same txid but different witness
@@ -710,33 +710,33 @@ BOOST_AUTO_TEST_CASE(process_block)
     block.vtx.emplace_back(b_tx_same_txid_diff_witness);
 
     auto o_tx_same_txid_diff_witness = MakeMutation(b_tx_same_txid_diff_witness);
-    BOOST_CHECK(orphanage->AddTx(o_tx_same_txid_diff_witness, node));
+    CHECK(orphanage->AddTx(o_tx_same_txid_diff_witness, node));
 
     // 2 different transactions that spend the same input.
     auto b_tx_conflict = MakeTransactionSpending({outpoints.at(2)}, det_rand);
     block.vtx.emplace_back(b_tx_conflict);
 
     auto o_tx_conflict = MakeTransactionSpending({outpoints.at(2)}, det_rand);
-    BOOST_CHECK(orphanage->AddTx(o_tx_conflict, node));
+    CHECK(orphanage->AddTx(o_tx_conflict, node));
 
     // 2 different transactions that have 1 overlapping input.
     auto b_tx_conflict_partial = MakeTransactionSpending({outpoints.at(3), outpoints.at(4)}, det_rand);
     block.vtx.emplace_back(b_tx_conflict_partial);
 
     auto o_tx_conflict_partial_2 = MakeTransactionSpending({outpoints.at(4), outpoints.at(5)}, det_rand);
-    BOOST_CHECK(orphanage->AddTx(o_tx_conflict_partial_2, node));
+    CHECK(orphanage->AddTx(o_tx_conflict_partial_2, node));
 
     orphanage->EraseForBlock(block);
     for (const auto& expected_removed : {bo_tx_same_txid, o_tx_same_txid_diff_witness, o_tx_conflict, o_tx_conflict_partial_2}) {
         const auto& expected_removed_wtxid = expected_removed->GetWitnessHash();
-        BOOST_CHECK(!orphanage->HaveTx(expected_removed_wtxid));
+        CHECK(!orphanage->HaveTx(expected_removed_wtxid));
     }
     // Only remaining tx is control_tx
-    BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), 1U);
-    BOOST_CHECK(orphanage->HaveTx(control_tx->GetWitnessHash()));
+    CHECK(orphanage->CountUniqueOrphans() == 1U);
+    CHECK(orphanage->HaveTx(control_tx->GetWitnessHash()));
 }
 
-BOOST_AUTO_TEST_CASE(multiple_announcers)
+FIXTURE_TEST_CASE(multiple_announcers, BasicTestingSetup)
 {
     const NodeId node0{0};
     const NodeId node1{1};
@@ -750,53 +750,53 @@ BOOST_AUTO_TEST_CASE(multiple_announcers)
     {
         auto ptx = MakeTransactionSpending({}, det_rand);
         const auto& wtxid = ptx->GetWitnessHash();
-        BOOST_CHECK(orphanage->AddTx(ptx, node0));
-        BOOST_CHECK(orphanage->HaveTx(wtxid));
+        CHECK(orphanage->AddTx(ptx, node0));
+        CHECK(orphanage->HaveTx(wtxid));
         expected_total_count += 1;
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
 
         // Adding again should do nothing.
-        BOOST_CHECK(!orphanage->AddTx(ptx, node0));
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
+        CHECK(!orphanage->AddTx(ptx, node0));
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
 
         // We can add another tx with the same txid but different witness.
         auto ptx_mutated{MakeMutation(ptx)};
-        BOOST_CHECK(orphanage->AddTx(ptx_mutated, node0));
-        BOOST_CHECK(orphanage->HaveTx(ptx_mutated->GetWitnessHash()));
+        CHECK(orphanage->AddTx(ptx_mutated, node0));
+        CHECK(orphanage->HaveTx(ptx_mutated->GetWitnessHash()));
         expected_total_count += 1;
 
-        BOOST_CHECK(!orphanage->AddTx(ptx, node0));
+        CHECK(!orphanage->AddTx(ptx, node0));
 
         // Adding a new announcer should not change overall accounting.
-        BOOST_CHECK(orphanage->AddAnnouncer(ptx->GetWitnessHash(), node2));
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
+        CHECK(orphanage->AddAnnouncer(ptx->GetWitnessHash(), node2));
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
 
         // If we already have this announcer, AddAnnouncer returns false.
-        BOOST_CHECK(orphanage->HaveTxFromPeer(ptx->GetWitnessHash(), node2));
-        BOOST_CHECK(!orphanage->AddAnnouncer(ptx->GetWitnessHash(), node2));
+        CHECK(orphanage->HaveTxFromPeer(ptx->GetWitnessHash(), node2));
+        CHECK(!orphanage->AddAnnouncer(ptx->GetWitnessHash(), node2));
 
         // Same with using AddTx for an existing tx, which is equivalent to using AddAnnouncer
-        BOOST_CHECK(!orphanage->AddTx(ptx, node1));
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
+        CHECK(!orphanage->AddTx(ptx, node1));
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
 
         // if EraseForPeer is called for an orphan with multiple announcers, the orphanage should only
         // erase that peer from the announcers set.
         orphanage->EraseForPeer(node0);
-        BOOST_CHECK(orphanage->HaveTx(ptx->GetWitnessHash()));
-        BOOST_CHECK(!orphanage->HaveTxFromPeer(ptx->GetWitnessHash(), node0));
+        CHECK(orphanage->HaveTx(ptx->GetWitnessHash()));
+        CHECK(!orphanage->HaveTxFromPeer(ptx->GetWitnessHash(), node0));
         // node0 is the only one that announced ptx_mutated
-        BOOST_CHECK(!orphanage->HaveTx(ptx_mutated->GetWitnessHash()));
+        CHECK(!orphanage->HaveTx(ptx_mutated->GetWitnessHash()));
         expected_total_count -= 1;
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
 
         // EraseForPeer should delete the orphan if it's the only announcer left.
         orphanage->EraseForPeer(node1);
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
-        BOOST_CHECK(orphanage->HaveTx(ptx->GetWitnessHash()));
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
+        CHECK(orphanage->HaveTx(ptx->GetWitnessHash()));
         orphanage->EraseForPeer(node2);
         expected_total_count -= 1;
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
-        BOOST_CHECK(!orphanage->HaveTx(ptx->GetWitnessHash()));
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
+        CHECK(!orphanage->HaveTx(ptx->GetWitnessHash()));
     }
 
     // Check that erasure for blocks removes for all peers.
@@ -804,21 +804,21 @@ BOOST_AUTO_TEST_CASE(multiple_announcers)
         CBlock block;
         auto tx_block = MakeTransactionSpending({}, det_rand);
         block.vtx.emplace_back(tx_block);
-        BOOST_CHECK(orphanage->AddTx(tx_block, node0));
-        BOOST_CHECK(!orphanage->AddTx(tx_block, node1));
+        CHECK(orphanage->AddTx(tx_block, node0));
+        CHECK(!orphanage->AddTx(tx_block, node1));
 
         expected_total_count += 1;
 
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
 
         orphanage->EraseForBlock(block);
 
         expected_total_count -= 1;
 
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), expected_total_count);
+        CHECK(orphanage->CountUniqueOrphans() == expected_total_count);
     }
 }
-BOOST_AUTO_TEST_CASE(peer_worksets)
+FIXTURE_TEST_CASE(peer_worksets, BasicTestingSetup)
 {
     const NodeId node0{0};
     const NodeId node1{1};
@@ -832,20 +832,20 @@ BOOST_AUTO_TEST_CASE(peer_worksets)
         const auto& orphan_wtxid = tx_orphan->GetWitnessHash();
 
         // All 3 peers are announcers.
-        BOOST_CHECK(orphanage->AddTx(tx_orphan, node0));
-        BOOST_CHECK(!orphanage->AddTx(tx_orphan, node1));
-        BOOST_CHECK(orphanage->AddAnnouncer(orphan_wtxid, node2));
+        CHECK(orphanage->AddTx(tx_orphan, node0));
+        CHECK(!orphanage->AddTx(tx_orphan, node1));
+        CHECK(orphanage->AddAnnouncer(orphan_wtxid, node2));
         for (NodeId node = node0; node <= node2; ++node) {
-            BOOST_CHECK(orphanage->HaveTxFromPeer(orphan_wtxid, node));
+            CHECK(orphanage->HaveTxFromPeer(orphan_wtxid, node));
         }
 
         // Parent accepted: child is added to 1 of 3 worksets.
         auto newly_reconsiderable = orphanage->AddChildrenToWorkSet(*tx_missing_parent, det_rand);
-        BOOST_CHECK_EQUAL(newly_reconsiderable.size(), 1U);
+        CHECK(newly_reconsiderable.size() == 1U);
         int node0_reconsider = orphanage->HaveTxToReconsider(node0);
         int node1_reconsider = orphanage->HaveTxToReconsider(node1);
         int node2_reconsider = orphanage->HaveTxToReconsider(node2);
-        BOOST_CHECK_EQUAL(node0_reconsider + node1_reconsider + node2_reconsider, 1);
+        CHECK(node0_reconsider + node1_reconsider + node2_reconsider == 1);
 
         NodeId assigned_peer;
         if (node0_reconsider) {
@@ -853,21 +853,21 @@ BOOST_AUTO_TEST_CASE(peer_worksets)
         } else if (node1_reconsider) {
             assigned_peer = node1;
         } else {
-            BOOST_CHECK(node2_reconsider);
+            CHECK(node2_reconsider);
             assigned_peer = node2;
         }
 
         // EraseForPeer also removes that tx from the workset.
         orphanage->EraseForPeer(assigned_peer);
-        BOOST_CHECK_EQUAL(orphanage->GetTxToReconsider(node0), nullptr);
+        CHECK(orphanage->GetTxToReconsider(node0) == nullptr);
 
         // Delete this tx, clearing the orphanage.
-        BOOST_CHECK_EQUAL(orphanage->EraseTx(orphan_wtxid), 1);
-        BOOST_CHECK_EQUAL(orphanage->CountUniqueOrphans(), 0U);
+        CHECK(orphanage->EraseTx(orphan_wtxid) == 1);
+        CHECK(orphanage->CountUniqueOrphans() == 0U);
         for (NodeId node = node0; node <= node2; ++node) {
-            BOOST_CHECK_EQUAL(orphanage->GetTxToReconsider(node), nullptr);
-            BOOST_CHECK(!orphanage->HaveTxFromPeer(orphan_wtxid, node));
+            CHECK(orphanage->GetTxToReconsider(node) == nullptr);
+            CHECK(!orphanage->HaveTxFromPeer(orphan_wtxid, node));
         }
     }
 }
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

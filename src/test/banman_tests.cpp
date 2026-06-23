@@ -11,11 +11,11 @@
 #include <test/util/time.h>
 #include <util/readwritefile.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(banman_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(banman_tests)
 
-BOOST_AUTO_TEST_CASE(file)
+FIXTURE_TEST_CASE(file, BasicTestingSetup)
 {
     FakeNodeClock clock{777s};
     const fs::path banlist_path{m_args.GetDataDirBase() / "banlist_test"};
@@ -27,7 +27,7 @@ BOOST_AUTO_TEST_CASE(file)
             "  { \"version\": 1, \"ban_created\": 0, \"banned_until\": 778, \"address\": \"1.0.0.0/8\" }"
             "] }",
         };
-        BOOST_REQUIRE(WriteBinaryFile(banlist_path + ".json", entries_write));
+        REQUIRE(WriteBinaryFile(banlist_path + ".json", entries_write));
         {
             // The invalid entries will be dropped, but the valid one remains
             ASSERT_DEBUG_LOG("Dropping entry with unparseable address or subnet (aaaaaaaaa) from ban list");
@@ -35,9 +35,9 @@ BOOST_AUTO_TEST_CASE(file)
             BanMan banman{banlist_path, /*client_interface=*/nullptr, /*default_ban_time=*/0};
             banmap_t entries_read;
             banman.GetBanned(entries_read);
-            BOOST_CHECK_EQUAL(entries_read.size(), 1U);
+            CHECK(entries_read.size() == 1U);
         }
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

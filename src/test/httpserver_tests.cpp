@@ -8,7 +8,7 @@
 #include <test/util/setup_common.h>
 #include <util/string.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 using http_bitcoin::GetQueryParameterFromUri;
 using http_bitcoin::HTTPHeaders;
@@ -30,79 +30,79 @@ constexpr std::string_view full_request = "POST / HTTP/1.1\r\n"
                                           "\r\n"
                                           R"({"method":"getblockcount","params":[],"id":1})""\n";
 
-BOOST_FIXTURE_TEST_SUITE(httpserver_tests, SocketTestingSetup)
+TEST_SUITE_BEGIN(httpserver_tests)
 
-BOOST_AUTO_TEST_CASE(test_query_parameters)
+FIXTURE_TEST_CASE(test_query_parameters, SocketTestingSetup)
 {
     std::string uri {};
 
     // Tolerate a URI with invalid characters (% not followed by hex digits)
     uri = "/rest/endpoint/someresource.json?p1=v1&p2=v2%";
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p1"), "v1");
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p2"), "v2%");
+    CHECK(GetQueryParameterFromUri(uri, "p1") == "v1");
+    CHECK(GetQueryParameterFromUri(uri, "p2") == "v2%");
 
     // No parameters
     uri = "localhost:8080/rest/headers/someresource.json";
-    BOOST_CHECK(!GetQueryParameterFromUri(uri, "p1"));
+    CHECK(!GetQueryParameterFromUri(uri, "p1"));
 
     // Single parameter
     uri = "localhost:8080/rest/endpoint/someresource.json?p1=v1";
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p1"), "v1");
-    BOOST_CHECK(!GetQueryParameterFromUri(uri, "p2"));
+    CHECK(GetQueryParameterFromUri(uri, "p1") == "v1");
+    CHECK(!GetQueryParameterFromUri(uri, "p2"));
 
     // Multiple parameters
     uri = "/rest/endpoint/someresource.json?p1=v1&p2=v2";
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p1"), "v1");
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p2"), "v2");
+    CHECK(GetQueryParameterFromUri(uri, "p1") == "v1");
+    CHECK(GetQueryParameterFromUri(uri, "p2") == "v2");
 
     // If the query string contains duplicate keys, the first value is returned
     uri = "/rest/endpoint/someresource.json?p1=v1&p1=v2";
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p1"), "v1");
+    CHECK(GetQueryParameterFromUri(uri, "p1") == "v1");
 
     // Invalid query string syntax is the same as not having parameters
     uri = "/rest/endpoint/someresource.json&p1=v1&p2=v2";
-    BOOST_CHECK(!GetQueryParameterFromUri(uri, "p1"));
+    CHECK(!GetQueryParameterFromUri(uri, "p1"));
 
     // Multiple parameters, some characters encoded
     uri = "/rest/endpoint/someresource.json?p1=v1%20&p2=100%25";
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p1"), "v1 ");
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p2"), "100%");
+    CHECK(GetQueryParameterFromUri(uri, "p1") == "v1 ");
+    CHECK(GetQueryParameterFromUri(uri, "p2") == "100%");
 
     // Encoded query delimiters are part of the parameter value, not structure.
     uri = "/rest/endpoint/someresource.json?p=a%26b%3Dc%23frag&other=x";
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "p"), "a&b=c#frag");
-    BOOST_CHECK_EQUAL(GetQueryParameterFromUri(uri, "other"), "x");
+    CHECK(GetQueryParameterFromUri(uri, "p") == "a&b=c#frag");
+    CHECK(GetQueryParameterFromUri(uri, "other") == "x");
 
     // An encoded question mark in the path does not introduce a query section.
     uri = "/rest/endpoint/someresource.json%3Fp1%3Dv1%26p2%3D100%25";
-    BOOST_CHECK(!GetQueryParameterFromUri(uri, "p1"));
+    CHECK(!GetQueryParameterFromUri(uri, "p1"));
 }
 
-BOOST_AUTO_TEST_CASE(http_headers_tests)
+FIXTURE_TEST_CASE(http_headers_tests, SocketTestingSetup)
 {
     {
         // Writing response headers
         HTTPHeaders headers{};
-        BOOST_CHECK(!headers.FindFirst("Cache-Control"));
+        CHECK(!headers.FindFirst("Cache-Control"));
         headers.Write("Cache-Control", "no-cache");
         // Check case-insensitive key matching
-        BOOST_CHECK_EQUAL(headers.FindFirst("Cache-Control"), "no-cache");
-        BOOST_CHECK_EQUAL(headers.FindFirst("cache-control"), "no-cache");
+        CHECK(headers.FindFirst("Cache-Control") == "no-cache");
+        CHECK(headers.FindFirst("cache-control") == "no-cache");
         // Additional values are appended, compared case-insensitive
         headers.Write("cache-control", "max-age=60");
-        BOOST_CHECK_EQUAL(headers.FindFirst("Cache-Control"), "no-cache");
-        BOOST_CHECK((headers.FindAll("Cache-Control") == std::vector<std::string_view>{"no-cache", "max-age=60"}));
+        CHECK(headers.FindFirst("Cache-Control") == "no-cache");
+        CHECK((headers.FindAll("Cache-Control") == std::vector<std::string_view>{"no-cache", "max-age=60"}));
         // Add a few more
         headers.Write("Pie", "apple");
         headers.Write("Sandwich", "ham");
         headers.Write("Coffee", "black");
-        BOOST_CHECK_EQUAL(headers.FindFirst("Pie"), "apple");
+        CHECK(headers.FindFirst("Pie") == "apple");
         // Remove
         headers.RemoveAll("Pie");
-        BOOST_CHECK(!headers.FindFirst("Pie"));
+        CHECK(!headers.FindFirst("Pie"));
         // Combine for transmission
         std::string headers_string{headers.Stringify()};
-        BOOST_CHECK_EQUAL(headers_string, "Cache-Control: no-cache\r\n"
+        CHECK(headers_string == "Cache-Control: no-cache\r\n"
                                           "cache-control: max-age=60\r\n"
                                           "Sandwich: ham\r\n"
                                           "Coffee: black\r\n"
@@ -118,43 +118,43 @@ BOOST_AUTO_TEST_CASE(http_headers_tests)
         util::LineReader reader(bitcoin_cli_headers, /*max_line_length=*/MAX_HEADERS_SIZE);
         HTTPHeaders headers{};
         headers.Read(reader);
-        BOOST_CHECK_EQUAL(headers.FindFirst("Host"), "127.0.0.1");
-        BOOST_CHECK_EQUAL(headers.FindFirst("Connection"), "close");
-        BOOST_CHECK_EQUAL(headers.FindFirst("Content-Type"), "application/json");
-        BOOST_CHECK_EQUAL(headers.FindFirst("Authorization"), "Basic X19jb29raWVfXzozYzJkNTAxNDFlMGJiYmVhMTI5ODg3NzI5MTM3NTRmNThkNjc2OWMwZTYxZjgzNTgyNzEwYTY1OGRkYjVmZGQ3");
-        BOOST_CHECK_EQUAL(headers.FindFirst("Content-Length"), "46");
-        BOOST_CHECK(!headers.FindFirst("Pizza"));
+        CHECK(headers.FindFirst("Host") == "127.0.0.1");
+        CHECK(headers.FindFirst("Connection") == "close");
+        CHECK(headers.FindFirst("Content-Type") == "application/json");
+        CHECK(headers.FindFirst("Authorization") == "Basic X19jb29raWVfXzozYzJkNTAxNDFlMGJiYmVhMTI5ODg3NzI5MTM3NTRmNThkNjc2OWMwZTYxZjgzNTgyNzEwYTY1OGRkYjVmZGQ3");
+        CHECK(headers.FindFirst("Content-Length") == "46");
+        CHECK(!headers.FindFirst("Pizza"));
     }
     // Ensure invalid headers are rejected
     {
         // missing a colon
         util::LineReader reader{"key value\n", /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"HTTP header missing colon (:)"});
+        CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"HTTP header missing colon (:)"});
     }
     {
         // missing a key
         util::LineReader reader{":value\n", /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Empty HTTP header name"});
+        CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Empty HTTP header name"});
     }
     {
         // contains NUL
         util::LineReader reader{std::string_view{"X-Custom: foo\0bar\n", 18}, /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Header contains invalid character"});
+        CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Header contains invalid character"});
     }
     {
         // contains bare \r (not followed by \n)
         util::LineReader reader{std::string_view{"X-Custom: foo\rbar\n"}, /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Header contains invalid character"});
+        CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Header contains invalid character"});
     }
     {
         // contains odd \r preceding the expected CRLF
         util::LineReader reader{"X-Custom: foo\r\r\n", /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Header contains invalid character"});
+        CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Header contains invalid character"});
     }
     {
         // key contains whitespace
         util::LineReader reader{"key : value\n", /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Invalid header field-name contains whitespace"});
+        CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"Invalid header field-name contains whitespace"});
     }
     {
         // Individual lines are below MAX_HEADERS_SIZE but the total is excessive
@@ -164,20 +164,20 @@ BOOST_AUTO_TEST_CASE(http_headers_tests)
             lines.append("key:value\n");
         }
         std::string_view excessive_headers{lines};
-        BOOST_CHECK_GT(excessive_headers.size(), MAX_HEADERS_SIZE);
+        CHECK(excessive_headers.size() > MAX_HEADERS_SIZE);
         util::LineReader reader{excessive_headers, /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"HTTP headers exceed size limit"});
+        CHECK_EXCEPTION(HTTPHeaders{}.Read(reader), std::runtime_error, HasReason{"HTTP headers exceed size limit"});
     }
     {
         // Ok
         util::LineReader reader{"key: value\n", /*max_line_length=*/MAX_HEADERS_SIZE};
         HTTPHeaders headers{};
         headers.Read(reader);
-        BOOST_CHECK_EQUAL(headers.FindFirst("key"), "value");
+        CHECK(headers.FindFirst("key") == "value");
     }
 }
 
-BOOST_AUTO_TEST_CASE(http_response_tests)
+FIXTURE_TEST_CASE(http_response_tests, SocketTestingSetup)
 {
     // Typical HTTP 1.1 response headers
     HTTPHeaders headers{};
@@ -189,94 +189,92 @@ BOOST_AUTO_TEST_CASE(http_response_tests)
     res.m_version = {.major = 1, .minor = 1};
     res.m_status = HTTP_OK;
     res.m_headers = std::move(headers);
-    BOOST_CHECK_EQUAL(
-        res.StringifyHeaders(),
-        "HTTP/1.1 200 OK\r\n"
+    CHECK(res.StringifyHeaders() == "HTTP/1.1 200 OK\r\n"
         "Content-Length: 41\r\n"
         "\r\n");
 }
 
-BOOST_AUTO_TEST_CASE(http_request_tests)
+FIXTURE_TEST_CASE(http_request_tests, SocketTestingSetup)
 {
     {
         HTTPRequest req;
         LineReader reader(full_request, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(req.LoadBody(reader));
-        BOOST_CHECK_EQUAL(req.m_method, HTTPRequestMethod::POST);
-        BOOST_CHECK_EQUAL(req.GetRequestMethod(), HTTPRequestMethod::POST);
-        BOOST_CHECK_EQUAL(req.m_target, "/");
-        BOOST_CHECK_EQUAL(req.GetURI(), "/");
-        BOOST_CHECK_EQUAL(req.m_version.major, 1);
-        BOOST_CHECK_EQUAL(req.m_version.minor, 1);
-        BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Host"), "127.0.0.1");
-        BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Connection"), "close");
-        BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Content-Type"), "application/json");
-        BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Authorization"), "Basic X19jb29raWVfXzo5OGQ5ODQ3MWNmNjg0NzAzYTkzN2EzNzk0ZDFlODQ1NjZmYTRkZjJiMzFkYjhhODI4ZGY4MjVjOTg5ZGI4OTVl");
-        BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Content-Length"), "46");
-        BOOST_CHECK_EQUAL(req.m_body.size(), 46U);
-        BOOST_CHECK_EQUAL(req.m_body, R"({"method":"getblockcount","params":[],"id":1})""\n");
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(req.LoadBody(reader));
+        CHECK(req.m_method == HTTPRequestMethod::POST);
+        CHECK(req.GetRequestMethod() == HTTPRequestMethod::POST);
+        CHECK(req.m_target == "/");
+        CHECK(req.GetURI() == "/");
+        CHECK(req.m_version.major == 1);
+        CHECK(req.m_version.minor == 1);
+        CHECK(req.m_headers.FindFirst("Host") == "127.0.0.1");
+        CHECK(req.m_headers.FindFirst("Connection") == "close");
+        CHECK(req.m_headers.FindFirst("Content-Type") == "application/json");
+        CHECK(req.m_headers.FindFirst("Authorization") == "Basic X19jb29raWVfXzo5OGQ5ODQ3MWNmNjg0NzAzYTkzN2EzNzk0ZDFlODQ1NjZmYTRkZjJiMzFkYjhhODI4ZGY4MjVjOTg5ZGI4OTVl");
+        CHECK(req.m_headers.FindFirst("Content-Length") == "46");
+        CHECK(req.m_body.size() == 46U);
+        CHECK(req.m_body == R"({"method":"getblockcount","params":[],"id":1})""\n");
     }
     {
         // Malformed: no spaces between data
         HTTPRequest req;
         LineReader reader("GET/HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line too short"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line too short"});
     }
     {
         // Malformed: too many spaces
         HTTPRequest req;
         LineReader reader("GET / HTTP / 1.0\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line malformed"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line malformed"});
     }
     {
         // Malformed: slash missing before version
         HTTPRequest req;
         LineReader reader("GET / HTTP1.0\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line too short"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line too short"});
     }
     {
         // Malformed: no decimal in version
         HTTPRequest req;
         LineReader reader("GET / HTTP/11\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line too short"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP request line too short"});
     }
     {
         // Malformed: version is not a number
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.x\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
     }
     {
         // Malformed: version is out of range
         HTTPRequest req;
         LineReader reader("GET / HTTP/2.0\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
     }
     {
         // Malformed: version is out of range
         HTTPRequest req;
         LineReader reader("GET / HTTP/0.9\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
     }
     {
         // Malformed: version is out of range
         HTTPRequest req;
         LineReader reader("GET / HTTP/-1.0\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
     }
     {
         // Malformed: version is not exactly two integers and a dot
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.00\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"HTTP bad version"});
     }
     {
         // Malformed: contains NUL
         HTTPRequest req;
         LineReader reader{std::string_view{"GET /safe\0/etc/passwd HTTP/1.00\r\nHost: 127.0.0.1\r\n\r\n", 50}, MAX_HEADERS_SIZE};
-        BOOST_CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"Invalid request line contains NUL"});
+        CHECK_EXCEPTION(req.LoadControlData(reader), std::runtime_error, HasReason{"Invalid request line contains NUL"});
     }
     {
         // Malformed: differing Content-Length values, case insensitive
@@ -287,9 +285,9 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                                       "12345678";
         HTTPRequest req;
         util::LineReader reader{differing_length, /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Differing Content-Length values"});
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Differing Content-Length values"});
     }
     {
         // Ok: multiple same Content-Length values
@@ -300,31 +298,31 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                                       "12345678";
         HTTPRequest req;
         util::LineReader reader{differing_length, /*max_line_length=*/MAX_HEADERS_SIZE};
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(req.LoadBody(reader));
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(req.LoadBody(reader));
     }
     {
         // Ok
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(req.LoadBody(reader));
-        BOOST_CHECK_EQUAL(req.m_method, HTTPRequestMethod::GET);
-        BOOST_CHECK_EQUAL(req.m_target, "/");
-        BOOST_CHECK_EQUAL(req.m_version.major, 1);
-        BOOST_CHECK_EQUAL(req.m_version.minor, 0);
-        BOOST_CHECK_EQUAL(req.m_headers.FindFirst("Host"), "127.0.0.1");
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(req.LoadBody(reader));
+        CHECK(req.m_method == HTTPRequestMethod::GET);
+        CHECK(req.m_target == "/");
+        CHECK(req.m_version.major == 1);
+        CHECK(req.m_version.minor == 0);
+        CHECK(req.m_headers.FindFirst("Host") == "127.0.0.1");
         // no body is OK
-        BOOST_CHECK_EQUAL(req.m_body.size(), 0U);
+        CHECK(req.m_body.size() == 0U);
     }
     {
         // Malformed: missing colon
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.0\r\nHost=127.0.0.1\r\n\r\n", MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadHeaders(reader), std::runtime_error, HasReason{"HTTP header missing colon (:)"});
+        CHECK(req.LoadControlData(reader));
+        CHECK_EXCEPTION(req.LoadHeaders(reader), std::runtime_error, HasReason{"HTTP header missing colon (:)"});
     }
     {
         // We might not have received enough data from the client which is not
@@ -332,34 +330,34 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
         // buffer has more data.
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.0\r\nHost: ", MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(!req.LoadHeaders(reader));
+        CHECK(req.LoadControlData(reader));
+        CHECK(!req.LoadHeaders(reader));
     }
     {
         // No Content-Length: body is not read
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.0\r\n\r\n" R"({"method":"getblockcount"})", MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(req.LoadBody(reader));
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(req.LoadBody(reader));
         // Don't try to read request body if Content-Length is missing
-        BOOST_CHECK_EQUAL(req.m_body.size(), 0U);
+        CHECK(req.m_body.size() == 0U);
     }
     {
         // Malformed: Content-Length is not a number
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.0\r\nContent-Length: eleven\r\n\r\n" R"({"method":"getblockcount"})", MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Cannot parse Content-Length value"});
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Cannot parse Content-Length value"});
     }
     {
         // Malformed: Content-Length is negative
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.0\r\nContent-Length: -8\r\n\r\n" R"({"method":"getblockcount"})", MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Cannot parse Content-Length value"});
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Cannot parse Content-Length value"});
     }
     {
         // Content-Length exceeds limit
@@ -368,9 +366,9 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
         const std::string request{"GET / HTTP/1.0\r\nContent-Length: " + util::ToString(excessive_size) + "\r\n\r\n" + std::move(huge_body)};
         HTTPRequest req;
         LineReader reader(request, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadBody(reader), http_bitcoin::ContentTooLargeError, HasReason{"Max body size exceeded"});
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK_EXCEPTION(req.LoadBody(reader), http_bitcoin::ContentTooLargeError, HasReason{"Max body size exceeded"});
     }
     {
         // Content-Length exactly on the limit
@@ -378,18 +376,18 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
         const std::string request{"GET / HTTP/1.0\r\nContent-Length: " + util::ToString(MAX_BODY_SIZE) + "\r\n\r\n" + std::move(max_body)};
         HTTPRequest req;
         LineReader reader(request, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(req.LoadBody(reader));
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(req.LoadBody(reader));
     }
     {
         // Content-Length indicates more data than we have in the buffer.
         // Not an error; we wait for more data before completing the body.
         HTTPRequest req;
         LineReader reader("GET / HTTP/1.0\r\nContent-Length: 1024\r\n\r\n" R"({"method":"getblockcount"})", MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(!req.LoadBody(reader));
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(!req.LoadBody(reader));
     }
     {
         // Support "chunked" transfer. Chunk lengths are ascii-encoded hex integers, whitespace ignored
@@ -404,10 +402,10 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                       "0\n"
                                       "\n";
         LineReader reader(ok_chunked, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(req.LoadBody(reader));
-        BOOST_CHECK_EQUAL(req.m_body, R"({"method":"getblockcount"})");
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(req.LoadBody(reader));
+        CHECK(req.m_body == R"({"method":"getblockcount"})");
     }
     {
         // Prevent "chunked" transfer from exceeding size limit
@@ -422,9 +420,9 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                                 "0\n"
                                                 "\n";
         LineReader reader(excessive_chunk_size, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadBody(reader), http_bitcoin::ContentTooLargeError, HasReason{"Chunk will exceed max body size"});
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK_EXCEPTION(req.LoadBody(reader), http_bitcoin::ContentTooLargeError, HasReason{"Chunk will exceed max body size"});
     }
     {
         // Allow (but ignore) Chunk Extensions
@@ -440,12 +438,12 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                       "Expires: Wed, 21 Oct 2026 07:28:00 GMT\n"
                                       "\n";
         LineReader reader(ok_chunked, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK(req.LoadBody(reader));
-        BOOST_CHECK_EQUAL(req.m_body, R"({"method":"getblockcount"})");
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK(req.LoadBody(reader));
+        CHECK(req.m_body == R"({"method":"getblockcount"})");
         // Chunk Trailer was cleared
-        BOOST_CHECK_EQUAL(reader.Remaining(), 0U);
+        CHECK(reader.Remaining() == 0U);
     }
     {
         // Invalid "chunked" transfer, using roman numerals instead of hex for chunk length
@@ -460,9 +458,9 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                            "0\n"
                                            "\n";
         LineReader reader(invalid_chunked, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Cannot parse chunk length value"});
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Cannot parse chunk length value"});
     }
     {
         // Invalid "chunked" transfer, missing chunk termination \n
@@ -477,9 +475,9 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                            "0\n"
                                            "\n";
         LineReader reader(invalid_chunked, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader));
-        BOOST_CHECK(req.LoadHeaders(reader));
-        BOOST_CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Improperly terminated chunk"});
+        CHECK(req.LoadControlData(reader));
+        CHECK(req.LoadHeaders(reader));
+        CHECK_EXCEPTION(req.LoadBody(reader), std::runtime_error, HasReason{"Improperly terminated chunk"});
     }
     {
         // End of buffer reached without chunk termination, caller must wait for more data to arrive
@@ -492,19 +490,19 @@ BOOST_AUTO_TEST_CASE(http_request_tests)
                                       "a\n"
                                       R"(ockcount"})";
         LineReader reader1(delayed_chunked, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader1));
-        BOOST_CHECK(req.LoadHeaders(reader1));
-        BOOST_CHECK(!req.LoadBody(reader1));
+        CHECK(req.LoadControlData(reader1));
+        CHECK(req.LoadHeaders(reader1));
+        CHECK(!req.LoadBody(reader1));
         // more data arrives!
         delayed_chunked += "\n0\n\n";
         LineReader reader2(delayed_chunked, MAX_HEADERS_SIZE);
-        BOOST_CHECK(req.LoadControlData(reader2));
-        BOOST_CHECK(req.LoadHeaders(reader2));
-        BOOST_CHECK(req.LoadBody(reader2));
+        CHECK(req.LoadControlData(reader2));
+        CHECK(req.LoadHeaders(reader2));
+        CHECK(req.LoadBody(reader2));
     }
 }
 
-BOOST_AUTO_TEST_CASE(http_server_socket_tests)
+FIXTURE_TEST_CASE(http_server_socket_tests, SocketTestingSetup)
 {
     // Hard code the timestamp for the Date header in the HTTP response
     // Wed Dec 11 00:47:09 2024 UTC
@@ -525,25 +523,25 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
         // We can only bind to NET_IPV4 and NET_IPV6
         CService onion_address{Lookup("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaam2dqd.onion", /*portDefault=*/0, /*fAllowLookup=*/false).value()};
         auto result{server.BindAndStartListening(onion_address)};
-        BOOST_REQUIRE(!result);
-        BOOST_CHECK_EQUAL(result.error(), "Bind address family for aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaam2dqd.onion:0 not supported");
+        REQUIRE(!result);
+        CHECK(result.error() == "Bind address family for aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaam2dqd.onion:0 not supported");
     }
 
     // This VALID address won't actually get used because we stubbed CreateSock()
     CService addr_bind{Lookup("0.0.0.0", /*portDefault=*/0, /*fAllowLookup=*/false).value()};
 
     // Init state
-    BOOST_REQUIRE_EQUAL(server.GetListeningSocketCount(), 0U);
+    REQUIRE(server.GetListeningSocketCount() == 0U);
     // Bind to mock Listening Socket
-    BOOST_REQUIRE(server.BindAndStartListening(addr_bind));
+    REQUIRE(server.BindAndStartListening(addr_bind));
     // We are bound and listening
-    BOOST_REQUIRE_EQUAL(server.GetListeningSocketCount(), 1U);
+    REQUIRE(server.GetListeningSocketCount() == 1U);
 
     // Start the I/O loop
     server.StartSocketsThreads();
 
     // No connections yet
-    BOOST_CHECK_EQUAL(server.GetConnectionsCount(), 0U);
+    CHECK(server.GetConnectionsCount() == 0U);
 
     // Create a mock client with pre-loaded request data and add it to the local CreateSock queue.
     // Keep a handle for the mock client's send and receive pipes so we can examine
@@ -554,7 +552,7 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
     int attempts{6000};
     while (server.GetConnectionsCount() < 1U) {
         std::this_thread::sleep_for(10ms);
-        BOOST_REQUIRE(--attempts > 0);
+        REQUIRE(--attempts > 0);
     }
 
     // Prepare a pointer to the client, we'll assign it from the request itself.
@@ -570,12 +568,12 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
             // Connected client should have one request already from the static content.
             if (requests.size() == 1U) {
                 // Check the received request
-                BOOST_CHECK_EQUAL(requests.front()->m_body, R"({"method":"getblockcount","params":[],"id":1})""\n");
-                BOOST_CHECK_EQUAL(requests.front()->GetPeer().ToStringAddrPort(), "5.5.5.5:6789");
+                CHECK(requests.front()->m_body == R"({"method":"getblockcount","params":[],"id":1})""\n");
+                CHECK(requests.front()->GetPeer().ToStringAddrPort() == "5.5.5.5:6789");
 
                 // Inspect the connection pointed to from the request
                 client = requests.front()->m_client;
-                BOOST_CHECK_EQUAL(client->m_origin, "5.5.5.5:6789");
+                CHECK(client->m_origin == "5.5.5.5:6789");
 
                 // Respond to request
                 requests.front()->WriteReply(HTTP_OK, "874140\n");
@@ -584,7 +582,7 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
             }
         }
         std::this_thread::sleep_for(10ms);
-        BOOST_REQUIRE(--attempts > 0);
+        REQUIRE(--attempts > 0);
     }
 
     // Check the sent response from the mock client at the other end of the mock socket
@@ -604,20 +602,20 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
         std::this_thread::sleep_for(10ms);
         --attempts;
     }
-    BOOST_CHECK(actual.starts_with("HTTP/1.1 200 OK\r\n"));
-    BOOST_CHECK(actual.ends_with("\r\n874140\n"));
+    CHECK(actual.starts_with("HTTP/1.1 200 OK\r\n"));
+    CHECK(actual.ends_with("\r\n874140\n"));
     // Headers can be sorted in any order, and will be, since we use unordered_map
-    BOOST_CHECK(actual.find("Connection: close\r\n") != std::string::npos);
-    BOOST_CHECK(actual.find("Content-Length: 7\r\n") != std::string::npos);
-    BOOST_CHECK(actual.find("Content-Type: text/html; charset=ISO-8859-1\r\n") != std::string::npos);
-    BOOST_CHECK(actual.find("Date: Wed, 11 Dec 2024 00:47:09 GMT\r\n") != std::string::npos);
+    CHECK(actual.find("Connection: close\r\n") != std::string::npos);
+    CHECK(actual.find("Content-Length: 7\r\n") != std::string::npos);
+    CHECK(actual.find("Content-Type: text/html; charset=ISO-8859-1\r\n") != std::string::npos);
+    CHECK(actual.find("Date: Wed, 11 Dec 2024 00:47:09 GMT\r\n") != std::string::npos);
 
     // Wait up to one minute for connection to be automatically closed, because
     // keep-alive was not set by the client and we are done responding to their request.
     attempts = 6000;
     while (server.GetConnectionsCount() != 0) {
         std::this_thread::sleep_for(10ms);
-        BOOST_REQUIRE(--attempts > 0);
+        REQUIRE(--attempts > 0);
     }
 
     // Stop the I/O loop and shutdown
@@ -628,4 +626,4 @@ BOOST_AUTO_TEST_CASE(http_server_socket_tests)
     server.StopListening();
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

@@ -4,10 +4,11 @@
 
 #include <psbt.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <test/util/setup_common.h>
 
-BOOST_FIXTURE_TEST_SUITE(psbt_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(psbt_tests)
 
 static PSBTProprietary MakeProprietary(uint64_t subtype, uint8_t key_data, uint8_t value)
 {
@@ -22,22 +23,22 @@ static PSBTProprietary MakeProprietary(uint64_t subtype, uint8_t key_data, uint8
 void CheckTimeLock(const std::string& base64_psbt, std::optional<uint32_t> timelock)
 {
     util::Result<PartiallySignedTransaction> psbt = DecodeBase64PSBT(base64_psbt);
-    BOOST_CHECK(psbt);
+    CHECK(psbt);
 
     std::optional<uint32_t> computed_timelock = psbt->ComputeTimeLock();
     std::optional<CMutableTransaction> tx = psbt->GetUnsignedTx();
     if (timelock) {
-        BOOST_CHECK(computed_timelock);
-        BOOST_CHECK_EQUAL(*computed_timelock, *timelock);
-        BOOST_CHECK(tx);
-        BOOST_CHECK_EQUAL(tx->nLockTime, *timelock);
+        CHECK(computed_timelock);
+        CHECK(*computed_timelock == *timelock);
+        CHECK(tx);
+        CHECK(tx->nLockTime == *timelock);
     } else {
-        BOOST_CHECK(!computed_timelock);
-        BOOST_CHECK(!tx);
+        CHECK(!computed_timelock);
+        CHECK(!tx);
     }
 }
 
-BOOST_AUTO_TEST_CASE(psbt2_timelock_test)
+FIXTURE_TEST_CASE(psbt2_timelock_test, BasicTestingSetup)
 {
     CheckTimeLock("cHNidP8BAgQCAAAAAQQBAQEFAQIB+wQCAAAAAAEOIAsK2SFBnByHGXNdctxzn56p4GONH+TB7vD5lECEgV/IAQ8EAAAAAAABAwgACK8vAAAAAAEEFgAUxDD2TEdW2jENvRoIVXLvKZkmJywAAQMIi73rCwAAAAABBBYAFE3Rk6yWSlasG54cyoRU/i9HT4UTAA==", 0);
     CheckTimeLock("cHNidP8BAgQCAAAAAQMEAAAAAAEEAQIBBQEBAfsEAgAAAAABDiAPdY2/vU2nwWyKMwnDyB4RAPVh6mRttbAXUsSF4b3enwEPBAEAAAAAAQ4gOhs7PIN9ZInqejHY5sfdUDwAG+8+BpWOdXSAjWjKeKUBDwQAAAAAAAEDCE+TNXcAAAAAAQQWABQLE1LKzQPPaqG388jWOIZxs0peEQA=", 0);
@@ -51,7 +52,7 @@ BOOST_AUTO_TEST_CASE(psbt2_timelock_test)
     CheckTimeLock("cHNidP8BAgQCAAAAAQMEAAAAAAEEAQIBBQEBAfsEAgAAAAABDiAPdY2/vU2nwWyKMwnDyB4RAPVh6mRttbAXUsSF4b3enwEPBAEAAAABEgQQJwAAAAEOIDobOzyDfWSJ6nox2ObH3VA8ABvvPgaVjnV0gI1oynilAQ8EAAAAAAERBIyNxGIAAQMIT5M1dwAAAAABBBYAFAsTUsrNA89qobfzyNY4hnGzSl4RAA==", std::nullopt);
 }
 
-BOOST_AUTO_TEST_CASE(psbt2_addinput)
+FIXTURE_TEST_CASE(psbt2_addinput, BasicTestingSetup)
 {
     FastRandomContext rng(/*fDeterministic=*/true);
 
@@ -59,35 +60,35 @@ BOOST_AUTO_TEST_CASE(psbt2_addinput)
     PartiallySignedTransaction psbt(mtx, /*version=*/2);
     psbt.m_tx_modifiable.emplace();
     psbt.m_tx_modifiable->set(0, true);
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 0U);
+    CHECK(psbt.inputs.size() == 0U);
 
     // Same PSBT version is required
     uint256 txid;
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin_v0(/*psbt_version=*/0, Txid::FromUint256(txid), /*prev_out=*/0);
-    BOOST_CHECK(!psbt.AddInput(psbtin_v0));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 0U);
+    CHECK(!psbt.AddInput(psbtin_v0));
+    CHECK(psbt.inputs.size() == 0U);
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
-    BOOST_CHECK(psbt.AddInput(psbtin));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 1U);
+    CHECK(psbt.AddInput(psbtin));
+    CHECK(psbt.inputs.size() == 1U);
 
     // Duplicates are not allowed
-    BOOST_CHECK(!psbt.AddInput(psbtin));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 1U);
+    CHECK(!psbt.AddInput(psbtin));
+    CHECK(psbt.inputs.size() == 1U);
 
     // Input with a unique txid is allowed
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin2(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
-    BOOST_CHECK(psbt.AddInput(psbtin2));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 2U);
+    CHECK(psbt.AddInput(psbtin2));
+    CHECK(psbt.inputs.size() == 2U);
 
     // Disabling inputs modifiable flag prevents adding new inputs
     psbt.m_tx_modifiable->set(0, false);
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin3(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
-    BOOST_CHECK(!psbt.AddInput(psbtin3));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 2U);
+    CHECK(!psbt.AddInput(psbtin3));
+    CHECK(psbt.inputs.size() == 2U);
     psbt.m_tx_modifiable->set(0, true);
 
     // Make sure that timelock compatibility checks are working
@@ -96,88 +97,88 @@ BOOST_AUTO_TEST_CASE(psbt2_addinput)
     PSBTInput psbtin4(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
     psbtin4.time_locktime = LOCKTIME_THRESHOLD;
     psbtin4.height_locktime = 100;
-    BOOST_CHECK(psbt.AddInput(psbtin4));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 3U);
+    CHECK(psbt.AddInput(psbtin4));
+    CHECK(psbt.inputs.size() == 3U);
 
     // Input with only a time timelock is allowed
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin5(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
     psbtin5.time_locktime = LOCKTIME_THRESHOLD + 1;
-    BOOST_CHECK(psbt.AddInput(psbtin5));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 4U);
+    CHECK(psbt.AddInput(psbtin5));
+    CHECK(psbt.inputs.size() == 4U);
 
     // Input with only a height timelock is not allowed because of previous
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin6(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
     psbtin6.height_locktime = 100;
-    BOOST_CHECK(!psbt.AddInput(psbtin6));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 4U);
+    CHECK(!psbt.AddInput(psbtin6));
+    CHECK(psbt.inputs.size() == 4U);
 
     // Adding an input that already has a signature is allowed
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin7(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
     psbtin7.final_script_sig << OP_1;
-    BOOST_CHECK(psbt.AddInput(psbtin7));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 5U);
+    CHECK(psbt.AddInput(psbtin7));
+    CHECK(psbt.inputs.size() == 5U);
 
     // Same thing, but with other things that have signatures
     psbtin7.final_script_sig.clear();
     psbtin7.final_script_witness.stack.emplace_back();
-    BOOST_CHECK(!psbt.AddInput(psbtin7));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 5U);
+    CHECK(!psbt.AddInput(psbtin7));
+    CHECK(psbt.inputs.size() == 5U);
     psbtin7.final_script_witness.SetNull();
     psbtin7.partial_sigs.emplace();
-    BOOST_CHECK(!psbt.AddInput(psbtin7));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 5U);
+    CHECK(!psbt.AddInput(psbtin7));
+    CHECK(psbt.inputs.size() == 5U);
     psbtin7.partial_sigs.clear();
     psbtin7.m_tap_key_sig.push_back(0);
-    BOOST_CHECK(!psbt.AddInput(psbtin7));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 5U);
+    CHECK(!psbt.AddInput(psbtin7));
+    CHECK(psbt.inputs.size() == 5U);
     psbtin7.m_tap_key_sig.clear();
     psbtin7.m_tap_script_sigs.emplace();
-    BOOST_CHECK(!psbt.AddInput(psbtin7));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 5U);
+    CHECK(!psbt.AddInput(psbtin7));
+    CHECK(psbt.inputs.size() == 5U);
     psbtin7.m_tap_script_sigs.clear();
     psbtin7.m_musig2_partial_sigs.emplace();
-    BOOST_CHECK(!psbt.AddInput(psbtin7));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 5U);
+    CHECK(!psbt.AddInput(psbtin7));
+    CHECK(psbt.inputs.size() == 5U);
 
     // Adding an input that changes the timelock is no longer allowed
     rng.fillrand(MakeWritableByteSpan(txid));
     PSBTInput psbtin8(/*psbt_version=*/2, Txid::FromUint256(txid), /*prev_out=*/0);
     psbtin8.time_locktime = LOCKTIME_THRESHOLD + 2;
-    BOOST_CHECK(!psbt.AddInput(psbtin8));
-    BOOST_CHECK_EQUAL(psbt.inputs.size(), 5U);
+    CHECK(!psbt.AddInput(psbtin8));
+    CHECK(psbt.inputs.size() == 5U);
 }
 
-BOOST_AUTO_TEST_CASE(psbt2_addoutput)
+FIXTURE_TEST_CASE(psbt2_addoutput, BasicTestingSetup)
 {
     CMutableTransaction mtx;
     PartiallySignedTransaction psbt(mtx, /*version=*/2);
     psbt.m_tx_modifiable.emplace();
     psbt.m_tx_modifiable->set(1, true);
-    BOOST_CHECK_EQUAL(psbt.outputs.size(), 0U);
+    CHECK(psbt.outputs.size() == 0U);
 
     // Same PSBT version is required
     PSBTOutput psbtout_v0(/*psbt_version=*/0, /*amount=*/1, CScript());
-    BOOST_CHECK(!psbt.AddOutput(psbtout_v0));
-    BOOST_CHECK_EQUAL(psbt.outputs.size(), 0U);
+    CHECK(!psbt.AddOutput(psbtout_v0));
+    CHECK(psbt.outputs.size() == 0U);
     PSBTOutput psbtout(/*psbt_version=*/2, /*amount=*/1, CScript());
-    BOOST_CHECK(psbt.AddOutput(psbtout));
-    BOOST_CHECK_EQUAL(psbt.outputs.size(), 1U);
+    CHECK(psbt.AddOutput(psbtout));
+    CHECK(psbt.outputs.size() == 1U);
 
     // Disabling outputs modifiable flag prevents adding new outputs
     psbt.m_tx_modifiable->set(1, false);
     PSBTOutput psbtout2(/*psbt_version=*/2, /*amount=*/1, CScript());
-    BOOST_CHECK(!psbt.AddOutput(psbtout2));
-    BOOST_CHECK_EQUAL(psbt.outputs.size(), 1U);
+    CHECK(!psbt.AddOutput(psbtout2));
+    CHECK(psbt.outputs.size() == 1U);
     psbt.m_tx_modifiable->set(1, true);
     PSBTOutput psbtout3(/*psbt_version=*/2, /*amount=*/1, CScript());
-    BOOST_CHECK(psbt.AddOutput(psbtout3));
-    BOOST_CHECK_EQUAL(psbt.outputs.size(), 2U);
+    CHECK(psbt.AddOutput(psbtout3));
+    CHECK(psbt.outputs.size() == 2U);
 }
 
-BOOST_AUTO_TEST_CASE(merge_proprietary_fields)
+FIXTURE_TEST_CASE(merge_proprietary_fields, BasicTestingSetup)
 {
     CMutableTransaction tx;
     tx.vin.emplace_back(COutPoint{});
@@ -197,23 +198,23 @@ BOOST_AUTO_TEST_CASE(merge_proprietary_fields)
     right.inputs[0].m_proprietary.insert(right_prop);
     right.outputs[0].m_proprietary.insert(right_prop);
 
-    BOOST_REQUIRE(left.Merge(right));
+    REQUIRE(left.Merge(right));
 
-    BOOST_REQUIRE_EQUAL(left.m_proprietary.size(), 2U);
-    BOOST_REQUIRE_EQUAL(left.inputs[0].m_proprietary.size(), 2U);
-    BOOST_REQUIRE_EQUAL(left.outputs[0].m_proprietary.size(), 2U);
+    REQUIRE(left.m_proprietary.size() == 2U);
+    REQUIRE(left.inputs[0].m_proprietary.size() == 2U);
+    REQUIRE(left.outputs[0].m_proprietary.size() == 2U);
 
     const auto global_it = left.m_proprietary.find(right_prop);
-    BOOST_REQUIRE(global_it != left.m_proprietary.end());
-    BOOST_CHECK(global_it->value == right_prop.value);
+    REQUIRE(global_it != left.m_proprietary.end());
+    CHECK(global_it->value == right_prop.value);
 
     const auto input_it = left.inputs[0].m_proprietary.find(right_prop);
-    BOOST_REQUIRE(input_it != left.inputs[0].m_proprietary.end());
-    BOOST_CHECK(input_it->value == right_prop.value);
+    REQUIRE(input_it != left.inputs[0].m_proprietary.end());
+    CHECK(input_it->value == right_prop.value);
 
     const auto output_it = left.outputs[0].m_proprietary.find(right_prop);
-    BOOST_REQUIRE(output_it != left.outputs[0].m_proprietary.end());
-    BOOST_CHECK(output_it->value == right_prop.value);
+    REQUIRE(output_it != left.outputs[0].m_proprietary.end());
+    CHECK(output_it->value == right_prop.value);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

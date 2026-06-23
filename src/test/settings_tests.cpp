@@ -7,7 +7,8 @@
 #include <test/util/setup_common.h>
 #include <test/util/str.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <common/args.h>
 #include <univalue.h>
 #include <util/chaintype.h>
@@ -49,9 +50,9 @@ inline void WriteText(const fs::path& path, const std::string& text)
     file << text;
 }
 
-BOOST_FIXTURE_TEST_SUITE(settings_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(settings_tests)
 
-BOOST_AUTO_TEST_CASE(ReadWrite)
+FIXTURE_TEST_CASE(ReadWrite, BasicTestingSetup)
 {
     fs::path path = m_args.GetDataDirBase() / "settings.json";
 
@@ -72,39 +73,39 @@ BOOST_AUTO_TEST_CASE(ReadWrite)
     // Check file read.
     std::map<std::string, common::SettingsValue> values;
     std::vector<std::string> errors;
-    BOOST_CHECK(common::ReadSettings(path, values, errors));
-    BOOST_CHECK_EQUAL_COLLECTIONS(values.begin(), values.end(), expected.begin(), expected.end());
-    BOOST_CHECK(errors.empty());
+    CHECK(common::ReadSettings(path, values, errors));
+    CHECK_EQUAL_RANGES(values, expected);
+    CHECK(errors.empty());
 
     // Check no errors if file doesn't exist.
     fs::remove(path);
-    BOOST_CHECK(common::ReadSettings(path, values, errors));
-    BOOST_CHECK(values.empty());
-    BOOST_CHECK(errors.empty());
+    CHECK(common::ReadSettings(path, values, errors));
+    CHECK(values.empty());
+    CHECK(errors.empty());
 
     // Check duplicate keys not allowed and that values returns empty if a duplicate is found.
     WriteText(path, R"({
         "dupe": "string",
         "dupe": "dupe"
     })");
-    BOOST_CHECK(!common::ReadSettings(path, values, errors));
+    CHECK(!common::ReadSettings(path, values, errors));
     std::vector<std::string> dup_keys = {strprintf("Found duplicate key dupe in settings file %s", fs::PathToString(path))};
-    BOOST_CHECK_EQUAL_COLLECTIONS(errors.begin(), errors.end(), dup_keys.begin(), dup_keys.end());
-    BOOST_CHECK(values.empty());
+    CHECK_EQUAL_RANGES(errors, dup_keys);
+    CHECK(values.empty());
 
     // Check non-kv json files not allowed
     WriteText(path, R"("non-kv")");
-    BOOST_CHECK(!common::ReadSettings(path, values, errors));
+    CHECK(!common::ReadSettings(path, values, errors));
     std::vector<std::string> non_kv = {strprintf("Found non-object value \"non-kv\" in settings file %s", fs::PathToString(path))};
-    BOOST_CHECK_EQUAL_COLLECTIONS(errors.begin(), errors.end(), non_kv.begin(), non_kv.end());
+    CHECK_EQUAL_RANGES(errors, non_kv);
 
     // Check invalid json not allowed
     WriteText(path, R"(invalid json)");
-    BOOST_CHECK(!common::ReadSettings(path, values, errors));
+    CHECK(!common::ReadSettings(path, values, errors));
     std::vector<std::string> fail_parse = {strprintf("Settings file %s does not contain valid JSON. This may be caused by a crash, power loss, full disk, or storage error, "
                                                      "and can be fixed by removing the file, which will reset settings to default values.",
                                                      fs::PathToString(path))};
-    BOOST_CHECK_EQUAL_COLLECTIONS(errors.begin(), errors.end(), fail_parse.begin(), fail_parse.end());
+    CHECK_EQUAL_RANGES(errors, fail_parse);
 }
 
 //! Check settings struct contents against expected json strings.
@@ -115,12 +116,12 @@ static void CheckValues(const common::Settings& settings, const std::string& sin
     for (const auto& item : GetSettingsList(settings, "section", "name", false)) {
         list_value.push_back(item);
     }
-    BOOST_CHECK_EQUAL(single_value.write(), single_val);
-    BOOST_CHECK_EQUAL(list_value.write(), list_val);
+    CHECK(single_value.write() == single_val);
+    CHECK(list_value.write() == list_val);
 };
 
 // Simple settings merge test case.
-BOOST_AUTO_TEST_CASE(Simple)
+FIXTURE_TEST_CASE(Simple, BasicTestingSetup)
 {
     common::Settings settings;
     settings.command_line_options["name"].emplace_back("val1");
@@ -142,13 +143,13 @@ BOOST_AUTO_TEST_CASE(Simple)
 // if the high priority setting is null. This behavior is useful for a high
 // priority setting source to be able to effectively reset any setting back to
 // its default value.
-BOOST_AUTO_TEST_CASE(NullOverride)
+FIXTURE_TEST_CASE(NullOverride, BasicTestingSetup)
 {
     common::Settings settings;
     settings.command_line_options["name"].emplace_back("value");
-    BOOST_CHECK_EQUAL(std::string{R"("value")"}, GetSetting(settings, "section", "name", false, false, false).write());
+    CHECK(std::string{R"("value")"} == GetSetting(settings, "section", "name", false, false, false).write());
     settings.forced_settings["name"] = {};
-    BOOST_CHECK_EQUAL(std::string{R"(null)"}, GetSetting(settings, "section", "name", false, false, false).write());
+    CHECK(std::string{R"(null)"} == GetSetting(settings, "section", "name", false, false, false).write());
 }
 
 // Test different ways settings can be merged, and verify results. This test can
@@ -185,7 +186,7 @@ struct MergeTestingSetup : public BasicTestingSetup {
 // test parses and merges settings, representing the results as strings that get
 // compared against an expected hash. To debug, the result strings can be dumped
 // to a file (see comments below).
-BOOST_FIXTURE_TEST_CASE(Merge, MergeTestingSetup)
+FIXTURE_TEST_CASE(Merge, MergeTestingSetup)
 {
     CHash256 out_sha;
     FILE* out_file = nullptr;
@@ -241,7 +242,7 @@ BOOST_FIXTURE_TEST_CASE(Merge, MergeTestingSetup)
 
         out_sha.Write(MakeUCharSpan(desc));
         if (out_file) {
-            BOOST_REQUIRE(fwrite(desc.data(), 1, desc.size(), out_file) == desc.size());
+            REQUIRE(fwrite(desc.data(), 1, desc.size(), out_file) == desc.size());
         }
     });
 
@@ -263,7 +264,7 @@ BOOST_FIXTURE_TEST_CASE(Merge, MergeTestingSetup)
     // Results file is formatted like:
     //
     //   <input> || GetSetting() | GetSettingsList() | OnlyHasDefaultSectionSetting()
-    BOOST_CHECK_EQUAL(out_sha_hex, "79db02d74e3e193196541b67c068b40ebd0c124a24b3ecbe9cbf7e85b1c4ba7a");
+    CHECK(out_sha_hex == "79db02d74e3e193196541b67c068b40ebd0c124a24b3ecbe9cbf7e85b1c4ba7a");
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

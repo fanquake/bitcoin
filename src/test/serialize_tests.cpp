@@ -13,9 +13,9 @@
 #include <cstdint>
 #include <string>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_FIXTURE_TEST_SUITE(serialize_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(serialize_tests)
 
 // For testing move-semantics, declare a version of datastream that can be moved
 // but is not copyable.
@@ -74,36 +74,36 @@ public:
     }
 };
 
-BOOST_AUTO_TEST_CASE(sizes)
+FIXTURE_TEST_CASE(sizes, BasicTestingSetup)
 {
-    BOOST_CHECK_EQUAL(sizeof(unsigned char), GetSerializeSize((unsigned char)0));
-    BOOST_CHECK_EQUAL(sizeof(int8_t), GetSerializeSize(int8_t(0)));
-    BOOST_CHECK_EQUAL(sizeof(uint8_t), GetSerializeSize(uint8_t(0)));
-    BOOST_CHECK_EQUAL(sizeof(int16_t), GetSerializeSize(int16_t(0)));
-    BOOST_CHECK_EQUAL(sizeof(uint16_t), GetSerializeSize(uint16_t(0)));
-    BOOST_CHECK_EQUAL(sizeof(int32_t), GetSerializeSize(int32_t(0)));
-    BOOST_CHECK_EQUAL(sizeof(uint32_t), GetSerializeSize(uint32_t(0)));
-    BOOST_CHECK_EQUAL(sizeof(int64_t), GetSerializeSize(int64_t(0)));
-    BOOST_CHECK_EQUAL(sizeof(uint64_t), GetSerializeSize(uint64_t(0)));
+    CHECK(sizeof(unsigned char) == GetSerializeSize((unsigned char)0));
+    CHECK(sizeof(int8_t) == GetSerializeSize(int8_t(0)));
+    CHECK(sizeof(uint8_t) == GetSerializeSize(uint8_t(0)));
+    CHECK(sizeof(int16_t) == GetSerializeSize(int16_t(0)));
+    CHECK(sizeof(uint16_t) == GetSerializeSize(uint16_t(0)));
+    CHECK(sizeof(int32_t) == GetSerializeSize(int32_t(0)));
+    CHECK(sizeof(uint32_t) == GetSerializeSize(uint32_t(0)));
+    CHECK(sizeof(int64_t) == GetSerializeSize(int64_t(0)));
+    CHECK(sizeof(uint64_t) == GetSerializeSize(uint64_t(0)));
     // Bool is serialized as uint8_t
-    BOOST_CHECK_EQUAL(sizeof(uint8_t), GetSerializeSize(bool(0)));
+    CHECK(sizeof(uint8_t) == GetSerializeSize(bool(0)));
 
     // Sanity-check GetSerializeSize and c++ type matching
-    BOOST_CHECK_EQUAL(GetSerializeSize((unsigned char)0), 1U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(int8_t(0)), 1U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(uint8_t(0)), 1U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(int16_t(0)), 2U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(uint16_t(0)), 2U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(int32_t(0)), 4U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(uint32_t(0)), 4U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(int64_t(0)), 8U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(uint64_t(0)), 8U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(bool(0)), 1U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(std::array<uint8_t, 1>{0}), 1U);
-    BOOST_CHECK_EQUAL(GetSerializeSize(std::array<uint8_t, 2>{0, 0}), 2U);
+    CHECK(GetSerializeSize((unsigned char)0) == 1U);
+    CHECK(GetSerializeSize(int8_t(0)) == 1U);
+    CHECK(GetSerializeSize(uint8_t(0)) == 1U);
+    CHECK(GetSerializeSize(int16_t(0)) == 2U);
+    CHECK(GetSerializeSize(uint16_t(0)) == 2U);
+    CHECK(GetSerializeSize(int32_t(0)) == 4U);
+    CHECK(GetSerializeSize(uint32_t(0)) == 4U);
+    CHECK(GetSerializeSize(int64_t(0)) == 8U);
+    CHECK(GetSerializeSize(uint64_t(0)) == 8U);
+    CHECK(GetSerializeSize(bool(0)) == 1U);
+    CHECK(GetSerializeSize(std::array<uint8_t, 1>{0}) == 1U);
+    CHECK(GetSerializeSize(std::array<uint8_t, 2>{0, 0}) == 2U);
 }
 
-BOOST_AUTO_TEST_CASE(varints)
+FIXTURE_TEST_CASE(varints, BasicTestingSetup)
 {
     // encode
 
@@ -112,51 +112,51 @@ BOOST_AUTO_TEST_CASE(varints)
     for (int i = 0; i < 100000; i++) {
         ss << VARINT_MODE(i, VarIntMode::NONNEGATIVE_SIGNED);
         size += ::GetSerializeSize(VARINT_MODE(i, VarIntMode::NONNEGATIVE_SIGNED));
-        BOOST_CHECK(size == ss.size());
+        CHECK(size == ss.size());
     }
 
     for (uint64_t i = 0;  i < 100000000000ULL; i += 999999937) {
         ss << VARINT(i);
         size += ::GetSerializeSize(VARINT(i));
-        BOOST_CHECK(size == ss.size());
+        CHECK(size == ss.size());
     }
 
     // decode
     for (int i = 0; i < 100000; i++) {
         int j = -1;
         ss >> VARINT_MODE(j, VarIntMode::NONNEGATIVE_SIGNED);
-        BOOST_CHECK_MESSAGE(i == j, "decoded:" << j << " expected:" << i);
+        CHECK(i == j, "decoded:" << j << " expected:" << i);
     }
 
     for (uint64_t i = 0;  i < 100000000000ULL; i += 999999937) {
         uint64_t j = std::numeric_limits<uint64_t>::max();
         ss >> VARINT(j);
-        BOOST_CHECK_MESSAGE(i == j, "decoded:" << j << " expected:" << i);
+        CHECK(i == j, "decoded:" << j << " expected:" << i);
     }
 }
 
-BOOST_AUTO_TEST_CASE(varints_bitpatterns)
+FIXTURE_TEST_CASE(varints_bitpatterns, BasicTestingSetup)
 {
     DataStream ss{};
-    ss << VARINT_MODE(0, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "00"); ss.clear();
-    ss << VARINT_MODE(0x7f, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "7f"); ss.clear();
-    ss << VARINT_MODE(int8_t{0x7f}, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "7f"); ss.clear();
-    ss << VARINT_MODE(0x80, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "8000"); ss.clear();
-    ss << VARINT(uint8_t{0x80}); BOOST_CHECK_EQUAL(HexStr(ss), "8000"); ss.clear();
-    ss << VARINT_MODE(0x1234, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "a334"); ss.clear();
-    ss << VARINT_MODE(int16_t{0x1234}, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "a334"); ss.clear();
-    ss << VARINT_MODE(0xffff, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "82fe7f"); ss.clear();
-    ss << VARINT(uint16_t{0xffff}); BOOST_CHECK_EQUAL(HexStr(ss), "82fe7f"); ss.clear();
-    ss << VARINT_MODE(0x123456, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "c7e756"); ss.clear();
-    ss << VARINT_MODE(int32_t{0x123456}, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "c7e756"); ss.clear();
-    ss << VARINT(0x80123456U); BOOST_CHECK_EQUAL(HexStr(ss), "86ffc7e756"); ss.clear();
-    ss << VARINT(uint32_t{0x80123456U}); BOOST_CHECK_EQUAL(HexStr(ss), "86ffc7e756"); ss.clear();
-    ss << VARINT(0xffffffff); BOOST_CHECK_EQUAL(HexStr(ss), "8efefefe7f"); ss.clear();
-    ss << VARINT_MODE(0x7fffffffffffffffLL, VarIntMode::NONNEGATIVE_SIGNED); BOOST_CHECK_EQUAL(HexStr(ss), "fefefefefefefefe7f"); ss.clear();
-    ss << VARINT(0xffffffffffffffffULL); BOOST_CHECK_EQUAL(HexStr(ss), "80fefefefefefefefe7f"); ss.clear();
+    ss << VARINT_MODE(0, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "00"); ss.clear();
+    ss << VARINT_MODE(0x7f, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "7f"); ss.clear();
+    ss << VARINT_MODE(int8_t{0x7f}, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "7f"); ss.clear();
+    ss << VARINT_MODE(0x80, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "8000"); ss.clear();
+    ss << VARINT(uint8_t{0x80}); CHECK(HexStr(ss) == "8000"); ss.clear();
+    ss << VARINT_MODE(0x1234, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "a334"); ss.clear();
+    ss << VARINT_MODE(int16_t{0x1234}, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "a334"); ss.clear();
+    ss << VARINT_MODE(0xffff, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "82fe7f"); ss.clear();
+    ss << VARINT(uint16_t{0xffff}); CHECK(HexStr(ss) == "82fe7f"); ss.clear();
+    ss << VARINT_MODE(0x123456, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "c7e756"); ss.clear();
+    ss << VARINT_MODE(int32_t{0x123456}, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "c7e756"); ss.clear();
+    ss << VARINT(0x80123456U); CHECK(HexStr(ss) == "86ffc7e756"); ss.clear();
+    ss << VARINT(uint32_t{0x80123456U}); CHECK(HexStr(ss) == "86ffc7e756"); ss.clear();
+    ss << VARINT(0xffffffff); CHECK(HexStr(ss) == "8efefefe7f"); ss.clear();
+    ss << VARINT_MODE(0x7fffffffffffffffLL, VarIntMode::NONNEGATIVE_SIGNED); CHECK(HexStr(ss) == "fefefefefefefefe7f"); ss.clear();
+    ss << VARINT(0xffffffffffffffffULL); CHECK(HexStr(ss) == "80fefefefefefefefe7f"); ss.clear();
 }
 
-BOOST_AUTO_TEST_CASE(compactsize)
+FIXTURE_TEST_CASE(compactsize, BasicTestingSetup)
 {
     DataStream ss{};
     std::vector<char>::size_type i, j;
@@ -169,9 +169,9 @@ BOOST_AUTO_TEST_CASE(compactsize)
     for (i = 1; i <= MAX_SIZE; i *= 2)
     {
         j = ReadCompactSize(ss);
-        BOOST_CHECK_MESSAGE((i-1) == j, "decoded:" << j << " expected:" << (i-1));
+        CHECK((i-1) == j, "decoded:" << j << " expected:" << (i-1));
         j = ReadCompactSize(ss);
-        BOOST_CHECK_MESSAGE(i == j, "decoded:" << j << " expected:" << i);
+        CHECK(i == j, "decoded:" << j << " expected:" << i);
     }
 }
 
@@ -186,26 +186,26 @@ static bool isCanonicalException(const std::ios_base::failure& ex)
     return strcmp(expectedException.what(), ex.what()) == 0;
 }
 
-BOOST_AUTO_TEST_CASE(vector_bool)
+FIXTURE_TEST_CASE(vector_bool, BasicTestingSetup)
 {
     std::vector<uint8_t> vec1{1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1};
     std::vector<bool> vec2{1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1};
 
-    BOOST_CHECK(vec1 == std::vector<uint8_t>(vec2.begin(), vec2.end()));
-    BOOST_CHECK((HashWriter{} << vec1).GetHash() == (HashWriter{} << vec2).GetHash());
+    CHECK(vec1 == std::vector<uint8_t>(vec2.begin(), vec2.end()));
+    CHECK((HashWriter{} << vec1).GetHash() == (HashWriter{} << vec2).GetHash());
 }
 
-BOOST_AUTO_TEST_CASE(array)
+FIXTURE_TEST_CASE(array, BasicTestingSetup)
 {
     std::array<uint8_t, 32> array1{1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1};
     DataStream ds;
     ds << array1;
     std::array<uint8_t, 32> array2;
     ds >> array2;
-    BOOST_CHECK(array1 == array2);
+    CHECK(array1 == array2);
 }
 
-BOOST_AUTO_TEST_CASE(noncanonical)
+FIXTURE_TEST_CASE(noncanonical, BasicTestingSetup)
 {
     // Write some non-canonical CompactSize encodings, and
     // make sure an exception is thrown when read back.
@@ -214,45 +214,45 @@ BOOST_AUTO_TEST_CASE(noncanonical)
 
     // zero encoded with three bytes:
     ss << std::span{"\xfd\x00\x00"}.first(3);
-    BOOST_CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
+    CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
 
     // 0xfc encoded with three bytes:
     ss << std::span{"\xfd\xfc\x00"}.first(3);
-    BOOST_CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
+    CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
 
     // 0xfd encoded with three bytes is OK:
     ss << std::span{"\xfd\xfd\x00"}.first(3);
     n = ReadCompactSize(ss);
-    BOOST_CHECK(n == 0xfdU);
+    CHECK(n == 0xfdU);
 
     // zero encoded with five bytes:
     ss << std::span{"\xfe\x00\x00\x00\x00"}.first(5);
-    BOOST_CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
+    CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
 
     // 0xffff encoded with five bytes:
     ss << std::span{"\xfe\xff\xff\x00\x00"}.first(5);
-    BOOST_CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
+    CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
 
     // zero encoded with nine bytes:
     ss << std::span{"\xff\x00\x00\x00\x00\x00\x00\x00\x00"}.first(9);
-    BOOST_CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
+    CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
 
     // 0x01ffffff encoded with nine bytes:
     ss << std::span{"\xff\xff\xff\xff\x01\x00\x00\x00\x00"}.first(9);
-    BOOST_CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
+    CHECK_EXCEPTION(ReadCompactSize(ss), std::ios_base::failure, isCanonicalException);
 }
 
-BOOST_AUTO_TEST_CASE(string_view)
+FIXTURE_TEST_CASE(string_view, BasicTestingSetup)
 {
     const std::string_view sv{"hello, world"};
     DataStream ss;
     ss << sv;
     std::string s;
     ss >> s;
-    BOOST_CHECK_EQUAL(sv, s);
+    CHECK(sv == s);
 }
 
-BOOST_AUTO_TEST_CASE(limited_vector)
+FIXTURE_TEST_CASE(limited_vector, BasicTestingSetup)
 {
     const std::vector<int> v = {1,2,3,4,-5,-6,-7,-8,-9,-10,10000,20000,-30000};
 
@@ -262,10 +262,10 @@ BOOST_AUTO_TEST_CASE(limited_vector)
         try {
             std::vector<int> r;
             ss >> LIMITED_VECTOR(r, N);
-            BOOST_CHECK_LE(r.size(), N);
-            BOOST_CHECK(std::ranges::equal(r, v));
+            CHECK(r.size() <= N);
+            CHECK(std::ranges::equal(r, v));
         } catch (const std::ios_base::failure&) {
-            BOOST_CHECK_GT(v.size(), N);
+            CHECK(v.size() > N);
         }
     };
     check.operator()<0>();
@@ -276,7 +276,7 @@ BOOST_AUTO_TEST_CASE(limited_vector)
     check.operator()<100>();
 }
 
-BOOST_AUTO_TEST_CASE(class_methods)
+FIXTURE_TEST_CASE(class_methods, BasicTestingSetup)
 {
     int intval(100);
     bool boolval(true);
@@ -289,19 +289,19 @@ BOOST_AUTO_TEST_CASE(class_methods)
     CSerializeMethodsTestSingle methodtest3;
     CSerializeMethodsTestMany methodtest4;
     DataStream ss;
-    BOOST_CHECK(methodtest1 == methodtest2);
+    CHECK(methodtest1 == methodtest2);
     ss << methodtest1;
     ss >> methodtest4;
     ss << methodtest2;
     ss >> methodtest3;
-    BOOST_CHECK(methodtest1 == methodtest2);
-    BOOST_CHECK(methodtest2 == methodtest3);
-    BOOST_CHECK(methodtest3 == methodtest4);
+    CHECK(methodtest1 == methodtest2);
+    CHECK(methodtest2 == methodtest3);
+    CHECK(methodtest3 == methodtest4);
 
     DataStream ss2;
     ss2 << intval << boolval << stringval << charstrval << TX_WITH_WITNESS(txval);
     ss2 >> methodtest3;
-    BOOST_CHECK(methodtest3 == methodtest4);
+    CHECK(methodtest3 == methodtest4);
     {
         DataStream ds;
         const std::string in{"ab"};
@@ -309,9 +309,9 @@ BOOST_AUTO_TEST_CASE(class_methods)
         std::array<std::byte, 2> out;
         std::byte out_3;
         ds >> std::span{out} >> out_3;
-        BOOST_CHECK_EQUAL(out.at(0), std::byte{'a'});
-        BOOST_CHECK_EQUAL(out.at(1), std::byte{'b'});
-        BOOST_CHECK_EQUAL(out_3, std::byte{'c'});
+        CHECK(out.at(0) == std::byte{'a'});
+        CHECK(out.at(1) == std::byte{'b'});
+        CHECK(out_3 == std::byte{'c'});
     }
 }
 
@@ -416,7 +416,7 @@ public:
         const uint8_t param = s.template GetParams<OtherParam>().param;
         uint8_t value;
         s >> value;
-        BOOST_CHECK_EQUAL(value, param);
+        CHECK(value == param);
     }
 };
 
@@ -427,7 +427,7 @@ public:
 //! or multiple values of the same type are allowed was arbitrary, and just
 //! decided based on what would require smallest amount of ugly C++ template
 //! code. Intent of the test is to just ensure there is no unexpected behavior.)
-BOOST_AUTO_TEST_CASE(with_params_multi)
+FIXTURE_TEST_CASE(with_params_multi, BasicTestingSetup)
 {
     const OtherParam other_param_used{.param = 0x10};
     const OtherParam other_param_ignored{.param = 0x11};
@@ -438,85 +438,85 @@ BOOST_AUTO_TEST_CASE(with_params_multi)
 
     Base base1{0x20};
     pstream << base1 << check << other_param_override(check);
-    BOOST_CHECK_EQUAL(stream.str(), "\x20\x10\x12");
+    CHECK(stream.str() == "\x20\x10\x12");
 
     Base base2;
     pstream >> base2 >> check >> other_param_override(check);
-    BOOST_CHECK_EQUAL(base2.m_base_data, 0x20);
+    CHECK(base2.m_base_data == 0x20);
 }
 
 //! Test creating a ParamsStream that moves from a stream argument.
-BOOST_AUTO_TEST_CASE(with_params_move)
+FIXTURE_TEST_CASE(with_params_move, BasicTestingSetup)
 {
     UncopyableStream stream{MakeByteSpan(std::string_view{"abc"})};
     ParamsStream pstream{std::move(stream), RAW, HEX, RAW};
-    BOOST_CHECK_EQUAL(pstream.GetStream().str(), "abc");
+    CHECK(pstream.GetStream().str() == "abc");
     pstream.GetStream().clear();
 
     Base base1{0x20};
     pstream << base1;
-    BOOST_CHECK_EQUAL(pstream.GetStream().str(), "\x20");
+    CHECK(pstream.GetStream().str() == "\x20");
 
     Base base2;
     pstream >> base2;
-    BOOST_CHECK_EQUAL(base2.m_base_data, 0x20);
+    CHECK(base2.m_base_data == 0x20);
 }
 
-BOOST_AUTO_TEST_CASE(with_params_base)
+FIXTURE_TEST_CASE(with_params_base, BasicTestingSetup)
 {
     Base b{0x0F};
 
     DataStream stream;
 
     stream << RAW(b);
-    BOOST_CHECK_EQUAL(stream.str(), "\x0F");
+    CHECK(stream.str() == "\x0F");
 
     b.m_base_data = 0;
     stream >> RAW(b);
-    BOOST_CHECK_EQUAL(b.m_base_data, 0x0F);
+    CHECK(b.m_base_data == 0x0F);
 
     stream.clear();
 
     stream << HEX(b);
-    BOOST_CHECK_EQUAL(stream.str(), "0f");
+    CHECK(stream.str() == "0f");
 
     b.m_base_data = 0;
     stream >> HEX(b);
-    BOOST_CHECK_EQUAL(b.m_base_data, 0x0F);
+    CHECK(b.m_base_data == 0x0F);
 }
 
-BOOST_AUTO_TEST_CASE(with_params_vector_of_base)
+FIXTURE_TEST_CASE(with_params_vector_of_base, BasicTestingSetup)
 {
     std::vector<Base> v{Base{0x0F}, Base{0xFF}};
 
     DataStream stream;
 
     stream << RAW(v);
-    BOOST_CHECK_EQUAL(stream.str(), "\x02\x0F\xFF");
+    CHECK(stream.str() == "\x02\x0F\xFF");
 
     v[0].m_base_data = 0;
     v[1].m_base_data = 0;
     stream >> RAW(v);
-    BOOST_CHECK_EQUAL(v[0].m_base_data, 0x0F);
-    BOOST_CHECK_EQUAL(v[1].m_base_data, 0xFF);
+    CHECK(v[0].m_base_data == 0x0F);
+    CHECK(v[1].m_base_data == 0xFF);
 
     stream.clear();
 
     stream << HEX(v);
-    BOOST_CHECK_EQUAL(stream.str(), "\x02"
+    CHECK(stream.str() == "\x02"
                                     "0fff");
 
     v[0].m_base_data = 0;
     v[1].m_base_data = 0;
     stream >> HEX(v);
-    BOOST_CHECK_EQUAL(v[0].m_base_data, 0x0F);
-    BOOST_CHECK_EQUAL(v[1].m_base_data, 0xFF);
+    CHECK(v[0].m_base_data == 0x0F);
+    CHECK(v[1].m_base_data == 0xFF);
 }
 
 constexpr DerivedAndBaseFormat RAW_LOWER{{BaseFormat::RAW}, DerivedAndBaseFormat::DerivedFormat::LOWER};
 constexpr DerivedAndBaseFormat HEX_UPPER{{BaseFormat::HEX}, DerivedAndBaseFormat::DerivedFormat::UPPER};
 
-BOOST_AUTO_TEST_CASE(with_params_derived)
+FIXTURE_TEST_CASE(with_params_derived, BasicTestingSetup)
 {
     Derived d;
     d.m_base_data = 0x0F;
@@ -528,8 +528,8 @@ BOOST_AUTO_TEST_CASE(with_params_derived)
 
     stream << HEX_UPPER(d);
 
-    BOOST_CHECK_EQUAL(stream.str(), "\x0F\x02xy"
+    CHECK(stream.str() == "\x0F\x02xy"
                                     "0f\x02XY");
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

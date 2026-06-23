@@ -22,7 +22,7 @@
 #include <kj/test.h>
 #include <stdexcept>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 static_assert(ipc::capnp::messages::MAX_MONEY == MAX_MONEY);
 static_assert(ipc::capnp::messages::MAX_DOUBLE == std::numeric_limits<double>::max());
@@ -44,8 +44,8 @@ static std::string TempPath(std::string_view pattern)
     std::string temp{fs::PathToString(fs::path{fs::temp_directory_path()} / fs::PathFromString(std::string{pattern}))};
     temp.push_back('\0');
     int fd{mkstemp(temp.data())};
-    BOOST_CHECK_GE(fd, 0);
-    BOOST_CHECK_EQUAL(close(fd), 0);
+    CHECK(fd >= 0);
+    CHECK(close(fd) == 0);
     temp.resize(temp.size() - 1);
     fs::remove(fs::PathFromString(temp));
     return temp;
@@ -84,17 +84,17 @@ void IpcPipeTest()
     std::unique_ptr<mp::ProxyClient<gen::FooInterface>> foo{foo_promise.get_future().get()};
 
     // Test: make sure arguments were sent and return value is received
-    BOOST_CHECK_EQUAL(foo->add(1, 2), 3);
+    CHECK(foo->add(1, 2) == 3);
 
     COutPoint txout1{Txid::FromUint256(uint256{100}), 200};
     COutPoint txout2{foo->passOutPoint(txout1)};
-    BOOST_CHECK(txout1 == txout2);
+    CHECK(txout1 == txout2);
 
     UniValue uni1{UniValue::VOBJ};
     uni1.pushKV("i", 1);
     uni1.pushKV("s", "two");
     UniValue uni2{foo->passUniValue(uni1)};
-    BOOST_CHECK_EQUAL(uni1.write(), uni2.write());
+    CHECK(uni1.write() == uni2.write());
 
     CMutableTransaction mtx;
     mtx.version = 2;
@@ -103,15 +103,15 @@ void IpcPipeTest()
     mtx.vout.emplace_back(COIN, CScript());
     CTransactionRef tx1{MakeTransactionRef(mtx)};
     CTransactionRef tx2{foo->passTransaction(tx1)};
-    BOOST_CHECK(*Assert(tx1) == *Assert(tx2));
+    CHECK(*Assert(tx1) == *Assert(tx2));
 
     std::vector<char> vec1{'H', 'e', 'l', 'l', 'o'};
     std::vector<char> vec2{foo->passVectorChar(vec1)};
-    BOOST_CHECK_EQUAL(std::string_view(vec1.begin(), vec1.end()), std::string_view(vec2.begin(), vec2.end()));
+    CHECK(std::string_view(vec1.begin(), vec1.end()) == std::string_view(vec2.begin(), vec2.end()));
 
     auto script1{CScript() << OP_11};
     auto script2{foo->passScript(script1)};
-    BOOST_CHECK_EQUAL(HexStr(script1), HexStr(script2));
+    CHECK(HexStr(script1) == HexStr(script2));
 
     // Test cleanup: disconnect and join thread
     foo.reset();
@@ -122,7 +122,7 @@ void IpcPipeTest()
 void IpcSocketPairTest()
 {
     int fds[2];
-    BOOST_CHECK_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
     std::unique_ptr<interfaces::Init> init{std::make_unique<TestInit>()};
     std::unique_ptr<ipc::Protocol> protocol{ipc::capnp::MakeCapnpProtocol()};
     std::promise<void> promise;
@@ -132,7 +132,7 @@ void IpcSocketPairTest()
     promise.get_future().wait();
     std::unique_ptr<interfaces::Init> remote_init{protocol->connect(fds[1], "test-connect")};
     std::unique_ptr<interfaces::Echo> remote_echo{remote_init->makeEcho()};
-    BOOST_CHECK_EQUAL(remote_echo->echo("echo test"), "echo test");
+    CHECK(remote_echo->echo("echo test") == "echo test");
     remote_echo.reset();
     remote_init.reset();
     thread.join();
@@ -146,24 +146,24 @@ void IpcSocketTest(const fs::path& datadir)
     std::unique_ptr<ipc::Process> process{ipc::MakeProcess()};
 
     std::string invalid_bind{"invalid:"};
-    BOOST_CHECK_THROW(process->bind(datadir, "test_bitcoin", invalid_bind), std::invalid_argument);
-    BOOST_CHECK_THROW(process->connect(datadir, "test_bitcoin", invalid_bind), std::invalid_argument);
+    CHECK_THROWS_AS(process->bind(datadir, "test_bitcoin", invalid_bind), std::invalid_argument);
+    CHECK_THROWS_AS(process->connect(datadir, "test_bitcoin", invalid_bind), std::invalid_argument);
 
     auto bind_and_listen{[&](const std::string& bind_address) {
         std::string address{bind_address};
         int serve_fd = process->bind(datadir, "test_bitcoin", address);
-        BOOST_CHECK_GE(serve_fd, 0);
-        BOOST_CHECK_EQUAL(address, bind_address);
+        CHECK(serve_fd >= 0);
+        CHECK(address == bind_address);
         protocol->listen(serve_fd, "test-serve", *init);
     }};
 
     auto connect_and_test{[&](const std::string& connect_address) {
         std::string address{connect_address};
         int connect_fd{process->connect(datadir, "test_bitcoin", address)};
-        BOOST_CHECK_EQUAL(address, connect_address);
+        CHECK(address == connect_address);
         std::unique_ptr<interfaces::Init> remote_init{protocol->connect(connect_fd, "test-connect")};
         std::unique_ptr<interfaces::Echo> remote_echo{remote_init->makeEcho()};
-        BOOST_CHECK_EQUAL(remote_echo->echo("echo test"), "echo test");
+        CHECK(remote_echo->echo("echo test") == "echo test");
     }};
 
     // Need to specify explicit socket addresses outside the data directory, because the data

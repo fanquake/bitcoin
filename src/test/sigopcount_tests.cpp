@@ -16,7 +16,7 @@
 
 #include <vector>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 // Helpers:
 static std::vector<unsigned char>
@@ -26,26 +26,26 @@ Serialize(const CScript& s)
     return sSerialized;
 }
 
-BOOST_FIXTURE_TEST_SUITE(sigopcount_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(sigopcount_tests)
 
-BOOST_AUTO_TEST_CASE(GetSigOpCount)
+FIXTURE_TEST_CASE(GetSigOpCount, BasicTestingSetup)
 {
     // Test CScript::GetSigOpCount()
     CScript s1;
-    BOOST_CHECK_EQUAL(s1.GetSigOpCount(false), 0U);
-    BOOST_CHECK_EQUAL(s1.GetSigOpCount(true), 0U);
+    CHECK(s1.GetSigOpCount(false) == 0U);
+    CHECK(s1.GetSigOpCount(true) == 0U);
 
     uint160 dummy;
     s1 << OP_1 << ToByteVector(dummy) << ToByteVector(dummy) << OP_2 << OP_CHECKMULTISIG;
-    BOOST_CHECK_EQUAL(s1.GetSigOpCount(true), 2U);
+    CHECK(s1.GetSigOpCount(true) == 2U);
     s1 << OP_IF << OP_CHECKSIG << OP_ENDIF;
-    BOOST_CHECK_EQUAL(s1.GetSigOpCount(true), 3U);
-    BOOST_CHECK_EQUAL(s1.GetSigOpCount(false), 21U);
+    CHECK(s1.GetSigOpCount(true) == 3U);
+    CHECK(s1.GetSigOpCount(false) == 21U);
 
     CScript p2sh = GetScriptForDestination(ScriptHash(s1));
     CScript scriptSig;
     scriptSig << OP_0 << Serialize(s1);
-    BOOST_CHECK_EQUAL(p2sh.GetSigOpCount(scriptSig), 3U);
+    CHECK(p2sh.GetSigOpCount(scriptSig) == 3U);
 
     std::vector<CPubKey> keys;
     for (int i = 0; i < 3; i++)
@@ -54,15 +54,15 @@ BOOST_AUTO_TEST_CASE(GetSigOpCount)
         keys.push_back(k.GetPubKey());
     }
     CScript s2 = GetScriptForMultisig(1, keys);
-    BOOST_CHECK_EQUAL(s2.GetSigOpCount(true), 3U);
-    BOOST_CHECK_EQUAL(s2.GetSigOpCount(false), 20U);
+    CHECK(s2.GetSigOpCount(true) == 3U);
+    CHECK(s2.GetSigOpCount(false) == 20U);
 
     p2sh = GetScriptForDestination(ScriptHash(s2));
-    BOOST_CHECK_EQUAL(p2sh.GetSigOpCount(true), 0U);
-    BOOST_CHECK_EQUAL(p2sh.GetSigOpCount(false), 0U);
+    CHECK(p2sh.GetSigOpCount(true) == 0U);
+    CHECK(p2sh.GetSigOpCount(false) == 0U);
     CScript scriptSig2;
     scriptSig2 << OP_1 << ToByteVector(dummy) << ToByteVector(dummy) << Serialize(s2);
-    BOOST_CHECK_EQUAL(p2sh.GetSigOpCount(scriptSig2), 3U);
+    CHECK(p2sh.GetSigOpCount(scriptSig2) == 3U);
 }
 
 /**
@@ -74,7 +74,7 @@ static ScriptError VerifyWithFlag(const CTransaction& output, const CMutableTran
     ScriptError error;
     CTransaction inputi(input);
     bool ret = VerifyScript(inputi.vin[0].scriptSig, output.vout[0].scriptPubKey, &inputi.vin[0].scriptWitness, flags, TransactionSignatureChecker(&inputi, 0, output.vout[0].nValue, MissingDataBehavior::ASSERT_FAIL), &error);
-    BOOST_CHECK((ret == true) == (error == SCRIPT_ERR_OK));
+    CHECK((ret == true) == (error == SCRIPT_ERR_OK));
 
     return error;
 }
@@ -107,7 +107,7 @@ static void BuildTxs(CMutableTransaction& spendingTx, CCoinsViewCache& coins, CM
     AddCoins(coins, CTransaction(creationTx), 0);
 }
 
-BOOST_AUTO_TEST_CASE(GetTxSigOpCost)
+FIXTURE_TEST_CASE(GetTxSigOpCost, BasicTestingSetup)
 {
     // Transaction creates outputs
     CMutableTransaction creationTx;
@@ -230,4 +230,4 @@ BOOST_AUTO_TEST_CASE(GetTxSigOpCost)
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

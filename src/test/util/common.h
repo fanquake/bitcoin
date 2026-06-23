@@ -13,7 +13,7 @@
 /**
  * BOOST_CHECK_EXCEPTION predicates to check the specific validation error.
  * Use as
- * BOOST_CHECK_EXCEPTION(code that throws, exception type, HasReason("foo"));
+ * CHECK_EXCEPTION(code that throws, exception type, HasReason("foo"));
  */
 class HasReason
 {

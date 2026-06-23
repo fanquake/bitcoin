@@ -5,7 +5,7 @@
 #include <test/util/setup_common.h>
 #include <util/btcsignals.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <semaphore>
 
@@ -32,79 +32,79 @@ bool ReturnFalse()
 
 } // anonymous namespace
 
-BOOST_FIXTURE_TEST_SUITE(btcsignals_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(btcsignals_tests)
 
 /* Callbacks should always be executed in the order in which they were added
  */
-BOOST_AUTO_TEST_CASE(callback_order)
+FIXTURE_TEST_CASE(callback_order, BasicTestingSetup)
 {
     btcsignals::signal<void(int&)> sig0;
     sig0.connect(IncrementCallback);
     sig0.connect(SquareCallback);
     int val{3};
     sig0(val);
-    BOOST_CHECK_EQUAL(val, 16);
-    BOOST_CHECK(!sig0.empty());
+    CHECK(val == 16);
+    CHECK(!sig0.empty());
 }
 
-BOOST_AUTO_TEST_CASE(disconnects)
+FIXTURE_TEST_CASE(disconnects, BasicTestingSetup)
 {
     btcsignals::signal<void(int&)> sig0;
     auto conn0 = sig0.connect(IncrementCallback);
     auto conn1 = sig0.connect(SquareCallback);
     conn1.disconnect();
-    BOOST_CHECK(!sig0.empty());
+    CHECK(!sig0.empty());
     int val{3};
     sig0(val);
-    BOOST_CHECK_EQUAL(val, 4);
+    CHECK(val == 4);
 
-    BOOST_CHECK(!sig0.empty());
+    CHECK(!sig0.empty());
     conn0.disconnect();
-    BOOST_CHECK(sig0.empty());
+    CHECK(sig0.empty());
     sig0(val);
-    BOOST_CHECK_EQUAL(val, 4);
+    CHECK(val == 4);
 
     conn0 = sig0.connect(IncrementCallback);
     conn1 = sig0.connect(IncrementCallback);
-    BOOST_CHECK(!sig0.empty());
+    CHECK(!sig0.empty());
     sig0(val);
-    BOOST_CHECK_EQUAL(val, 6);
+    CHECK(val == 6);
     conn1.disconnect();
 
-    BOOST_CHECK(conn0.connected());
+    CHECK(conn0.connected());
     {
         btcsignals::scoped_connection scope(conn0);
     }
-    BOOST_CHECK(!conn0.connected());
-    BOOST_CHECK(sig0.empty());
+    CHECK(!conn0.connected());
+    CHECK(sig0.empty());
     sig0(val);
-    BOOST_CHECK_EQUAL(val, 6);
+    CHECK(val == 6);
 }
 
-BOOST_AUTO_TEST_CASE(any_of_combiner)
+FIXTURE_TEST_CASE(any_of_combiner, BasicTestingSetup)
 {
     btcsignals::signal<bool(), btcsignals::any_of> sig0;
     decltype(sig0)::result_type ret;
     ret = sig0();
-    BOOST_CHECK_EQUAL(ret, false);
+    CHECK(ret == false);
     {
         btcsignals::scoped_connection conn0{sig0.connect(ReturnTrue)};
         ret = sig0();
-        BOOST_CHECK_EQUAL(ret, true);
+        CHECK(ret == true);
     }
     ret = sig0();
-    BOOST_CHECK_EQUAL(ret, false);
+    CHECK(ret == false);
     {
         btcsignals::scoped_connection conn0{sig0.connect(ReturnTrue)};
         btcsignals::scoped_connection conn1{sig0.connect(ReturnFalse)};
         ret = sig0();
-        BOOST_CHECK_EQUAL(ret, true);
+        CHECK(ret == true);
         conn0.disconnect();
         ret = sig0();
-        BOOST_CHECK_EQUAL(ret, false);
+        CHECK(ret == false);
     }
     ret = sig0();
-    BOOST_CHECK_EQUAL(ret, false);
+    CHECK(ret == false);
 }
 
 /* Test the thread-safety of connect/disconnect/empty/connected/callbacks.
@@ -117,7 +117,7 @@ BOOST_AUTO_TEST_CASE(any_of_combiner)
  * In any case, this should all be completely threadsafe.
  * Sanitizers should pick up any buggy data race behavior (if present).
  */
-BOOST_AUTO_TEST_CASE(thread_safety)
+FIXTURE_TEST_CASE(thread_safety, BasicTestingSetup)
 {
     btcsignals::signal<void()> sig0;
     std::atomic<uint32_t> val_det{0};
@@ -140,8 +140,8 @@ BOOST_AUTO_TEST_CASE(thread_safety)
         std::vector<btcsignals::scoped_connection> extra_conns;
         extra_conns.reserve(num_extra_conns);
         for (size_t i = 0; i < num_extra_conns; i++) {
-            BOOST_CHECK(!sig0.empty());
-            BOOST_CHECK(conn0.connected());
+            CHECK(!sig0.empty());
+            CHECK(conn0.connected());
             btcsignals::scoped_connection extra{sig0.connect([&val_non_det] { val_non_det++; })};
             if (i % 2 == 0) {
                 extra_conns.emplace_back(std::move(extra));
@@ -152,24 +152,24 @@ BOOST_AUTO_TEST_CASE(thread_safety)
     incrementor.join();
     extra_increment_injector.join();
     conn0.disconnect();
-    BOOST_CHECK(sig0.empty());
+    CHECK(sig0.empty());
 
     // sig0 will have been called 2000 times, and only the first connection did
     // increment val_det, so it must be 2000.
-    BOOST_CHECK_EQUAL(val_det.load(), 2000U);
+    CHECK(val_det.load() == 2000U);
     // The number of connections that increment val_non_det is growing from 1
     // to 500, where 500 are disconnected immediately again after the step.
     // Before the end of each step the connections are called at least once.
     // However, it is unknown how often the connections have been called
     // exactly. The 500th Triangular Number gives a lower estimate.
     // T_n=n(n+1)/2
-    BOOST_CHECK_GE(val_non_det.load(), 500U * 501 / 2);
+    CHECK(val_non_det.load() >= 500U * 501 / 2);
 }
 
 /* Test that connection and disconnection works from within signal
  * callbacks.
  */
-BOOST_AUTO_TEST_CASE(recursion_safety)
+FIXTURE_TEST_CASE(recursion_safety, BasicTestingSetup)
 {
     btcsignals::connection conn0, conn1, conn2;
     btcsignals::signal<void()> sig0;
@@ -177,31 +177,31 @@ BOOST_AUTO_TEST_CASE(recursion_safety)
     bool recursive_callback_ran{false};
 
     conn0 = sig0.connect([&] {
-        BOOST_CHECK(!sig0.empty());
+        CHECK(!sig0.empty());
         nonrecursive_callback_ran = true;
     });
-    BOOST_CHECK(!nonrecursive_callback_ran);
+    CHECK(!nonrecursive_callback_ran);
     sig0();
-    BOOST_CHECK(nonrecursive_callback_ran);
-    BOOST_CHECK(conn0.connected());
+    CHECK(nonrecursive_callback_ran);
+    CHECK(conn0.connected());
 
     nonrecursive_callback_ran = false;
     conn1 = sig0.connect([&] {
         nonrecursive_callback_ran = true;
         conn1.disconnect();
     });
-    BOOST_CHECK(!nonrecursive_callback_ran);
-    BOOST_CHECK(conn0.connected());
-    BOOST_CHECK(conn1.connected());
+    CHECK(!nonrecursive_callback_ran);
+    CHECK(conn0.connected());
+    CHECK(conn1.connected());
     sig0();
-    BOOST_CHECK(nonrecursive_callback_ran);
-    BOOST_CHECK(conn0.connected());
-    BOOST_CHECK(!conn1.connected());
+    CHECK(nonrecursive_callback_ran);
+    CHECK(conn0.connected());
+    CHECK(!conn1.connected());
 
     nonrecursive_callback_ran = false;
     conn1 = sig0.connect([&] {
         conn2 = sig0.connect([&] {
-            BOOST_CHECK(conn0.connected());
+            CHECK(conn0.connected());
             recursive_callback_ran = true;
             conn0.disconnect();
             conn2.disconnect();
@@ -209,27 +209,27 @@ BOOST_AUTO_TEST_CASE(recursion_safety)
         nonrecursive_callback_ran = true;
         conn1.disconnect();
     });
-    BOOST_CHECK(!nonrecursive_callback_ran);
-    BOOST_CHECK(!recursive_callback_ran);
-    BOOST_CHECK(conn0.connected());
-    BOOST_CHECK(conn1.connected());
-    BOOST_CHECK(!conn2.connected());
+    CHECK(!nonrecursive_callback_ran);
+    CHECK(!recursive_callback_ran);
+    CHECK(conn0.connected());
+    CHECK(conn1.connected());
+    CHECK(!conn2.connected());
     sig0();
-    BOOST_CHECK(nonrecursive_callback_ran);
-    BOOST_CHECK(!recursive_callback_ran);
-    BOOST_CHECK(conn0.connected());
-    BOOST_CHECK(!conn1.connected());
-    BOOST_CHECK(conn2.connected());
+    CHECK(nonrecursive_callback_ran);
+    CHECK(!recursive_callback_ran);
+    CHECK(conn0.connected());
+    CHECK(!conn1.connected());
+    CHECK(conn2.connected());
     sig0();
-    BOOST_CHECK(recursive_callback_ran);
-    BOOST_CHECK(!conn0.connected());
-    BOOST_CHECK(!conn1.connected());
-    BOOST_CHECK(!conn2.connected());
+    CHECK(recursive_callback_ran);
+    CHECK(!conn0.connected());
+    CHECK(!conn1.connected());
+    CHECK(!conn2.connected());
 }
 
 /* Test that disconnection from another thread works in real time
  */
-BOOST_AUTO_TEST_CASE(disconnect_thread_safety)
+FIXTURE_TEST_CASE(disconnect_thread_safety, BasicTestingSetup)
 {
     btcsignals::connection conn0, conn1, conn2;
     btcsignals::signal<void(int&)> sig0;
@@ -251,8 +251,8 @@ BOOST_AUTO_TEST_CASE(disconnect_thread_safety)
     });
     sig0(val);
     thr.join();
-    BOOST_CHECK_EQUAL(val, 0);
+    CHECK(val == 0);
 }
 
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

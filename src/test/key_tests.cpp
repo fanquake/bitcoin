@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 using namespace util::hex_literals;
 using util::ToString;
@@ -36,54 +36,54 @@ static const std::string addr2C = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs";
 static const std::string strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF";
 
 
-BOOST_FIXTURE_TEST_SUITE(key_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(key_tests)
 
-BOOST_AUTO_TEST_CASE(key_test1)
+FIXTURE_TEST_CASE(key_test1, BasicTestingSetup)
 {
     CKey key1  = DecodeSecret(strSecret1);
-    BOOST_CHECK(key1.IsValid());
-    BOOST_CHECK(!key1.IsCompressed());
+    CHECK(key1.IsValid());
+    CHECK(!key1.IsCompressed());
     CKey key2  = DecodeSecret(strSecret2);
-    BOOST_CHECK(key2.IsValid());
-    BOOST_CHECK(!key2.IsCompressed());
+    CHECK(key2.IsValid());
+    CHECK(!key2.IsCompressed());
     CKey key1C = DecodeSecret(strSecret1C);
-    BOOST_CHECK(key1C.IsValid());
-    BOOST_CHECK(key1C.IsCompressed());
+    CHECK(key1C.IsValid());
+    CHECK(key1C.IsCompressed());
     CKey key2C = DecodeSecret(strSecret2C);
-    BOOST_CHECK(key2C.IsValid());
-    BOOST_CHECK(key2C.IsCompressed());
+    CHECK(key2C.IsValid());
+    CHECK(key2C.IsCompressed());
     CKey bad_key = DecodeSecret(strAddressBad);
-    BOOST_CHECK(!bad_key.IsValid());
+    CHECK(!bad_key.IsValid());
 
     CPubKey pubkey1  = key1. GetPubKey();
     CPubKey pubkey2  = key2. GetPubKey();
     CPubKey pubkey1C = key1C.GetPubKey();
     CPubKey pubkey2C = key2C.GetPubKey();
 
-    BOOST_CHECK(key1.VerifyPubKey(pubkey1));
-    BOOST_CHECK(!key1.VerifyPubKey(pubkey1C));
-    BOOST_CHECK(!key1.VerifyPubKey(pubkey2));
-    BOOST_CHECK(!key1.VerifyPubKey(pubkey2C));
+    CHECK(key1.VerifyPubKey(pubkey1));
+    CHECK(!key1.VerifyPubKey(pubkey1C));
+    CHECK(!key1.VerifyPubKey(pubkey2));
+    CHECK(!key1.VerifyPubKey(pubkey2C));
 
-    BOOST_CHECK(!key1C.VerifyPubKey(pubkey1));
-    BOOST_CHECK(key1C.VerifyPubKey(pubkey1C));
-    BOOST_CHECK(!key1C.VerifyPubKey(pubkey2));
-    BOOST_CHECK(!key1C.VerifyPubKey(pubkey2C));
+    CHECK(!key1C.VerifyPubKey(pubkey1));
+    CHECK(key1C.VerifyPubKey(pubkey1C));
+    CHECK(!key1C.VerifyPubKey(pubkey2));
+    CHECK(!key1C.VerifyPubKey(pubkey2C));
 
-    BOOST_CHECK(!key2.VerifyPubKey(pubkey1));
-    BOOST_CHECK(!key2.VerifyPubKey(pubkey1C));
-    BOOST_CHECK(key2.VerifyPubKey(pubkey2));
-    BOOST_CHECK(!key2.VerifyPubKey(pubkey2C));
+    CHECK(!key2.VerifyPubKey(pubkey1));
+    CHECK(!key2.VerifyPubKey(pubkey1C));
+    CHECK(key2.VerifyPubKey(pubkey2));
+    CHECK(!key2.VerifyPubKey(pubkey2C));
 
-    BOOST_CHECK(!key2C.VerifyPubKey(pubkey1));
-    BOOST_CHECK(!key2C.VerifyPubKey(pubkey1C));
-    BOOST_CHECK(!key2C.VerifyPubKey(pubkey2));
-    BOOST_CHECK(key2C.VerifyPubKey(pubkey2C));
+    CHECK(!key2C.VerifyPubKey(pubkey1));
+    CHECK(!key2C.VerifyPubKey(pubkey1C));
+    CHECK(!key2C.VerifyPubKey(pubkey2));
+    CHECK(key2C.VerifyPubKey(pubkey2C));
 
-    BOOST_CHECK(DecodeDestination(addr1)  == CTxDestination(PKHash(pubkey1)));
-    BOOST_CHECK(DecodeDestination(addr2)  == CTxDestination(PKHash(pubkey2)));
-    BOOST_CHECK(DecodeDestination(addr1C) == CTxDestination(PKHash(pubkey1C)));
-    BOOST_CHECK(DecodeDestination(addr2C) == CTxDestination(PKHash(pubkey2C)));
+    CHECK(DecodeDestination(addr1)  == CTxDestination(PKHash(pubkey1)));
+    CHECK(DecodeDestination(addr2)  == CTxDestination(PKHash(pubkey2)));
+    CHECK(DecodeDestination(addr1C) == CTxDestination(PKHash(pubkey1C)));
+    CHECK(DecodeDestination(addr2C) == CTxDestination(PKHash(pubkey2C)));
 
     for (int n=0; n<16; n++)
     {
@@ -94,51 +94,51 @@ BOOST_AUTO_TEST_CASE(key_test1)
 
         std::vector<unsigned char> sign1, sign2, sign1C, sign2C;
 
-        BOOST_CHECK(key1.Sign (hashMsg, sign1));
-        BOOST_CHECK(key2.Sign (hashMsg, sign2));
-        BOOST_CHECK(key1C.Sign(hashMsg, sign1C));
-        BOOST_CHECK(key2C.Sign(hashMsg, sign2C));
+        CHECK(key1.Sign (hashMsg, sign1));
+        CHECK(key2.Sign (hashMsg, sign2));
+        CHECK(key1C.Sign(hashMsg, sign1C));
+        CHECK(key2C.Sign(hashMsg, sign2C));
 
-        BOOST_CHECK( pubkey1.Verify(hashMsg, sign1));
-        BOOST_CHECK(!pubkey1.Verify(hashMsg, sign2));
-        BOOST_CHECK( pubkey1.Verify(hashMsg, sign1C));
-        BOOST_CHECK(!pubkey1.Verify(hashMsg, sign2C));
+        CHECK( pubkey1.Verify(hashMsg, sign1));
+        CHECK(!pubkey1.Verify(hashMsg, sign2));
+        CHECK( pubkey1.Verify(hashMsg, sign1C));
+        CHECK(!pubkey1.Verify(hashMsg, sign2C));
 
-        BOOST_CHECK(!pubkey2.Verify(hashMsg, sign1));
-        BOOST_CHECK( pubkey2.Verify(hashMsg, sign2));
-        BOOST_CHECK(!pubkey2.Verify(hashMsg, sign1C));
-        BOOST_CHECK( pubkey2.Verify(hashMsg, sign2C));
+        CHECK(!pubkey2.Verify(hashMsg, sign1));
+        CHECK( pubkey2.Verify(hashMsg, sign2));
+        CHECK(!pubkey2.Verify(hashMsg, sign1C));
+        CHECK( pubkey2.Verify(hashMsg, sign2C));
 
-        BOOST_CHECK( pubkey1C.Verify(hashMsg, sign1));
-        BOOST_CHECK(!pubkey1C.Verify(hashMsg, sign2));
-        BOOST_CHECK( pubkey1C.Verify(hashMsg, sign1C));
-        BOOST_CHECK(!pubkey1C.Verify(hashMsg, sign2C));
+        CHECK( pubkey1C.Verify(hashMsg, sign1));
+        CHECK(!pubkey1C.Verify(hashMsg, sign2));
+        CHECK( pubkey1C.Verify(hashMsg, sign1C));
+        CHECK(!pubkey1C.Verify(hashMsg, sign2C));
 
-        BOOST_CHECK(!pubkey2C.Verify(hashMsg, sign1));
-        BOOST_CHECK( pubkey2C.Verify(hashMsg, sign2));
-        BOOST_CHECK(!pubkey2C.Verify(hashMsg, sign1C));
-        BOOST_CHECK( pubkey2C.Verify(hashMsg, sign2C));
+        CHECK(!pubkey2C.Verify(hashMsg, sign1));
+        CHECK( pubkey2C.Verify(hashMsg, sign2));
+        CHECK(!pubkey2C.Verify(hashMsg, sign1C));
+        CHECK( pubkey2C.Verify(hashMsg, sign2C));
 
         // compact signatures (with key recovery)
 
         std::vector<unsigned char> csign1, csign2, csign1C, csign2C;
 
-        BOOST_CHECK(key1.SignCompact (hashMsg, csign1));
-        BOOST_CHECK(key2.SignCompact (hashMsg, csign2));
-        BOOST_CHECK(key1C.SignCompact(hashMsg, csign1C));
-        BOOST_CHECK(key2C.SignCompact(hashMsg, csign2C));
+        CHECK(key1.SignCompact (hashMsg, csign1));
+        CHECK(key2.SignCompact (hashMsg, csign2));
+        CHECK(key1C.SignCompact(hashMsg, csign1C));
+        CHECK(key2C.SignCompact(hashMsg, csign2C));
 
         CPubKey rkey1, rkey2, rkey1C, rkey2C;
 
-        BOOST_CHECK(rkey1.RecoverCompact (hashMsg, csign1));
-        BOOST_CHECK(rkey2.RecoverCompact (hashMsg, csign2));
-        BOOST_CHECK(rkey1C.RecoverCompact(hashMsg, csign1C));
-        BOOST_CHECK(rkey2C.RecoverCompact(hashMsg, csign2C));
+        CHECK(rkey1.RecoverCompact (hashMsg, csign1));
+        CHECK(rkey2.RecoverCompact (hashMsg, csign2));
+        CHECK(rkey1C.RecoverCompact(hashMsg, csign1C));
+        CHECK(rkey2C.RecoverCompact(hashMsg, csign2C));
 
-        BOOST_CHECK(rkey1  == pubkey1);
-        BOOST_CHECK(rkey2  == pubkey2);
-        BOOST_CHECK(rkey1C == pubkey1C);
-        BOOST_CHECK(rkey2C == pubkey2C);
+        CHECK(rkey1  == pubkey1);
+        CHECK(rkey2  == pubkey2);
+        CHECK(rkey1C == pubkey1C);
+        CHECK(rkey2C == pubkey2C);
     }
 
     // test deterministic signing
@@ -146,28 +146,28 @@ BOOST_AUTO_TEST_CASE(key_test1)
     std::vector<unsigned char> detsig, detsigc;
     std::string strMsg = "Very deterministic message";
     uint256 hashMsg = Hash(strMsg);
-    BOOST_CHECK(key1.Sign(hashMsg, detsig));
-    BOOST_CHECK(key1C.Sign(hashMsg, detsigc));
-    BOOST_CHECK(detsig == detsigc);
-    BOOST_CHECK_EQUAL(HexStr(detsig), "304402205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d022014ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
+    CHECK(key1.Sign(hashMsg, detsig));
+    CHECK(key1C.Sign(hashMsg, detsigc));
+    CHECK(detsig == detsigc);
+    CHECK(HexStr(detsig) == "304402205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d022014ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
 
-    BOOST_CHECK(key2.Sign(hashMsg, detsig));
-    BOOST_CHECK(key2C.Sign(hashMsg, detsigc));
-    BOOST_CHECK(detsig == detsigc);
-    BOOST_CHECK_EQUAL(HexStr(detsig), "3044022052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd5022061d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
+    CHECK(key2.Sign(hashMsg, detsig));
+    CHECK(key2C.Sign(hashMsg, detsigc));
+    CHECK(detsig == detsigc);
+    CHECK(HexStr(detsig) == "3044022052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd5022061d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
 
-    BOOST_CHECK(key1.SignCompact(hashMsg, detsig));
-    BOOST_CHECK(key1C.SignCompact(hashMsg, detsigc));
-    BOOST_CHECK_EQUAL(HexStr(detsig), "1c5dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
-    BOOST_CHECK_EQUAL(HexStr(detsigc), "205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
+    CHECK(key1.SignCompact(hashMsg, detsig));
+    CHECK(key1C.SignCompact(hashMsg, detsigc));
+    CHECK(HexStr(detsig) == "1c5dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
+    CHECK(HexStr(detsigc) == "205dbbddda71772d95ce91cd2d14b592cfbc1dd0aabd6a394b6c2d377bbe59d31d14ddda21494a4e221f0824f0b8b924c43fa43c0ad57dccdaa11f81a6bd4582f6");
 
-    BOOST_CHECK(key2.SignCompact(hashMsg, detsig));
-    BOOST_CHECK(key2C.SignCompact(hashMsg, detsigc));
-    BOOST_CHECK_EQUAL(HexStr(detsig), "1c52d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
-    BOOST_CHECK_EQUAL(HexStr(detsigc), "2052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
+    CHECK(key2.SignCompact(hashMsg, detsig));
+    CHECK(key2C.SignCompact(hashMsg, detsigc));
+    CHECK(HexStr(detsig) == "1c52d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
+    CHECK(HexStr(detsigc) == "2052d8a32079c11e79db95af63bb9600c5b04f21a9ca33dc129c2bfa8ac9dc1cd561d8ae5e0f6c1a16bde3719c64c2fd70e404b6428ab9a69566962e8771b5944d");
 }
 
-BOOST_AUTO_TEST_CASE(key_signature_tests)
+FIXTURE_TEST_CASE(key_signature_tests, BasicTestingSetup)
 {
     // When entropy is specified, we should see at least one high R signature within 20 signatures
     CKey key = DecodeSecret(strSecret1);
@@ -178,13 +178,13 @@ BOOST_AUTO_TEST_CASE(key_signature_tests)
 
     for (int i = 1; i <=20; ++i) {
         sig.clear();
-        BOOST_CHECK(key.Sign(msg_hash, sig, false, i));
+        CHECK(key.Sign(msg_hash, sig, false, i));
         found = sig[3] == 0x21 && sig[4] == 0x00;
         if (found) {
             break;
         }
     }
-    BOOST_CHECK(found);
+    CHECK(found);
 
     // When entropy is not specified, we should always see low R signatures that are less than or equal to 70 bytes in 256 tries
     // The low R signatures should always have the value of their "length of R" byte less than or equal to 32
@@ -208,9 +208,9 @@ BOOST_AUTO_TEST_CASE(key_signature_tests)
         }
         found_small |= sig.size() < 70;
     }
-    BOOST_CHECK(!bad_sign);
-    BOOST_CHECK(!found_big);
-    BOOST_CHECK(found_small);
+    CHECK(!bad_sign);
+    CHECK(!found_big);
+    CHECK(found_small);
 }
 
 static CPubKey UnserializePubkey(const std::vector<uint8_t>& data)
@@ -237,26 +237,26 @@ static void CmpSerializationPubkey(const CPubKey& pubkey)
     stream << pubkey;
     CPubKey pubkey2;
     stream >> pubkey2;
-    BOOST_CHECK(pubkey == pubkey2);
+    CHECK(pubkey == pubkey2);
 }
 
-BOOST_AUTO_TEST_CASE(pubkey_unserialize)
+FIXTURE_TEST_CASE(pubkey_unserialize, BasicTestingSetup)
 {
     for (uint8_t i = 2; i <= 7; ++i) {
         CPubKey key = UnserializePubkey({0x02});
-        BOOST_CHECK(!key.IsValid());
+        CHECK(!key.IsValid());
         CmpSerializationPubkey(key);
         key = UnserializePubkey(std::vector<uint8_t>(GetLen(i), i));
         CmpSerializationPubkey(key);
         if (i == 5) {
-            BOOST_CHECK(!key.IsValid());
+            CHECK(!key.IsValid());
         } else {
-            BOOST_CHECK(key.IsValid());
+            CHECK(key.IsValid());
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(bip340_test_vectors)
+FIXTURE_TEST_CASE(bip340_test_vectors, BasicTestingSetup)
 {
     static const std::vector<std::pair<std::array<std::string, 3>, bool>> VECTORS = {
         {{"F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9", "0000000000000000000000000000000000000000000000000000000000000000", "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA821525F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0"}, true},
@@ -280,7 +280,7 @@ BOOST_AUTO_TEST_CASE(bip340_test_vectors)
         auto pubkey = ParseHex(test.first[0]);
         auto msg = ParseHex(test.first[1]);
         auto sig = ParseHex(test.first[2]);
-        BOOST_CHECK_EQUAL(XOnlyPubKey(pubkey).VerifySchnorr(uint256(msg), sig), test.second);
+        CHECK(XOnlyPubKey(pubkey).VerifySchnorr(uint256(msg), sig) == test.second);
     }
 
     static const std::vector<std::array<std::string, 5>> SIGN_VECTORS = {
@@ -302,19 +302,19 @@ BOOST_AUTO_TEST_CASE(bip340_test_vectors)
         CKey key;
         key.Set(sec.begin(), sec.end(), true);
         XOnlyPubKey pubkey(key.GetPubKey());
-        BOOST_CHECK(std::equal(pubkey.begin(), pubkey.end(), pub.begin(), pub.end()));
+        CHECK(std::equal(pubkey.begin(), pubkey.end(), pub.begin(), pub.end()));
         bool ok = key.SignSchnorr(msg256, sig64, nullptr, aux256);
-        BOOST_CHECK(ok);
-        BOOST_CHECK(std::vector<unsigned char>(sig64, sig64 + 64) == sig);
+        CHECK(ok);
+        CHECK(std::vector<unsigned char>(sig64, sig64 + 64) == sig);
         // Verify those signatures for good measure.
-        BOOST_CHECK(pubkey.VerifySchnorr(msg256, sig64));
+        CHECK(pubkey.VerifySchnorr(msg256, sig64));
 
         // Repeat the same check, but use the KeyPair directly without any merkle tweak
         KeyPair keypair = key.ComputeKeyPair(/*merkle_root=*/nullptr);
         bool kp_ok = keypair.SignSchnorr(msg256, sig64, aux256);
-        BOOST_CHECK(kp_ok);
-        BOOST_CHECK(pubkey.VerifySchnorr(msg256, sig64));
-        BOOST_CHECK(std::vector<unsigned char>(sig64, sig64 + 64) == sig);
+        CHECK(kp_ok);
+        CHECK(pubkey.VerifySchnorr(msg256, sig64));
+        CHECK(std::vector<unsigned char>(sig64, sig64 + 64) == sig);
 
         // Do 10 iterations where we sign with a random Merkle root to tweak,
         // and compare against the resulting tweaked keys, with random aux.
@@ -323,27 +323,27 @@ BOOST_AUTO_TEST_CASE(bip340_test_vectors)
             uint256 merkle_root;
             if (i) merkle_root = m_rng.rand256();
             auto tweaked = pubkey.CreateTapTweak(i ? &merkle_root : nullptr);
-            BOOST_CHECK(tweaked);
+            CHECK(tweaked);
             XOnlyPubKey tweaked_key = tweaked->first;
             aux256 = m_rng.rand256();
             bool ok = key.SignSchnorr(msg256, sig64, &merkle_root, aux256);
-            BOOST_CHECK(ok);
-            BOOST_CHECK(tweaked_key.VerifySchnorr(msg256, sig64));
+            CHECK(ok);
+            CHECK(tweaked_key.VerifySchnorr(msg256, sig64));
 
             // Repeat the same check, but use the KeyPair class directly
             KeyPair keypair = key.ComputeKeyPair(&merkle_root);
             bool kp_ok = keypair.SignSchnorr(msg256, sig64, aux256);
-            BOOST_CHECK(kp_ok);
-            BOOST_CHECK(tweaked_key.VerifySchnorr(msg256, sig64));
+            CHECK(kp_ok);
+            CHECK(tweaked_key.VerifySchnorr(msg256, sig64));
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(key_ellswift)
+FIXTURE_TEST_CASE(key_ellswift, BasicTestingSetup)
 {
     for (const auto& secret : {strSecret1, strSecret2, strSecret1C, strSecret2C}) {
         CKey key = DecodeSecret(secret);
-        BOOST_CHECK(key.IsValid());
+        CHECK(key.IsValid());
 
         uint256 ent32 = m_rng.rand256();
         auto ellswift = key.EllSwiftCreate(std::as_bytes(std::span{ent32}));
@@ -355,20 +355,20 @@ BOOST_AUTO_TEST_CASE(key_ellswift)
             // to compare.
             decoded_pubkey.Decompress();
         }
-        BOOST_CHECK(key.GetPubKey() == decoded_pubkey);
+        CHECK(key.GetPubKey() == decoded_pubkey);
     }
 }
 
-BOOST_AUTO_TEST_CASE(bip341_test_h)
+FIXTURE_TEST_CASE(bip341_test_h, BasicTestingSetup)
 {
     constexpr auto G_uncompressed{"0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"_hex};
     HashWriter hw;
     hw.write(G_uncompressed);
     XOnlyPubKey H{hw.GetSHA256()};
-    BOOST_CHECK(XOnlyPubKey::NUMS_H == H);
+    CHECK(XOnlyPubKey::NUMS_H == H);
 }
 
-BOOST_AUTO_TEST_CASE(key_schnorr_tweak_smoke_test)
+FIXTURE_TEST_CASE(key_schnorr_tweak_smoke_test, BasicTestingSetup)
 {
     // Sanity check to ensure we get the same tweak using CPubKey vs secp256k1 functions
     secp256k1_context* secp256k1_context_sign = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
@@ -379,20 +379,20 @@ BOOST_AUTO_TEST_CASE(key_schnorr_tweak_smoke_test)
 
     // secp256k1 functions
     secp256k1_keypair keypair;
-    BOOST_CHECK(secp256k1_keypair_create(secp256k1_context_sign, &keypair, UCharCast(key.begin())));
+    CHECK(secp256k1_keypair_create(secp256k1_context_sign, &keypair, UCharCast(key.begin())));
     secp256k1_xonly_pubkey xonly_pubkey;
-    BOOST_CHECK(secp256k1_keypair_xonly_pub(secp256k1_context_static, &xonly_pubkey, nullptr, &keypair));
+    CHECK(secp256k1_keypair_xonly_pub(secp256k1_context_static, &xonly_pubkey, nullptr, &keypair));
     unsigned char xonly_bytes[32];
-    BOOST_CHECK(secp256k1_xonly_pubkey_serialize(secp256k1_context_static, xonly_bytes, &xonly_pubkey));
+    CHECK(secp256k1_xonly_pubkey_serialize(secp256k1_context_static, xonly_bytes, &xonly_pubkey));
     uint256 tweak_old = XOnlyPubKey(xonly_bytes).ComputeTapTweakHash(&merkle_root);
 
     // CPubKey
     CPubKey pubkey = key.GetPubKey();
     uint256 tweak_new = XOnlyPubKey(pubkey).ComputeTapTweakHash(&merkle_root);
 
-    BOOST_CHECK_EQUAL(tweak_old, tweak_new);
+    CHECK(tweak_old == tweak_new);
 
     secp256k1_context_destroy(secp256k1_context_sign);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

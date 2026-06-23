@@ -12,16 +12,16 @@
 #include <wallet/test/util.h>
 #include <wallet/test/wallet_test_fixture.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(spend_tests, WalletTestingSetup)
+TEST_SUITE_BEGIN(spend_tests)
 
-BOOST_AUTO_TEST_CASE(max_signed_input_size_uses_external_outpoint)
+FIXTURE_TEST_CASE(max_signed_input_size_uses_external_outpoint, WalletTestingSetup)
 {
     const CKey key{GenerateRandomKey()};
     FillableSigningProvider provider;
-    BOOST_REQUIRE(provider.AddKey(key));
+    REQUIRE(provider.AddKey(key));
 
     const CTxOut txout{COIN, GetScriptForDestination(PKHash{key.GetPubKey()})};
     const COutPoint outpoint{Txid{}, 0};
@@ -30,10 +30,10 @@ BOOST_AUTO_TEST_CASE(max_signed_input_size_uses_external_outpoint)
 
     const int low_r{CalculateMaximumSignedInputSize(txout, COutPoint{}, &provider, /*can_grind_r=*/true, &coin_control)};
     const int high_r{CalculateMaximumSignedInputSize(txout, outpoint, &provider, /*can_grind_r=*/true, &coin_control)};
-    BOOST_CHECK_EQUAL(high_r, low_r + 1);
+    CHECK(high_r == low_r + 1);
 }
 
-BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
+FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
 {
     CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
     auto wallet = CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey);
@@ -54,11 +54,11 @@ BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
             coin_control.m_change_type = OutputType::LEGACY;
             return CreateTransaction(*wallet, {recipient}, /*change_pos=*/std::nullopt, coin_control);
         }();
-        BOOST_CHECK(res);
+        CHECK(res);
         const auto& txr = *res;
-        BOOST_CHECK_EQUAL(txr.tx->vout.size(), 1U);
-        BOOST_CHECK_EQUAL(txr.tx->vout[0].nValue, nAmount + leftover_input_amount - txr.fee);
-        BOOST_CHECK_GT(txr.fee, 0);
+        CHECK(txr.tx->vout.size() == 1U);
+        CHECK(txr.tx->vout[0].nValue == nAmount + leftover_input_amount - txr.fee);
+        CHECK(txr.fee > 0);
         return txr.fee;
     };
 
@@ -68,20 +68,20 @@ BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
 
     // Send slightly less than full input amount to recipient, check leftover
     // input amount is paid to recipient not the miner (to_reduce == fee - 123)
-    BOOST_CHECK_EQUAL(fee, check_tx(123));
+    CHECK(fee == check_tx(123));
 
     // Send full input minus fee amount to recipient, check leftover input
     // amount is paid to recipient not the miner (to_reduce == 0)
-    BOOST_CHECK_EQUAL(fee, check_tx(fee));
+    CHECK(fee == check_tx(fee));
 
     // Send full input minus more than the fee amount to recipient, check
     // leftover input amount is paid to recipient not the miner (to_reduce ==
     // -123). This overpays the recipient instead of overpaying the miner more
     // than double the necessary fee.
-    BOOST_CHECK_EQUAL(fee, check_tx(fee + 123));
+    CHECK(fee == check_tx(fee + 123));
 }
 
-BOOST_FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
+FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
 {
     // Verify that the wallet's Coin Selection process does not include pre-selected inputs twice in a transaction.
 
@@ -117,12 +117,12 @@ BOOST_FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
     // so that the recipient's amount is no longer equal to the user's selected target of 299 BTC.
 
     // First case, use 'subtract_fee_from_outputs=true'
-    BOOST_CHECK(!CreateTransaction(*wallet, recipients, /*change_pos=*/std::nullopt, coin_control));
+    CHECK(!CreateTransaction(*wallet, recipients, /*change_pos=*/std::nullopt, coin_control));
 
     // Second case, don't use 'subtract_fee_from_outputs'.
     recipients[0].fSubtractFeeFromAmount = false;
-    BOOST_CHECK(!CreateTransaction(*wallet, recipients, /*change_pos=*/std::nullopt, coin_control));
+    CHECK(!CreateTransaction(*wallet, recipients, /*change_pos=*/std::nullopt, coin_control));
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // namespace wallet

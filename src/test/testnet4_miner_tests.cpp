@@ -13,7 +13,7 @@
 #include <util/time.h>
 #include <validation.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <memory>
 
@@ -31,12 +31,13 @@ struct Testnet4MinerTestingSetup : public Testnet4Setup {
 };
 } // namespace testnet4_miner_tests
 
-BOOST_FIXTURE_TEST_SUITE(testnet4_miner_tests, Testnet4MinerTestingSetup)
+namespace testnet4_miner_tests {
+TEST_SUITE_BEGIN(testnet4_miner_tests)
 
-BOOST_AUTO_TEST_CASE(MiningInterface)
+FIXTURE_TEST_CASE(MiningInterface, Testnet4MinerTestingSetup)
 {
     auto mining{MakeMining()};
-    BOOST_REQUIRE(mining);
+    REQUIRE(mining);
 
     std::unique_ptr<BlockTemplate> block_template;
 
@@ -45,28 +46,29 @@ BOOST_AUTO_TEST_CASE(MiningInterface)
     FakeNodeClock clock{template_time};
 
     block_template = mining->createNewBlock({}, /*cooldown=*/false);
-    BOOST_REQUIRE(block_template);
+    REQUIRE(block_template);
 
     // The template should use the mocked system time
-    BOOST_REQUIRE_EQUAL(block_template->getBlockHeader().Time(), template_time);
+    REQUIRE(block_template->getBlockHeader().Time() == template_time);
 
     const BlockWaitOptions wait_options{.timeout = MillisecondsDouble{0}, .fee_threshold = 1};
 
     // waitNext() should return nullptr because there is no better template
     auto should_be_nullptr = block_template->waitNext(wait_options);
-    BOOST_REQUIRE(should_be_nullptr == nullptr);
+    REQUIRE(should_be_nullptr == nullptr);
 
     // This remains the case when exactly 20 minutes have gone by
     clock += 17min;
     should_be_nullptr = block_template->waitNext(wait_options);
-    BOOST_REQUIRE(should_be_nullptr == nullptr);
+    REQUIRE(should_be_nullptr == nullptr);
 
     // One second later the difficulty drops and it returns a new template
     // Note that we can't test the actual difficulty change, because the
     // difficulty is already at 1.
     clock += 1s;
     block_template = block_template->waitNext(wait_options);
-    BOOST_REQUIRE(block_template);
+    REQUIRE(block_template);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
+} // namespace testnet4_miner_tests

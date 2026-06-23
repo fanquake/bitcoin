@@ -11,11 +11,11 @@
 #include <thread>
 #include <vector>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 using util::ToString;
 
-BOOST_AUTO_TEST_SUITE(util_threadnames_tests)
+TEST_SUITE_BEGIN(util_threadnames_tests)
 
 const std::string TEST_THREAD_NAME_BASE = "test_thrd.";
 
@@ -50,17 +50,17 @@ std::set<std::string> RenameEnMasse(int num_threads)
  * Rename a bunch of threads with the same basename (expect_multiple=true), ensuring suffixes are
  * applied properly.
  */
-BOOST_AUTO_TEST_CASE(util_threadnames_test_rename_threaded)
+TEST_CASE(util_threadnames_test_rename_threaded)
 {
     std::set<std::string> names = RenameEnMasse(100);
 
-    BOOST_CHECK_EQUAL(names.size(), 100U);
+    CHECK(names.size() == 100U);
 
     // Names "test_thrd.[n]" should exist for n = [0, 99]
     for (int i = 0; i < 100; ++i) {
-        BOOST_CHECK(names.contains(TEST_THREAD_NAME_BASE + ToString(i)));
+        CHECK(names.contains(TEST_THREAD_NAME_BASE + ToString(i)));
     }
 
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

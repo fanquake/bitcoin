@@ -3,7 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <map>
 #include <string>
@@ -14,16 +14,16 @@ std::pair<std::string, std::string> SplitTorReplyLine(const std::string& s);
 std::map<std::string, std::string> ParseTorReplyMapping(const std::string& s);
 
 
-BOOST_AUTO_TEST_SUITE(torcontrol_tests)
+TEST_SUITE_BEGIN(torcontrol_tests)
 
 static void CheckSplitTorReplyLine(std::string input, std::string command, std::string args)
 {
     auto ret = SplitTorReplyLine(input);
-    BOOST_CHECK_EQUAL(ret.first, command);
-    BOOST_CHECK_EQUAL(ret.second, args);
+    CHECK(ret.first == command);
+    CHECK(ret.second == args);
 }
 
-BOOST_AUTO_TEST_CASE(util_SplitTorReplyLine)
+TEST_CASE(util_SplitTorReplyLine)
 {
     // Data we should receive during normal usage
     CheckSplitTorReplyLine(
@@ -59,18 +59,18 @@ BOOST_AUTO_TEST_CASE(util_SplitTorReplyLine)
 static void CheckParseTorReplyMapping(std::string input, std::map<std::string,std::string> expected)
 {
     auto ret = ParseTorReplyMapping(input);
-    BOOST_CHECK_EQUAL(ret.size(), expected.size());
+    CHECK(ret.size() == expected.size());
     auto r_it = ret.begin();
     auto e_it = expected.begin();
     while (r_it != ret.end() && e_it != expected.end()) {
-        BOOST_CHECK_EQUAL(r_it->first, e_it->first);
-        BOOST_CHECK_EQUAL(r_it->second, e_it->second);
+        CHECK(r_it->first == e_it->first);
+        CHECK(r_it->second == e_it->second);
         r_it++;
         e_it++;
     }
 }
 
-BOOST_AUTO_TEST_CASE(util_ParseTorReplyMapping)
+TEST_CASE(util_ParseTorReplyMapping)
 {
     // Data we should receive during normal usage
     CheckParseTorReplyMapping(
@@ -170,11 +170,11 @@ BOOST_AUTO_TEST_CASE(util_ParseTorReplyMapping)
     // Special handling for null case
     // (needed because string comparison reads the null as end-of-string)
     auto ret = ParseTorReplyMapping("Null=\"\\0\"");
-    BOOST_CHECK_EQUAL(ret.size(), 1U);
+    CHECK(ret.size() == 1U);
     auto r_it = ret.begin();
-    BOOST_CHECK_EQUAL(r_it->first, "Null");
-    BOOST_CHECK_EQUAL(r_it->second.size(), 1U);
-    BOOST_CHECK_EQUAL(r_it->second[0], '\0');
+    CHECK(r_it->first == "Null");
+    CHECK(r_it->second.size() == 1U);
+    CHECK(r_it->second[0] == '\0');
 
     // A more complex valid grammar. PROTOCOLINFO accepts a VersionLine that
     // takes a key=value pair followed by an OptArguments, making this valid.
@@ -199,4 +199,4 @@ BOOST_AUTO_TEST_CASE(util_ParseTorReplyMapping)
     CheckParseTorReplyMapping("EVEN+more ARGS", {});
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

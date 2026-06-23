@@ -9,15 +9,15 @@
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 #include <utility>
 
 using node::MakeMinisketch32;
 
-BOOST_FIXTURE_TEST_SUITE(minisketch_tests, BasicTestingSetup)
+TEST_SUITE_BEGIN(minisketch_tests)
 
-BOOST_AUTO_TEST_CASE(minisketch_test)
+FIXTURE_TEST_CASE(minisketch_test, BasicTestingSetup)
 {
     for (int i = 0; i < 100; ++i) {
         uint32_t errors = 0 + m_rng.randrange(11);
@@ -42,12 +42,12 @@ BOOST_AUTO_TEST_CASE(minisketch_test)
         Minisketch sketch_c = std::move(sketch_ar);
         sketch_c.Merge(sketch_br);
         auto dec = sketch_c.Decode(errors);
-        BOOST_REQUIRE(dec.has_value());
+        REQUIRE(dec.has_value());
         auto sols = std::move(*dec);
         std::sort(sols.begin(), sols.end());
-        for (uint32_t i = 0; i < a_not_b; ++i) BOOST_CHECK_EQUAL(sols[i], start_a + i);
-        for (uint32_t i = 0; i < b_not_a; ++i) BOOST_CHECK_EQUAL(sols[i + a_not_b], start_b + both + i);
+        for (uint32_t i = 0; i < a_not_b; ++i) CHECK(sols[i] == start_a + i);
+        for (uint32_t i = 0; i < b_not_a; ++i) CHECK(sols[i + a_not_b] == start_b + both + i);
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

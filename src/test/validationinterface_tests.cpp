@@ -2,7 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
+
 #include <consensus/validation.h>
 #include <primitives/block.h>
 #include <scheduler.h>
@@ -13,13 +14,13 @@
 #include <atomic>
 #include <memory>
 
-BOOST_FIXTURE_TEST_SUITE(validationinterface_tests, ChainTestingSetup)
+TEST_SUITE_BEGIN(validationinterface_tests)
 
 struct TestSubscriberNoop final : public CValidationInterface {
     void BlockChecked(const std::shared_ptr<const CBlock>&, const BlockValidationState&) override {}
 };
 
-BOOST_AUTO_TEST_CASE(unregister_validation_interface_race)
+FIXTURE_TEST_CASE(unregister_validation_interface_race, ChainTestingSetup)
 {
     std::atomic<bool> generate{true};
 
@@ -45,7 +46,7 @@ BOOST_AUTO_TEST_CASE(unregister_validation_interface_race)
 
     gen.join();
     sub.join();
-    BOOST_CHECK(!generate);
+    CHECK(!generate);
 }
 
 class TestInterface : public CValidationInterface
@@ -76,7 +77,7 @@ public:
 // Regression test to ensure UnregisterAllValidationInterfaces calls don't
 // destroy a validation interface while it is being called. Bug:
 // https://github.com/bitcoin/bitcoin/pull/18551
-BOOST_AUTO_TEST_CASE(unregister_all_during_call)
+FIXTURE_TEST_CASE(unregister_all_during_call, ChainTestingSetup)
 {
     bool destroyed = false;
     auto shared{std::make_shared<TestInterface>(
@@ -84,19 +85,19 @@ BOOST_AUTO_TEST_CASE(unregister_all_during_call)
         [&] {
             // First call should decrements reference count 2 -> 1
             m_node.validation_signals->UnregisterAllValidationInterfaces();
-            BOOST_CHECK(!destroyed);
+            CHECK(!destroyed);
             // Second call should not decrement reference count 1 -> 0
             m_node.validation_signals->UnregisterAllValidationInterfaces();
-            BOOST_CHECK(!destroyed);
+            CHECK(!destroyed);
         },
         [&] { destroyed = true; })};
     m_node.validation_signals->RegisterSharedValidationInterface(shared);
-    BOOST_CHECK(shared.use_count() == 2);
+    CHECK(shared.use_count() == 2);
     shared->Call();
-    BOOST_CHECK(shared.use_count() == 1);
-    BOOST_CHECK(!destroyed);
+    CHECK(shared.use_count() == 1);
+    CHECK(!destroyed);
     shared.reset();
-    BOOST_CHECK(destroyed);
+    CHECK(destroyed);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

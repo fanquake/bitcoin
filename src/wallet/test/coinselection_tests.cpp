@@ -7,10 +7,10 @@
 #include <wallet/coinselection.h>
 #include <wallet/test/wallet_test_fixture.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(coinselection_tests, TestingSetup)
+TEST_SUITE_BEGIN(coinselection_tests)
 
 static int next_lock_time = 0;
 static FastRandomContext default_rand;
@@ -123,22 +123,22 @@ static void TestBnBSuccess(std::string test_title, std::vector<OutputGroup>& utx
     }
 
     const auto result = SelectCoinsBnB(utxo_pool, selection_target, /*cost_of_change=*/cs_params.m_cost_of_change, max_selection_weight);
-    BOOST_CHECK_MESSAGE(result, "Falsy result in BnB-Success: " + test_title);
-    BOOST_CHECK_MESSAGE(HaveEquivalentValues(expected_result, *result), strprintf("Result mismatch in BnB-Success: %s. Expected %s, but got %s", test_title, InputAmountsToString(expected_result), InputAmountsToString(*result)));
-    BOOST_CHECK_MESSAGE(result->GetSelectedValue() == expected_amount, strprintf("Selected amount mismatch in BnB-Success: %s. Expected %d, but got %d", test_title, expected_amount, result->GetSelectedValue()));
-    BOOST_CHECK_MESSAGE(result->GetWeight() <= max_selection_weight, strprintf("Selected weight is higher than permitted in BnB-Success: %s. Expected %d, but got %d", test_title, max_selection_weight, result->GetWeight()));
-    BOOST_CHECK_MESSAGE(result->GetSelectionsEvaluated() == expected_attempts, strprintf("Unexpected number of attempts in BnB-Success: %s. Expected %i attempts, but got %i", test_title, expected_attempts, result->GetSelectionsEvaluated()));
+    CHECK(result, "Falsy result in BnB-Success: " + test_title);
+    CHECK(HaveEquivalentValues(expected_result, *result), strprintf("Result mismatch in BnB-Success: %s. Expected %s, but got %s", test_title, InputAmountsToString(expected_result), InputAmountsToString(*result)));
+    CHECK(result->GetSelectedValue() == expected_amount, strprintf("Selected amount mismatch in BnB-Success: %s. Expected %d, but got %d", test_title, expected_amount, result->GetSelectedValue()));
+    CHECK(result->GetWeight() <= max_selection_weight, strprintf("Selected weight is higher than permitted in BnB-Success: %s. Expected %d, but got %d", test_title, max_selection_weight, result->GetWeight()));
+    CHECK(result->GetSelectionsEvaluated() == expected_attempts, strprintf("Unexpected number of attempts in BnB-Success: %s. Expected %i attempts, but got %i", test_title, expected_attempts, result->GetSelectionsEvaluated()));
 }
 
 static void TestBnBFail(std::string test_title, std::vector<OutputGroup>& utxo_pool, const CAmount& selection_target, const CoinSelectionParams& cs_params = default_cs_params, int max_selection_weight = MAX_STANDARD_TX_WEIGHT, const bool expect_max_weight_exceeded = false)
 {
     const auto result = SelectCoinsBnB(utxo_pool, selection_target, /*cost_of_change=*/cs_params.m_cost_of_change, max_selection_weight);
-    BOOST_CHECK_MESSAGE(!result, "BnB-Fail: " + test_title);
+    CHECK(!result, "BnB-Fail: " + test_title);
     bool max_weight_exceeded = util::ErrorString(result).original.find("The inputs size exceeds the maximum weight") != std::string::npos;
-    BOOST_CHECK(expect_max_weight_exceeded == max_weight_exceeded);
+    CHECK(expect_max_weight_exceeded == max_weight_exceeded);
 }
 
-BOOST_AUTO_TEST_CASE(bnb_test)
+FIXTURE_TEST_CASE(bnb_test, TestingSetup)
 {
     for (int feerate : FEERATES) {
         std::vector<OutputGroup> utxo_pool;
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(bnb_test)
     }
 }
 
-BOOST_AUTO_TEST_CASE(bnb_feerate_sensitivity_test)
+FIXTURE_TEST_CASE(bnb_feerate_sensitivity_test, TestingSetup)
 {
     // Create sets of UTXOs with the same effective amounts at different feerates (but different absolute amounts)
     std::vector<OutputGroup> low_feerate_pool; // 5 sat/vB (default, and lower than long_term_feerate of 10 sat/vB)
@@ -247,21 +247,21 @@ static void TestSRDSuccess(std::string test_title, std::vector<OutputGroup>& utx
     CAmount expected_min_amount = selection_target + cs_params.m_change_fee + CHANGE_LOWER;
 
     const auto result = SelectCoinsSRD(utxo_pool, selection_target, cs_params.m_change_fee, cs_params.rng_fast, max_selection_weight);
-    BOOST_CHECK_MESSAGE(result, "Falsy result in SRD-Success: " + test_title);
+    CHECK(result, "Falsy result in SRD-Success: " + test_title);
     const CAmount selected_effective_value = result->GetSelectedEffectiveValue();
-    BOOST_CHECK_MESSAGE(selected_effective_value >= expected_min_amount, strprintf("Selected effective value is lower than expected in SRD-Success: %s. Expected %d, but got %d", test_title, expected_min_amount, selected_effective_value));
-    BOOST_CHECK_MESSAGE(result->GetWeight() <= max_selection_weight, strprintf("Selected weight is higher than permitted in SRD-Success: %s. Expected %d, but got %d", test_title, max_selection_weight, result->GetWeight()));
+    CHECK(selected_effective_value >= expected_min_amount, strprintf("Selected effective value is lower than expected in SRD-Success: %s. Expected %d, but got %d", test_title, expected_min_amount, selected_effective_value));
+    CHECK(result->GetWeight() <= max_selection_weight, strprintf("Selected weight is higher than permitted in SRD-Success: %s. Expected %d, but got %d", test_title, max_selection_weight, result->GetWeight()));
 }
 
 static void TestSRDFail(std::string test_title, std::vector<OutputGroup>& utxo_pool, const CAmount& selection_target, const CoinSelectionParams& cs_params = default_cs_params, int max_selection_weight = MAX_STANDARD_TX_WEIGHT, const bool expect_max_weight_exceeded = false)
 {
     const auto result = SelectCoinsSRD(utxo_pool, selection_target, cs_params.m_change_fee, cs_params.rng_fast, max_selection_weight);
-    BOOST_CHECK_MESSAGE(!result, "SRD-Fail: " + test_title);
+    CHECK(!result, "SRD-Fail: " + test_title);
     bool max_weight_exceeded = util::ErrorString(result).original.find("The inputs size exceeds the maximum weight") != std::string::npos;
-    BOOST_CHECK(expect_max_weight_exceeded == max_weight_exceeded);
+    CHECK(expect_max_weight_exceeded == max_weight_exceeded);
 }
 
-BOOST_AUTO_TEST_CASE(srd_test)
+FIXTURE_TEST_CASE(srd_test, TestingSetup)
 {
     for (int feerate : FEERATES) {
         std::vector<OutputGroup> utxo_pool;
@@ -298,5 +298,5 @@ BOOST_AUTO_TEST_CASE(srd_test)
     }
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()
 } // namespace wallet

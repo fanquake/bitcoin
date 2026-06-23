@@ -5,9 +5,9 @@
 #include <tinyformat.h>
 #include <util/translation.h>
 
-#include <boost/test/unit_test.hpp>
+#include <test/util/framework.h>
 
-BOOST_AUTO_TEST_SUITE(translation_tests)
+TEST_SUITE_BEGIN(translation_tests)
 
 static TranslateFn translate{[](const char * str) {  return strprintf("t(%s)", str);  }};
 
@@ -18,17 +18,17 @@ consteval auto _t(util::TranslatedLiteral str)
     return str;
 }
 
-BOOST_AUTO_TEST_CASE(translation_namedparams)
+TEST_CASE(translation_namedparams)
 {
     bilingual_str arg{"original", "translated"};
     bilingual_str result{strprintf(_t("original [%s]"), arg)};
-    BOOST_CHECK_EQUAL(result.original, "original [original]");
-    BOOST_CHECK_EQUAL(result.translated, "t(original [translated])");
+    CHECK(result.original == "original [original]");
+    CHECK(result.translated == "t(original [translated])");
 
     util::TranslatedLiteral arg2{"original", &translate};
     bilingual_str result2{strprintf(_t("original [%s]"), arg2)};
-    BOOST_CHECK_EQUAL(result2.original, "original [original]");
-    BOOST_CHECK_EQUAL(result2.translated, "t(original [t(original)])");
+    CHECK(result2.original == "original [original]");
+    CHECK(result2.translated == "t(original [t(original)])");
 }
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST_SUITE_END()

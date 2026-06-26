@@ -116,10 +116,13 @@ def check_ELF_CONTROL_FLOW(binary) -> bool:
     '''
     main = binary.get_function_address('main')
     content = binary.get_content_from_virtual_address(main, 4, lief.Binary.VA_TYPES.AUTO)
+    assert(content.tolist() == [243, 15, 30, 250]) # endbr64
 
-    if content.tolist() == [243, 15, 30, 250]: # endbr64
-        return True
-    return False
+    note = binary.concrete.get(lief.ELF.Note.TYPE.GNU_PROPERTY_TYPE_0)
+    features = note.find(lief.ELF.NoteGnuProperty.Property.TYPE.X86_FEATURE).features
+    assert lief.ELF.X86Features.FEATURE.IBT in features[0]
+    assert lief.ELF.X86Features.FEATURE.SHSTK in features[1]
+    return True
 
 def check_ELF_FORTIFY(binary) -> bool:
 

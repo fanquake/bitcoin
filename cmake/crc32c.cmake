@@ -109,7 +109,6 @@ endif()
 if(HAVE_ARM64_CRC32C)
   set(_crc32_src ${PROJECT_SOURCE_DIR}/src/crc32c/src/crc32c_arm64.cc)
   target_sources(crc32c PRIVATE ${_crc32_src})
-  set_property(SOURCE ${_crc32_src} PROPERTY COMPILE_OPTIONS ${ARM64_CRC_CXXFLAGS})
 endif()
 
 unset(_crc32_src)

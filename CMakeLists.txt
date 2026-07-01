@@ -533,24 +533,6 @@ if(MSVC)
   try_append_linker_flag("/NXCOMPAT" TARGET core_interface)
 else()
 
-  # _FORTIFY_SOURCE requires that there is some level of optimization,
-  # otherwise it does nothing and just creates a compiler warning.
-  try_append_cxx_flags("-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3"
-    RESULT_VAR cxx_supports_fortify_source
-    SOURCE "int main() {
-            # if !defined __OPTIMIZE__ || __OPTIMIZE__ <= 0
-              #error
-            #endif
-            }"
-  )
-  if(cxx_supports_fortify_source)
-    target_compile_options(core_interface INTERFACE
-      -U_FORTIFY_SOURCE
-      -D_FORTIFY_SOURCE=3
-    )
-  endif()
-  unset(cxx_supports_fortify_source)
-
   try_append_cxx_flags("-Wstack-protector" TARGET core_interface SKIP_LINK)
   try_append_cxx_flags("-fstack-protector-all" TARGET core_interface)
   try_append_cxx_flags("-fcf-protection=full" TARGET core_interface)

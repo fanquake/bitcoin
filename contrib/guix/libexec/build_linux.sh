@@ -61,7 +61,7 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    NO_QT=1
 
 # CFLAGS
-HOST_CFLAGS="-O2 -g"
+HOST_CFLAGS="-O3 -g -march=native -flto"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 HOST_CFLAGS+=" -fdebug-prefix-map=${DISTSRC}/src=."
 
@@ -77,7 +77,7 @@ HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$glibc_dynamic_linker -Wl,-O2
 
 # EXE FLAGS
 case "$HOST" in
-    aarch64-linux-gnu|arm-linux-gnueabihf|riscv64-linux-gnu|x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O2" ;;
+    aarch64-linux-gnu|arm-linux-gnueabihf|riscv64-linux-gnu|x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O3 -march=native -flto " ;;
     *linux*)  CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=${HOST_LDFLAGS} -static-libstdc++ -static-libgcc" ;;
 esac
 

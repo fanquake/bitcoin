@@ -49,6 +49,13 @@ echo "=== BEGIN env ==="
 env
 echo "=== END env ==="
 
+if [[ "${BUILD_GUIX}" == true ]]; then
+  LC_ALL=C.UTF-8 /root/.config/guix/current/bin/guix-daemon --build-users-group=guixbuild --disable-chroot &
+  GUIX_PROFILE=/root/.config/guix/current; . "$GUIX_PROFILE/etc/profile"
+  guix describe
+  FORCE_DIRTY_WORKTREE=1 HOSTS="x86_64-linux-gnu" SOURCES_PATH="/ci_container_base/depends/sources" ./contrib/guix/guix-build
+fi
+
 # The CI framework should be flexible where it is run from. For example, from
 # a git-archive, a git-worktree, or a normal git repo.
 # The iwyu task requires a working git repo, which may not always be

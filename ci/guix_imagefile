@@ -1,0 +1,35 @@
+# Copyright (c) The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or https://opensource.org/license/mit/.
+
+FROM registry.gitlab.com/debdistutils/guix/container:latest
+
+RUN cp -rL /gnu/store/*profile/etc/* /etc/ && \
+    groupadd --gid 0 root && \
+    useradd --uid 0 --gid root --shell /bin/sh --home-dir / --system root && \
+    groupadd --system guixbuild
+
+RUN for i in $(seq -w 1 10); do \
+    useradd -g guixbuild -G guixbuild \
+            -d /var/empty -s $(command -v nologin) \
+            -c "Guix build user $i" --system \
+            guixbuilder$i; \
+    done
+
+RUN env LANG=C.UTF-8 guix-daemon --disable-chroot --build-users-group=guixbuild & \
+    daemon_pid=$!; \
+    for i in $(seq 1 50); do [ -S /var/guix/daemon-socket/socket ] && break; sleep 0.2; done; \
+    guix archive --authorize < /share/guix/ci.guix.gnu.org.pub && \
+    guix archive --authorize < /share/guix/bordeaux.guix.gnu.org.pub && \
+    guix install curl
+
+RUN git clone https://github.com/bitcoin/bitcoin.git /bitcoin
+
+WORKDIR /bitcoin
+
+# GUIX_PROFILE="/var/guix/profiles/per-user/root/guix-profile"
+# . "$GUIX_PROFILE/etc/profile"
+
+# env LANG=C.UTF-8 guix-daemon --disable-chroot --build-users-group=guixbuild &
+
+# HOSTS="x86_64-linux-gnu" bash ./contrib/guix/guix-build

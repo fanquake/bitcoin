@@ -49,6 +49,26 @@ echo "=== BEGIN env ==="
 env
 echo "=== END env ==="
 
+if [[ "${BUILD_GUIX}" == true ]]; then
+  curl -fLO https://guix.fish.foo/signing-key.pub && \
+    curl -fLO https://guix.fish.foo/signing-key.pub.asc && \
+    curl -fL https://raw.githubusercontent.com/bitcoin-core/guix.sigs/refs/heads/main/builder-keys/willcl-ark.gpg -o willcl-ark.gpg && \
+    gpg --import willcl-ark.gpg && \
+    gpg --verify signing-key.pub.asc signing-key.pub && \
+    guix archive --authorize < signing-key.pub
+
+  guix describe
+
+  LC_ALL=C.UTF-8 /root/.config/guix/current/bin/guix-daemon \
+    --build-users-group=guixbuild \
+    --disable-chroot \
+    --substitute-urls='https://guix.fish.foo https://bordeaux.guix.gnu.org https://ci.guix.gnu.org' &
+
+  HOSTS="x86_64-linux-gnu" SOURCES_PATH="/ci_container_base/depends/sources" FORCE_DIRTY_WORKTREE=1 ./contrib/guix/guix-build
+
+  exit 1
+fi
+
 # The CI framework should be flexible where it is run from. For example, from
 # a git-archive, a git-worktree, or a normal git repo.
 # The iwyu task requires a working git repo, which may not always be

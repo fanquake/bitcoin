@@ -86,6 +86,22 @@ glibc_dynamic_linker() {
     esac
 }
 
+llvm_toolchain() {
+    local clang_toolchain libcxx
+
+    clang_toolchain="$(store_path clang-toolchain)"
+    libcxx="$(store_path libcxx)"
+
+    build_CC="${clang_toolchain}/bin/clang -isystem ${clang_toolchain}/include"
+    build_CXX="${clang_toolchain}/bin/clang++ -stdlib=libc++ -isystem ${libcxx}/include/c++/v1 -isystem ${clang_toolchain}/include"
+    build_LDFLAGS="-fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -L${libcxx}/lib -Wl,-rpath,${libcxx}/lib"
+    build_AR="${clang_toolchain}/bin/llvm-ar"
+    build_RANLIB="${clang_toolchain}/bin/llvm-ranlib"
+    build_OBJDUMP="${clang_toolchain}/bin/llvm-objdump"
+    build_NM="${clang_toolchain}/bin/llvm-nm"
+    build_STRIP="${clang_toolchain}/bin/llvm-strip"
+}
+
 # Disable Guix ld auto-rpath behavior
 export GUIX_LD_WRAPPER_DISABLE_RPATH=yes
 

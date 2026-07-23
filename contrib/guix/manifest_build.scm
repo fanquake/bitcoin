@@ -102,8 +102,17 @@ chain for " target " development."))
       (license (package-license xgcc)))))
 
 (define base-gcc
-  (package-with-extra-patches gcc-14
-    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
+  (package-with-extra-patches (package
+    (inherit gcc-14) ;; 14.2.0
+    (version "14.4.0")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append "mirror://gnu/gcc/gcc-"
+                                  version "/gcc-" version ".tar.xz"))
+              (sha256
+               (base32
+                "1ngnj3d0jb0if38akydz713pipbb66qq0xksqxck3j7agdb6yavm")))))
+    (search-our-patches "gcc-remap-guix-store.patch")))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 

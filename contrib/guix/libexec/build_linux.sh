@@ -18,7 +18,7 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    ${BASE_CACHE+BASE_CACHE="$BASE_CACHE"} \
                                    ${build_CC+build_CC="$build_CC"} \
                                    ${build_CXX+build_CXX="$build_CXX"} \
-                                   NO_QT=1 \
+                                   NO_QT=1 NO_WALLET=1 NO_ZMQ=1 NO_IPC=1 NO_USDT=1 \
                                    CFLAGS="-O3 -flto -march=native" \
                                    CXXFLAGS="-O3 -flto -march=native" \
                                    LDFLAGS="-flto -march=native" \
@@ -68,18 +68,20 @@ mkdir -p "$DISTSRC"
           -DCMAKE_EXE_LINKER_FLAGS="${HOST_LDFLAGS} -static-libstdc++ -static-libgcc" \
           -DCMAKE_INSTALL_PREFIX="${INSTALLPATH}" \
           -DCMAKE_SKIP_RPATH=TRUE \
+          -DENABLE_EXTERNAL_SIGNER=OFF \
           -DREDUCE_EXPORTS=ON \
+          -DWITH_EMBEDDED_ASMAP=OFF \
           -DWITH_CCACHE=OFF \
           "${CMAKE_FLAGS}" \
           ${CMAKE_EXE_LINKER_FLAGS+"$CMAKE_EXE_LINKER_FLAGS"}
 
     # Build Bitcoin Core
-    cmake --build build -j "$JOBS"
+    cmake --build build -j "$JOBS" --target bitcoind
 
     # Install built Bitcoin Core
-    cmake --install build
+    cmake --install build --component bitcoind
 )
 
 rm -rf "$DISTSRC"/build
 
-exit 0
+exit 1

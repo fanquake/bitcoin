@@ -196,7 +196,6 @@ chain for " target " development."))
                   "--disable-libgomp"
                   "--disable-libquadmath"
                   "--disable-libsanitizer"
-                  "--disable-lto"
                   "--disable-nls"
                   "--disable-tm-clone-registry"
                   #$building-on)))

@@ -202,7 +202,6 @@ chain for " target " development."))
                   "--disable-libgomp"
                   "--disable-libsanitizer"
                   "--disable-libstdcxx-filesystem-ts"
-                  "--disable-lto"
                   "--disable-nls"
                   #$building-on)))))))
 
@@ -226,7 +225,6 @@ chain for " target " development."))
                   "--disable-libquadmath"
                   "--disable-libsanitizer"
                   "--disable-libstdcxx-filesystem-ts"
-                  "--disable-lto"
                   "--disable-nls"
                   "--disable-tm-clone-registry"
                   #$@(if minimal? (list "--enable-clocale=generic"

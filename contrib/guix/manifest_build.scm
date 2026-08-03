@@ -200,16 +200,35 @@ chain for " target " development."))
                   "--disable-tm-clone-registry"
                   #$building-on)))
         ((#:phases phases)
-          #~(modify-phases #$phases
-            ;; Given a XGCC package, return a modified package that replace each instance of
-            ;; -rpath in the default system spec that's inserted by Guix with -rpath-link
-            (add-after 'pre-configure 'replace-rpath-with-rpath-link
-             (lambda _
-               (substitute* (cons "gcc/config/rs6000/sysv4.h"
-                                  (find-files "gcc/config"
-                                              "^gnu-user.*\\.h$"))
-                 (("-rpath=") "-rpath-link="))
-               #t))))))))
+          (let ((phases-with-rpath-fix
+                  ;; Given a XGCC package, return a modified package that replace each instance of
+                  ;; -rpath in the default system spec that's inserted by Guix with -rpath-link
+                  #~(modify-phases #$phases
+                    (add-after 'pre-configure 'replace-rpath-with-rpath-link
+                     (lambda _
+                       (substitute* (cons "gcc/config/rs6000/sysv4.h"
+                                          (find-files "gcc/config"
+                                                      "^gnu-user.*\\.h$"))
+                         (("-rpath=") "-rpath-link="))
+                       #t)))))
+            (if (string=? (getenv "HOST") "x86_64-linux-gnu")
+                #~(modify-phases #$phases-with-rpath-fix
+                  ;; Append -fcf-protection=full to all C & C++ compilation, unless
+                  ;; already specified. https://gcc.gnu.org/onlinedocs/gcc-14.3.0/gcc/Spec-Files.html
+                  (add-after 'install 'install-cf-protection-specs
+                   (lambda* (#:key outputs #:allow-other-keys)
+                     (for-each
+                       (lambda (crtbegin)
+                         (call-with-output-file (string-append (dirname crtbegin) "/specs")
+                           (lambda (port)
+                             (display "*self_spec:\n+ %{!fcf-protection*:-fcf-protection=full}\n" port))))
+                       (apply append
+                         (map
+                           (lambda (output)
+                             (find-files (string-append (cdr output) "/lib/gcc")
+                                         "^crtbegin\\.o$"))
+                           outputs))))))
+                phases-with-rpath-fix)))))))
 
 (define-public glibc-2.31
   (let ((commit "28eb5caf895ced5d895cb02757e109004a2d33e5"))

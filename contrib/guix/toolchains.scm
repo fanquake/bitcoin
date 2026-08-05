@@ -24,6 +24,19 @@ FILE-NAME found in ./patches relative to the current file."
       ((%patch-path (list (string-append (dirname (current-filename)) "/patches"))))
     (list (search-patch file-name) ...)))
 
+;; Return a string of ` -ffile-prefix-map=OLD=/usr' flags, one for each build
+;; input and output. /gnu/store can't be listed inside the daemon's build
+;; environment, so use %build-inputs and %outputs from the builder instead.
+(define guix-store-prefix-map-flags
+  '(string-join
+    (map (lambda (dir)
+           (string-append "-ffile-prefix-map=" dir "=/usr"))
+         (sort (filter (lambda (dir)
+                         (string-prefix? "/gnu/store" dir))
+                       (map cdr (append %build-inputs %outputs)))
+               string<?))
+    " " 'prefix))
+
 (define building-on (string-append "--build=" (list-ref (string-split (%current-system) #\-) 0) "-guix-linux-gnu"))
 
 (define (base-binutils target)

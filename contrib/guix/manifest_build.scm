@@ -14,7 +14,9 @@
              (guix gexp)
              (guix git-download)
              (guix packages)
-             ((guix utils) #:select (substitute-keyword-arguments)))
+             ((guix utils) #:select (substitute-keyword-arguments))
+             (ice-9 popen)
+             (ice-9 rdelim))
 
 (define-syntax-rule (search-our-patches file-name ...)
   "Return the list of absolute file names corresponding to each
@@ -23,15 +25,14 @@ FILE-NAME found in ./patches relative to the current file."
       ((%patch-path (list (string-append (dirname (current-filename)) "/patches"))))
     (list (search-patch file-name) ...)))
 
-;; Return a string of ` -ffile-prefix-map=OLD=/usr' flags.
-(define-syntax-rule (guix-store-prefix-map-flags)
-  '(begin
-     (use-modules (ice-9 popen) (ice-9 rdelim))
-     (let* ((port (open-input-pipe
-                    "find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n ' -ffile-prefix-map={}=/usr' \\;"))
-            (mapping (read-line port)))
-       (close-pipe port)
-       mapping)))
+;; Return a string of ` -ffile-prefix-map=OLD=/usr' flags, one for each
+;; top-level entry currently in /gnu/store.
+(define (guix-store-prefix-map-flags)
+  (let* ((port (open-input-pipe
+                 "find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n ' -ffile-prefix-map={}=/usr' \\;"))
+         (mapping (read-line port)))
+    (close-pipe port)
+    mapping))
 
 (define building-on (string-append "--build=" (list-ref (string-split (%current-system) #\-) 0) "-guix-linux-gnu"))
 
@@ -110,8 +111,22 @@ chain for " target " development."))
       (license (package-license xgcc)))))
 
 (define base-gcc
-  (package-with-extra-patches gcc-14
-    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
+  (let* ((patched (package-with-extra-patches gcc-14
+                     (search-our-patches "gcc-ssa-generation.patch")))
+         (mapping (guix-store-prefix-map-flags)))
+    (package
+      (inherit patched)
+      (arguments
+        (substitute-keyword-arguments (package-arguments patched)
+          ((#:phases phases)
+            #~(modify-phases #$phases
+                (add-after 'unpack 'remap-guix-store-paths
+                  (lambda _
+                    (substitute* "libgcc/Makefile.in"
+                      (("^c_flags := -fexceptions$" all)
+                        (string-append all #$mapping))
+                      (("^c_flags := -fno-exceptions$" all)
+                        (string-append all #$mapping))))))))))))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 
@@ -133,9 +148,19 @@ desirable for building Bitcoin Core release binaries."
   (package-with-extra-patches binutils
     (search-our-patches "binutils-unaligned-default.patch")))
 
-(define (winpthreads-patches mingw-w64-x86_64-winpthreads)
-  (package-with-extra-patches mingw-w64-x86_64-winpthreads
-    (search-our-patches "winpthreads-remap-guix-store.patch")))
+(define (winpthreads-patches winpthreads)
+  (let ((mapping (guix-store-prefix-map-flags)))
+    (package
+      (inherit winpthreads)
+      (arguments
+        (substitute-keyword-arguments (package-arguments winpthreads)
+          ((#:phases phases)
+            #~(modify-phases #$phases
+                (add-after 'unpack 'remap-guix-store-paths
+                  (lambda _
+                    (substitute* "mingw-w64-libraries/winpthreads/Makefile.in"
+                      (("^AM_CFLAGS = .*$" all)
+                        (string-append all #$mapping))))))))))))
 
 (define (make-mingw-pthreads-cross-toolchain target)
   "Create a cross-compilation toolchain package for TARGET"
@@ -235,8 +260,7 @@ chain for " target " development."))
               (sha256
                (base32
                 "07arjrc1smqy8wrhg38apr1s9ji7xv1rpzdapk4k2ps2n07irp58"))
-              (patches (search-our-patches "glibc-guix-prefix.patch"
-                                           "glibc-riscv-jumptarget.patch"))))
+              (patches (search-our-patches "glibc-riscv-jumptarget.patch"))))
     (arguments
       (substitute-keyword-arguments (package-arguments glibc)
         ((#:configure-flags flags)
@@ -251,6 +275,11 @@ chain for " target " development."))
                   building-on)))
     ((#:phases phases)
         `(modify-phases ,phases
+           (add-after 'unpack 'remap-guix-store-paths
+             (lambda _
+               (substitute* "Makeconfig"
+                 (("^CFLAGS-\\.o = .*pie-default\\)$" all)
+                  (string-append all ,(guix-store-prefix-map-flags))))))
            (add-before 'configure 'set-etc-rpc-installation-directory
              (lambda* (#:key outputs #:allow-other-keys)
                ;; Install the rpc data base file under `$out/etc/rpc'.

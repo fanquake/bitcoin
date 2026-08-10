@@ -24,9 +24,6 @@ if(HAVE_CLMUL)
   set_property(SOURCE minisketch.cpp
     PROPERTY COMPILE_DEFINITIONS HAVE_CLMUL
   )
-  set_property(SOURCE ${clmul_sources}
-    PROPERTY COMPILE_OPTIONS ${CLMUL_CXXFLAGS}
-  )
   target_sources(minisketch_field_sources INTERFACE ${clmul_sources})
 endif()
 

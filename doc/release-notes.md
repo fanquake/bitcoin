@@ -70,6 +70,10 @@ Notable changes
 - #35691 chainparams: delete my DNS seed
 - #35766 p2p: Assume v2transport for addresses from seeds
 
+### Test
+
+- #35937 test: Append print_suppressions=0 to LSAN_OPTIONS, and suppress bitcoin-qt - #35937
+
 ### Fuzz
 
 - #35679 fuzz: Remove unused DeserializeFromFuzzingInput params overload

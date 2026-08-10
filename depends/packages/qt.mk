@@ -203,6 +203,8 @@ $(package)_cmake_opts += -DCMAKE_EXE_LINKER_FLAGS="$$($$($(package)_type)_LDFLAG
 $(package)_cmake_opts += -DCMAKE_EXE_LINKER_FLAGS_RELEASE="$$($$($(package)_type)_release_LDFLAGS)"
 $(package)_cmake_opts += -DCMAKE_EXE_LINKER_FLAGS_DEBUG="$$($$($(package)_type)_debug_LDFLAGS)"
 $(package)_cmake_opts += -DCMAKE_AR="$$($(package)_ar)"
+$(package)_cmake_opts += -DCMAKE_RANLIB="$$($(package)_ranlib)"
+$(package)_cmake_opts += -DCMAKE_NM="$$($(package)_nm)"
 
 ifneq ($(host),$(build))
 $(package)_cmake_opts += -DCMAKE_SYSTEM_NAME=$($(host_os)_cmake_system_name)

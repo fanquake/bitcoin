@@ -103,7 +103,6 @@ set_target_properties(crc32c PROPERTIES EXPORT_COMPILE_COMMANDS OFF)
 if(HAVE_SSE42)
   set(_crc32_src ${PROJECT_SOURCE_DIR}/src/crc32c/src/crc32c_sse42.cc)
   target_sources(crc32c PRIVATE ${_crc32_src})
-  set_property(SOURCE ${_crc32_src} PROPERTY COMPILE_OPTIONS ${SSE42_CXXFLAGS})
 endif()
 
 if(HAVE_ARM64_CRC32C)

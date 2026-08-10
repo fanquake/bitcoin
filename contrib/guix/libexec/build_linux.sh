@@ -39,11 +39,6 @@ esac
 # LDFLAGS
 HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$(glibc_dynamic_linker "$HOST") -Wl,-O2"
 
-case "$HOST" in
-    riscv64-linux-gnu) ;; # https://github.com/boostorg/test/issues/345
-    *) CMAKE_FLAGS="-DCMAKE_LINK_WARNING_AS_ERROR=ON" ;;
-esac
-
 # EXE FLAGS
 case "$HOST" in
     aarch64-linux-gnu|x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O2" ;;
@@ -72,7 +67,6 @@ mkdir -p "$DISTSRC"
           -DREDUCE_EXPORTS=ON \
           -DWITH_EMBEDDED_ASMAP=OFF \
           -DWITH_CCACHE=OFF \
-          "${CMAKE_FLAGS}" \
           ${CMAKE_EXE_LINKER_FLAGS+"$CMAKE_EXE_LINKER_FLAGS"}
 
     # Build Bitcoin Core

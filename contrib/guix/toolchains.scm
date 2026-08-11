@@ -4,7 +4,7 @@
   #:use-module (gnu packages commencement)
   #:use-module (gnu packages cross-base)
   #:use-module (gnu packages gcc)
-  #:use-module ((gnu packages linux) #:select (linux-libre-headers-6.18))
+  #:use-module ((gnu packages linux) #:select (linux-libre-headers-7.1))
   #:use-module (gnu packages mingw)
   #:use-module (guix build-system trivial)
   #:use-module (guix download)
@@ -115,12 +115,10 @@ chain for " target " development."))
   (package-with-extra-patches gcc-14
     (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
 
-(define base-linux-kernel-headers linux-libre-headers-6.18)
-
 (define* (make-bitcoin-cross-toolchain target
                                        #:key
                                        (base-gcc-for-libc linux-base-gcc)
-                                       (base-kernel-headers base-linux-kernel-headers)
+                                       (base-kernel-headers linux-libre-headers-7.1)
                                        (base-libc glibc-2.31)
                                        (base-gcc linux-base-gcc))
   "Convenience wrapper around MAKE-CROSS-TOOLCHAIN with default values
@@ -288,6 +286,7 @@ chain for " target " development."))
             (list "--enable-bind-now",
                   "--enable-cet=yes",
                   "--enable-fortify-source",
+                  "--enable-kernel=6.8.0",
                   "--enable-stack-protector=all",
                   "--disable-nscd",
                   "--disable-profile",

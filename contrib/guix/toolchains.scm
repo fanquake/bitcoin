@@ -3,7 +3,7 @@
   #:use-module (gnu packages base)
   #:use-module (gnu packages cross-base)
   #:use-module (gnu packages gcc)
-  #:use-module ((gnu packages linux) #:select (linux-libre-headers-6.1))
+  #:use-module ((gnu packages linux) #:select (linux-libre-headers-7.1))
   #:use-module (gnu packages mingw)
   #:use-module (guix build-system trivial)
   #:use-module (guix download)
@@ -125,7 +125,7 @@ chain for " target " development."))
   (package-with-extra-patches gcc-14
     (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
 
-(define base-linux-kernel-headers linux-libre-headers-6.1)
+(define base-linux-kernel-headers linux-libre-headers-7.1)
 
 (define* (make-bitcoin-cross-toolchain target
                                        #:key
@@ -339,7 +339,7 @@ chain for " target " development."))
             (list "--enable-bind-now",
                   "--enable-cet=yes",
                   "--enable-fortify-source",
-                  "--enable-kernel=3.17.0",
+                  "--enable-kernel=7.0.0",
                   "--enable-stack-protector=all",
                   "--disable-nscd",
                   "--disable-profile",

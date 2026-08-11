@@ -74,7 +74,7 @@ static inline const char* DecodeEntry(const char* p, const char* limit,
   return p;
 }
 
-class Block::Iter : public Iterator {
+class Block::Iter final : public Iterator {
  private:
   const Comparator* const comparator_;
   const char* const data_;       // underlying block contents

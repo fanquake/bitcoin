@@ -14,7 +14,7 @@ class SnapshotList;
 
 // Snapshots are kept in a doubly-linked list in the DB.
 // Each SnapshotImpl corresponds to a particular sequence number.
-class SnapshotImpl : public Snapshot {
+class SnapshotImpl final : public Snapshot {
  public:
   SnapshotImpl(SequenceNumber sequence_number)
       : sequence_number_(sequence_number) {}

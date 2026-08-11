@@ -26,7 +26,7 @@ class Version;
 class VersionEdit;
 class VersionSet;
 
-class DBImpl : public DB {
+class DBImpl final : public DB {
  public:
   DBImpl(const Options& options, const std::string& dbname);
 

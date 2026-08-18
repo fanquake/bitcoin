@@ -1,6 +1,6 @@
 (use-modules ((gnu packages bash) #:select (bash-minimal))
              ((gnu packages cmake) #:select (cmake-minimal-4))
-             ((gnu packages commencement) #:select (gcc-toolchain-14))
+             ((gnu packages commencement) #:select (gcc-toolchain-16))
              ((gnu packages compression) #:select (gzip))
              ((gnu packages llvm) #:select (clang-toolchain-19 libcxx lld-19))
              ((gnu packages version-control) #:select (git-minimal))
@@ -28,11 +28,11 @@
         git-minimal)
   (let ((target (getenv "HOST")))
     (cond ((string-suffix? "-mingw32" target)
-           (list gcc-toolchain-14
+           (list gcc-toolchain-16
                  (make-mingw-pthreads-cross-toolchain target)))
           ((string-contains target "-linux-")
-           (list gcc-toolchain-14
-                 (list gcc-toolchain-14 "static")))
+           (list gcc-toolchain-16
+                 (list gcc-toolchain-16 "static")))
           ((string-contains target "darwin")
            (list clang-toolchain-19
                  libcxx ;; 19.1.7

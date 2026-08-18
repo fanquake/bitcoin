@@ -41,6 +41,11 @@ static constexpr uint32_t VECTOR_BATCH_SIZE{4};
 template <unsigned BITS>
 ALWAYS_INLINE Vec128 RotL(Vec128 x)
 {
+    if constexpr (BITS == 16) {
+        using HalfWords = uint16_t __attribute__((__vector_size__(16)));
+        const auto halves = std::bit_cast<HalfWords>(x);
+        return std::bit_cast<Vec128>(__builtin_shufflevector(halves, halves, 1, 0, 3, 2, 5, 4, 7, 6));
+    }
     return (x << BITS) | (x >> (32 - BITS));
 }
 

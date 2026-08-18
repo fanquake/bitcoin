@@ -8,13 +8,13 @@
 #include <crypto/hkdf_sha256_32.h>
 #include <crypto/hmac_sha256.h>
 #include <crypto/hmac_sha512.h>
+#include <crypto/muhash.h>
 #include <crypto/poly1305.h>
 #include <crypto/ripemd160.h>
 #include <crypto/sha1.h>
 #include <crypto/sha256.h>
 #include <crypto/sha3.h>
 #include <crypto/sha512.h>
-#include <crypto/muhash.h>
 #include <random.h>
 #include <streams.h>
 #include <test/util/common.h>
@@ -22,10 +22,11 @@
 #include <test/util/setup_common.h>
 #include <util/strencodings.h>
 
-#include <algorithm>
-#include <vector>
-
 #include <boost/test/unit_test.hpp>
+
+#include <algorithm>
+#include <limits>
+#include <vector>
 
 using namespace util::hex_literals;
 
@@ -185,6 +186,35 @@ void TestChaCha20(const std::string &hex_message, const std::string &hexkey, Cha
         }
         BOOST_CHECK_EQUAL(hexout, HexStr(outres));
     }
+}
+
+void TestChaCha20SplitCrypt(size_t size, ChaCha20::Nonce96 nonce, uint32_t seek)
+{
+    InsecureRandomContext rng{0x2468ace0 ^ size ^ static_cast<uint64_t>(seek)};
+    const auto key = rng.randbytes<std::byte>(ChaCha20::KEYLEN);
+    const auto input = rng.randbytes<std::byte>(size);
+
+    std::vector<std::byte> output_one_call(size);
+    ChaCha20 one_call{key};
+    one_call.Seek(nonce, seek);
+    one_call.Crypt(input, output_one_call);
+
+    std::vector<std::byte> output_split{input};
+    ChaCha20 split{key};
+    split.Seek(nonce, seek);
+    for (size_t offset{0}; offset < output_split.size();) {
+        const size_t chunk_size{std::min<size_t>(ChaCha20Aligned::BLOCKLEN, output_split.size() - offset)};
+        auto chunk{std::span{output_split}.subspan(offset, chunk_size)};
+        split.Crypt(chunk, chunk);
+        offset += chunk_size;
+    }
+    BOOST_CHECK(output_one_call == output_split);
+
+    std::vector<std::byte> output_in_place{input};
+    ChaCha20 in_place{key};
+    in_place.Seek(nonce, seek);
+    in_place.Crypt(output_in_place, output_in_place);
+    BOOST_CHECK(output_one_call == output_in_place);
 }
 
 void TestFSChaCha20(const std::string& hex_plaintext, const std::string& hexkey, uint32_t rekey_interval, const std::string& ciphertext_after_rotation)
@@ -829,6 +859,17 @@ BOOST_AUTO_TEST_CASE(chacha20_testvector)
                    "8ec4c3ccdaea336bdeb245636970be01266509b33f3d2642504eaf412206207a",
                    4096,
                    "8bfaa4eacff308fdb4a94a5ff25bd9d0c1f84b77f81239f67ff39d6e1ac280c9");
+}
+
+BOOST_AUTO_TEST_CASE(chacha20_split_crypt)
+{
+    for (const size_t size : {0U, 1U, 31U, 63U, 64U, 65U, 127U, 128U, 129U, 191U, 192U, 255U, 256U, 257U, 383U, 384U, 511U, 512U, 513U, 1024U, 4096U}) {
+        TestChaCha20SplitCrypt(size, {0x01020304, 0x05060708090a0b0c}, 7);
+    }
+
+    TestChaCha20SplitCrypt(ChaCha20Aligned::BLOCKLEN * 3, {0x11121314, 0x15161718191a1b1c}, std::numeric_limits<uint32_t>::max() - 3);
+    TestChaCha20SplitCrypt(ChaCha20Aligned::BLOCKLEN * 17, {0x21222324, 0x25262728292a2b2c}, std::numeric_limits<uint32_t>::max() - 7);
+    TestChaCha20SplitCrypt(ChaCha20Aligned::BLOCKLEN * 2, {0x31323334, 0x35363738393a3b3c}, std::numeric_limits<uint32_t>::max() - 1);
 }
 
 BOOST_AUTO_TEST_CASE(chacha20_midblock)

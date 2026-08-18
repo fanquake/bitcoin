@@ -5,13 +5,17 @@
 // Based on the public domain implementation 'merged' by D. J. Bernstein
 // See https://cr.yp.to/chacha.html.
 
-#include <crypto/common.h>
 #include <crypto/chacha20.h>
+
+#include <attributes.h>
+#include <crypto/common.h>
 #include <support/cleanse.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cassert>
+#include <utility>
 
 #define QUARTERROUND(a,b,c,d) \
   a += b; d = std::rotl(d ^ a, 16); \
@@ -20,6 +24,158 @@
   c += d; b = std::rotl(b ^ c, 7);
 
 #define REPEAT10(a) do { {a}; {a}; {a}; {a}; {a}; {a}; {a}; {a}; {a}; {a}; } while(0)
+
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_shufflevector) && (defined(__x86_64__) || defined(__amd64__) || defined(__ARM_NEON))
+#define ENABLE_CHACHA20_VECTOR 1
+#endif
+#endif
+
+#ifdef ENABLE_CHACHA20_VECTOR
+namespace {
+
+using Vec128 = uint32_t __attribute__((__vector_size__(16)));
+static_assert(sizeof(Vec128) == 16);
+static constexpr uint32_t VECTOR_BATCH_SIZE{4};
+
+template <unsigned BITS>
+ALWAYS_INLINE Vec128 RotL(Vec128 x)
+{
+    return (x << BITS) | (x >> (32 - BITS));
+}
+
+ALWAYS_INLINE Vec128 Broadcast(uint32_t value)
+{
+    return Vec128{value, value, value, value};
+}
+
+ALWAYS_INLINE void QuarterRound(Vec128& a, Vec128& b, Vec128& c, Vec128& d)
+{
+    a += b;
+    d = RotL<16>(d ^ a);
+    c += d;
+    b = RotL<12>(b ^ c);
+    a += b;
+    d = RotL<8>(d ^ a);
+    c += d;
+    b = RotL<7>(b ^ c);
+}
+
+template <typename... States>
+ALWAYS_INLINE void DoubleRound(States&... states)
+{
+    (QuarterRound(states[0], states[4], states[8], states[12]), ...);
+    (QuarterRound(states[1], states[5], states[9], states[13]), ...);
+    (QuarterRound(states[2], states[6], states[10], states[14]), ...);
+    (QuarterRound(states[3], states[7], states[11], states[15]), ...);
+    (QuarterRound(states[0], states[5], states[10], states[15]), ...);
+    (QuarterRound(states[1], states[6], states[11], states[12]), ...);
+    (QuarterRound(states[2], states[7], states[8], states[13]), ...);
+    (QuarterRound(states[3], states[4], states[9], states[14]), ...);
+}
+
+ALWAYS_INLINE Vec128 ReadVec(const std::byte* in)
+{
+    return Vec128{ReadLE32(in), ReadLE32(in + 4), ReadLE32(in + 8), ReadLE32(in + 12)};
+}
+
+ALWAYS_INLINE void WriteVec(std::byte* out, Vec128 vec)
+{
+    WriteLE32(out, vec[0]);
+    WriteLE32(out + 4, vec[1]);
+    WriteLE32(out + 8, vec[2]);
+    WriteLE32(out + 12, vec[3]);
+}
+
+/** Transpose four word vectors and xor them into four output blocks. */
+ALWAYS_INLINE void WriteGroup(const std::byte* in, std::byte* out, Vec128 a, Vec128 b, Vec128 c, Vec128 d)
+{
+    const Vec128 ab0{__builtin_shufflevector(a, b, 0, 4, 1, 5)};
+    const Vec128 ab1{__builtin_shufflevector(a, b, 2, 6, 3, 7)};
+    const Vec128 cd0{__builtin_shufflevector(c, d, 0, 4, 1, 5)};
+    const Vec128 cd1{__builtin_shufflevector(c, d, 2, 6, 3, 7)};
+    WriteVec(out, __builtin_shufflevector(ab0, cd0, 0, 1, 4, 5) ^ ReadVec(in));
+    WriteVec(out + 64, __builtin_shufflevector(ab0, cd0, 2, 3, 6, 7) ^ ReadVec(in + 64));
+    WriteVec(out + 128, __builtin_shufflevector(ab1, cd1, 0, 1, 4, 5) ^ ReadVec(in + 128));
+    WriteVec(out + 192, __builtin_shufflevector(ab1, cd1, 2, 3, 6, 7) ^ ReadVec(in + 192));
+}
+
+template <bool ADD>
+ALWAYS_INLINE void SetStateWord(Vec128& word, Vec128 value)
+{
+    if constexpr (ADD) {
+        word += value;
+    } else {
+        word = value;
+    }
+}
+
+template <bool ADD>
+ALWAYS_INLINE void ApplyInitialState(std::array<Vec128, 16>& x, std::span<const uint32_t, 12> state, uint32_t offset)
+{
+    Vec128 counters{};
+    Vec128 nonces{};
+    for (uint32_t i{0}; i < VECTOR_BATCH_SIZE; ++i) {
+        const uint32_t counter{state[8] + offset + i};
+        counters[i] = counter;
+        nonces[i] = state[9] + (counter < state[8]);
+    }
+    SetStateWord<ADD>(x[0], Broadcast(0x61707865));
+    SetStateWord<ADD>(x[1], Broadcast(0x3320646e));
+    SetStateWord<ADD>(x[2], Broadcast(0x79622d32));
+    SetStateWord<ADD>(x[3], Broadcast(0x6b206574));
+    SetStateWord<ADD>(x[4], Broadcast(state[0]));
+    SetStateWord<ADD>(x[5], Broadcast(state[1]));
+    SetStateWord<ADD>(x[6], Broadcast(state[2]));
+    SetStateWord<ADD>(x[7], Broadcast(state[3]));
+    SetStateWord<ADD>(x[8], Broadcast(state[4]));
+    SetStateWord<ADD>(x[9], Broadcast(state[5]));
+    SetStateWord<ADD>(x[10], Broadcast(state[6]));
+    SetStateWord<ADD>(x[11], Broadcast(state[7]));
+    SetStateWord<ADD>(x[12], counters);
+    SetStateWord<ADD>(x[13], nonces);
+    SetStateWord<ADD>(x[14], Broadcast(state[10]));
+    SetStateWord<ADD>(x[15], Broadcast(state[11]));
+}
+
+ALWAYS_INLINE void WriteBlocks(const std::byte* in, std::byte* out, const std::array<Vec128, 16>& x)
+{
+    WriteGroup(in, out, x[0], x[1], x[2], x[3]);
+    WriteGroup(in + 16, out + 16, x[4], x[5], x[6], x[7]);
+    WriteGroup(in + 32, out + 32, x[8], x[9], x[10], x[11]);
+    WriteGroup(in + 48, out + 48, x[12], x[13], x[14], x[15]);
+}
+
+/** Encrypt one, two, or four independent four-block groups, interleaving their rounds. */
+template <size_t... I>
+ALWAYS_INLINE void CryptBlocks(const std::byte* in, std::byte* out, std::span<const uint32_t, 12> state, std::index_sequence<I...>)
+{
+    static constexpr size_t GROUPS{sizeof...(I)};
+    static_assert(GROUPS == 1 || GROUPS == 2 || GROUPS == 4);
+    std::array<std::array<Vec128, 16>, GROUPS> states;
+    (ApplyInitialState</*add=*/false>(states[I], state, I * VECTOR_BATCH_SIZE), ...);
+    REPEAT10(DoubleRound(states[I]...););
+    (ApplyInitialState</*add=*/true>(states[I], state, I * VECTOR_BATCH_SIZE), ...);
+    (WriteBlocks(in + I * VECTOR_BATCH_SIZE * ChaCha20Aligned::BLOCKLEN, out + I * VECTOR_BATCH_SIZE * ChaCha20Aligned::BLOCKLEN, states[I]), ...);
+}
+
+template <size_t GROUPS>
+ALWAYS_INLINE void ProcessBlocks(size_t& blocks, const std::byte*& in, std::byte*& out, std::span<uint32_t, 12> state)
+{
+    static constexpr uint32_t BLOCKS_PER_CALL{GROUPS * VECTOR_BATCH_SIZE};
+    while (blocks >= BLOCKS_PER_CALL) {
+        const uint32_t old_counter{state[8]};
+        CryptBlocks(in, out, state, std::make_index_sequence<GROUPS>{});
+        state[8] += BLOCKS_PER_CALL;
+        if (state[8] < old_counter) ++state[9];
+        blocks -= BLOCKS_PER_CALL;
+        in += BLOCKS_PER_CALL * ChaCha20Aligned::BLOCKLEN;
+        out += BLOCKS_PER_CALL * ChaCha20Aligned::BLOCKLEN;
+    }
+}
+
+} // namespace
+#endif
 
 void ChaCha20Aligned::SetKey(std::span<const std::byte> key) noexcept
 {
@@ -169,6 +325,19 @@ inline void ChaCha20Aligned::Crypt(std::span<const std::byte> in_bytes, std::spa
     uint32_t j4, j5, j6, j7, j8, j9, j10, j11, j12, j13, j14, j15;
 
     if (!blocks) return;
+
+#ifdef ENABLE_CHACHA20_VECTOR
+    if (blocks >= VECTOR_BATCH_SIZE) {
+        if (blocks < 2 * VECTOR_BATCH_SIZE) {
+            ProcessBlocks<1>(blocks, m, c, input);
+        } else {
+            ProcessBlocks<4>(blocks, m, c, input);
+            ProcessBlocks<2>(blocks, m, c, input);
+            ProcessBlocks<1>(blocks, m, c, input);
+        }
+        if (!blocks) return;
+    }
+#endif
 
     j4 = input[0];
     j5 = input[1];

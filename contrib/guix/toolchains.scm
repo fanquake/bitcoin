@@ -112,8 +112,8 @@ chain for " target " development."))
       (license (package-license xgcc)))))
 
 (define base-gcc
-  (package-with-extra-patches gcc-14
-    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
+  (package-with-extra-patches gcc-16
+    (search-our-patches "gcc-remap-guix-store.patch")))
 
 (define* (make-bitcoin-cross-toolchain target
                                        #:key

@@ -185,12 +185,14 @@ chain for " target " development."))
            #~(append #$flags
             ;; https://gcc.gnu.org/install/configure.html
             (list "--enable-cet=yes"
+                  "--enable-clocale=generic"
                   "--enable-default-ssp=yes"
                   "--enable-default-pie=yes"
                   "--enable-gprofng=no"
                   "--enable-host-bind-now=yes"
                   "--enable-initfini-array=yes"
                   "--enable-standard-branch-protection=yes"
+                  "--with-libstdcxx-zoneinfo=no"
                   "--disable-gcov"
                   "--disable-libgomp"
                   "--disable-libquadmath"

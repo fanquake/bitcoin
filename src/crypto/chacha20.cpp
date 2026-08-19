@@ -160,7 +160,48 @@ ALWAYS_INLINE void CryptBlocks(const std::byte* in, std::byte* out, std::span<co
     WriteBlocks(in, out, x);
 }
 
-ALWAYS_INLINE void ProcessBlocks(size_t& blocks, const std::byte*& in, std::byte*& out, std::span<uint32_t, 12> state)
+ALWAYS_INLINE void DoubleRoundHorizontal(Vec128& a, Vec128& b, Vec128& c, Vec128& d)
+{
+    QuarterRound(a, b, c, d);
+    b = __builtin_shufflevector(b, b, 1, 2, 3, 0);
+    c = __builtin_shufflevector(c, c, 2, 3, 0, 1);
+    d = __builtin_shufflevector(d, d, 3, 0, 1, 2);
+    QuarterRound(a, b, c, d);
+    b = __builtin_shufflevector(b, b, 3, 0, 1, 2);
+    c = __builtin_shufflevector(c, c, 2, 3, 0, 1);
+    d = __builtin_shufflevector(d, d, 1, 2, 3, 0);
+}
+
+/** Encrypt two blocks as two full-width ChaCha states. */
+ALWAYS_INLINE void CryptTwoBlocks(const std::byte* in, std::byte* out, std::span<const uint32_t, 12> state)
+{
+    const Vec128 a_init{0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
+    const Vec128 b_init{state[0], state[1], state[2], state[3]};
+    const Vec128 c_init{state[4], state[5], state[6], state[7]};
+    const uint32_t counter0{state[8]};
+    const uint32_t counter1{counter0 + 1};
+    const Vec128 d0_init{counter0, state[9], state[10], state[11]};
+    const Vec128 d1_init{counter1, state[9] + (counter1 < counter0), state[10], state[11]};
+
+    Vec128 a0{a_init}, b0{b_init}, c0{c_init}, d0{d0_init};
+    Vec128 a1{a_init}, b1{b_init}, c1{c_init}, d1{d1_init};
+
+    REPEAT10(
+        DoubleRoundHorizontal(a0, b0, c0, d0);
+        DoubleRoundHorizontal(a1, b1, c1, d1);
+    );
+
+    WriteVec(out, (a0 + a_init) ^ ReadVec(in));
+    WriteVec(out + 16, (b0 + b_init) ^ ReadVec(in + 16));
+    WriteVec(out + 32, (c0 + c_init) ^ ReadVec(in + 32));
+    WriteVec(out + 48, (d0 + d0_init) ^ ReadVec(in + 48));
+    WriteVec(out + 64, (a1 + a_init) ^ ReadVec(in + 64));
+    WriteVec(out + 80, (b1 + b_init) ^ ReadVec(in + 80));
+    WriteVec(out + 96, (c1 + c_init) ^ ReadVec(in + 96));
+    WriteVec(out + 112, (d1 + d1_init) ^ ReadVec(in + 112));
+}
+
+void ProcessBlocks(size_t& blocks, const std::byte*& in, std::byte*& out, std::span<uint32_t, 12> state)
 {
     while (blocks >= VECTOR_BATCH_SIZE) {
         const uint32_t old_counter{state[8]};
@@ -171,7 +212,17 @@ ALWAYS_INLINE void ProcessBlocks(size_t& blocks, const std::byte*& in, std::byte
         in += VECTOR_BATCH_SIZE * ChaCha20Aligned::BLOCKLEN;
         out += VECTOR_BATCH_SIZE * ChaCha20Aligned::BLOCKLEN;
     }
+    if (blocks >= 2) {
+        const uint32_t old_counter{state[8]};
+        CryptTwoBlocks(in, out, state);
+        state[8] += 2;
+        if (state[8] < old_counter) ++state[9];
+        blocks -= 2;
+        in += 2 * ChaCha20Aligned::BLOCKLEN;
+        out += 2 * ChaCha20Aligned::BLOCKLEN;
+    }
 }
+
 
 } // namespace
 #endif

@@ -20,7 +20,6 @@ class Rpc
 {
 public:
     virtual ~Rpc() = default;
-    virtual UniValue executeRpc(UniValue request, std::string url, std::string user) = 0;
 };
 
 //! Return implementation of Rpc interface.

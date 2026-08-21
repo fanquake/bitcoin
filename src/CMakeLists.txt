@@ -17,7 +17,6 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 # not overridden.
 include(../cmake/crc32c.cmake)
 include(../cmake/leveldb.cmake)
-include(../cmake/minisketch.cmake)
 add_subdirectory(univalue)
 if (ENABLE_IPC AND NOT WITH_EXTERNAL_LIBMULTIPROCESS)
   include(../cmake/libmultiprocess.cmake)
@@ -117,13 +116,11 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   compressor.cpp
   core_io.cpp
   deploymentinfo.cpp
-  external_signer.cpp
   init/common.cpp
   kernel/chainparams.cpp
   key.cpp
   key_io.cpp
   merkleblock.cpp
-  musig.cpp
   net_permissions.cpp
   net_types.cpp
   netaddress.cpp
@@ -134,9 +131,6 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   pow.cpp
   protocol.cpp
   psbt.cpp
-  rpc/rawtransaction_util.cpp
-  rpc/request.cpp
-  rpc/util.cpp
   scheduler.cpp
   script/descriptor.cpp
   script/miniscript.cpp
@@ -193,14 +187,9 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   deploymentstatus.cpp
   flatfile.cpp
   headerssync.cpp
-  httprpc.cpp
-  httpserver.cpp
   i2p.cpp
   index/base.cpp
   index/blockfilterindex.cpp
-  index/coinstatsindex.cpp
-  index/txindex.cpp
-  index/txospenderindex.cpp
   init.cpp
   kernel/chain.cpp
   kernel/checks.cpp
@@ -234,15 +223,12 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   node/miner.cpp
   node/mining_args.cpp
   node/mini_miner.cpp
-  node/minisketchwrapper.cpp
   node/peerman_args.cpp
-  node/psbt.cpp
   node/timeoffsets.cpp
   node/transaction.cpp
   node/txdownloadman_impl.cpp
   node/txorphanage.cpp
   node/txreconciliation.cpp
-  node/utxo_snapshot.cpp
   node/warnings.cpp
   noui.cpp
   policy/ephemeral_policy.cpp
@@ -254,24 +240,8 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   policy/rbf.cpp
   policy/settings.cpp
   policy/truc_policy.cpp
-  private_broadcast.cpp
-  rest.cpp
-  rpc/blockchain.cpp
-  rpc/external_signer.cpp
-  rpc/fees.cpp
-  rpc/mempool.cpp
-  rpc/mining.cpp
-  rpc/net.cpp
-  rpc/node.cpp
-  rpc/output_script.cpp
-  rpc/rawtransaction.cpp
-  rpc/server.cpp
-  rpc/server_util.cpp
-  rpc/signmessage.cpp
-  rpc/txoutproof.cpp
   script/sigcache.cpp
   signet.cpp
-  torcontrol.cpp
   txdb.cpp
   txgraph.cpp
   txmempool.cpp
@@ -279,8 +249,6 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   validation.cpp
   validationinterface.cpp
   versionbits.cpp
-  $<$<TARGET_EXISTS:bitcoin_wallet>:wallet/init.cpp>
-  $<$<NOT:$<TARGET_EXISTS:bitcoin_wallet>>:dummywallet.cpp>
 )
 target_link_libraries(bitcoin_node
   PRIVATE
@@ -289,7 +257,6 @@ target_link_libraries(bitcoin_node
     bitcoin_util
     $<TARGET_NAME_IF_EXISTS:bitcoin_zmq>
     leveldb
-    minisketch
     univalue
     $<TARGET_NAME_IF_EXISTS:Boost::headers>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>

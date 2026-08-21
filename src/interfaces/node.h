@@ -194,12 +194,6 @@ public:
     //! Get dust relay fee.
     virtual CFeeRate getDustRelayFee() = 0;
 
-    //! Execute rpc command.
-    virtual UniValue executeRpc(const std::string& command, const UniValue& params, const std::string& uri) = 0;
-
-    //! List rpc commands.
-    virtual std::vector<std::string> listRpcCommands() = 0;
-
     //! Get unspent output associated with a transaction.
     virtual std::optional<Coin> getUnspentOutput(const COutPoint& output) = 0;
 

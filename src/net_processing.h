@@ -135,21 +135,6 @@ public:
     /** Get peer manager info. */
     virtual PeerManagerInfo GetInfo() const = 0;
 
-    /** Get info about transactions currently being privately broadcast. */
-    virtual std::vector<PrivateBroadcast::TxBroadcastInfo> GetPrivateBroadcastInfo() const = 0;
-
-    /**
-     * Abort private broadcast attempts for transactions currently being privately broadcast.
-     *
-     * @param[in] id A transaction identifier. It will be matched against both txid and wtxid for
-     *               all transactions in the private broadcast queue.
-     *
-     * @return Transactions removed from the private broadcast queue. If the provided id matches a
-     *         txid that corresponds to multiple transactions with different wtxids, multiple
-     *         transactions may be returned.
-     */
-    virtual std::vector<CTransactionRef> AbortPrivateBroadcast(const uint256& id) = 0;
-
     /**
      * Initiate a transaction broadcast to eligible peers.
      * Queue the witness transaction id to the inbound and outbound inv backlogs.
@@ -157,14 +142,6 @@ public:
      * the transaction is in the mempool, an `INV` about it may be sent to the peer.
      */
     virtual void InitiateTxBroadcastToAll(const Wtxid& wtxid) = 0;
-
-    /**
-     * Initiate a private transaction broadcast. This is done
-     * asynchronously via short-lived connections to peers on privacy networks.
-     * @retval node::TransactionError::OK The transaction is scheduled for private broadcast (or was already scheduled).
-     * @retval node::TransactionError::PRIVATE_BROADCAST_FULL Rejected because the private broadcast queue is full.
-     */
-    [[nodiscard]] virtual node::TransactionError InitiateTxBroadcastPrivate(const CTransactionRef& tx) = 0;
 
     /** Send ping message to all peers */
     virtual void SendPings() = 0;

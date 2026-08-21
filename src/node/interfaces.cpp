@@ -358,16 +358,6 @@ public:
         if (!m_context->mempool) return CFeeRate{DUST_RELAY_TX_FEE};
         return m_context->mempool->m_opts.dust_relay_feerate;
     }
-    UniValue executeRpc(const std::string& command, const UniValue& params, const std::string& uri) override
-    {
-        JSONRPCRequest req;
-        req.context = m_context;
-        req.params = params;
-        req.strMethod = command;
-        req.URI = uri;
-        return ::tableRPC.execute(req);
-    }
-    std::vector<std::string> listRpcCommands() override { return ::tableRPC.listCommands(); }
     std::optional<Coin> getUnspentOutput(const COutPoint& output) override
     {
         LOCK(::cs_main);
@@ -521,28 +511,6 @@ public:
 class RpcHandlerImpl : public Handler
 {
 public:
-    explicit RpcHandlerImpl(const CRPCCommand& command) : m_command(command), m_wrapped_command(&command)
-    {
-        m_command.actor = [this](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
-            if (!m_wrapped_command) return false;
-            try {
-                return m_wrapped_command->actor(request, result, last_handler);
-            } catch (const UniValue& e) {
-                // If this is not the last handler and a wallet not found
-                // exception was thrown, return false so the next handler can
-                // try to handle the request. Otherwise, reraise the exception.
-                if (!last_handler) {
-                    const UniValue& code = e["code"];
-                    if (code.isNum() && code.getInt<int>() == RPC_WALLET_NOT_FOUND) {
-                        return false;
-                    }
-                }
-                throw;
-            }
-        };
-        ::tableRPC.appendCommand(m_command.name, &m_command);
-    }
-
     void disconnect() final
     {
         if (m_wrapped_command) {
@@ -773,11 +741,6 @@ public:
         LOCK(::cs_main);
         return chainman().m_blockman.m_have_pruned;
     }
-    std::optional<int> getPruneHeight() override
-    {
-        LOCK(chainman().GetMutex());
-        return GetPruneHeight(chainman().m_blockman, chainman().ActiveChain());
-    }
     bool isReadyToBroadcast() override { return !chainman().m_blockman.LoadingBlocks() && !isInitialBlockDownload(); }
     bool isInitialBlockDownload() override
     {
@@ -804,11 +767,6 @@ public:
     {
         validation_signals().SyncWithValidationInterfaceQueue();
     }
-    std::unique_ptr<Handler> handleRpc(const CRPCCommand& command) override
-    {
-        return std::make_unique<RpcHandlerImpl>(command);
-    }
-    bool rpcEnableDeprecated(const std::string& method) override { return IsDeprecatedRPCEnabled(method); }
     common::SettingsValue getSetting(const std::string& name) override
     {
         return args().GetSetting(name);
@@ -863,11 +821,6 @@ public:
         for (const CTxMemPoolEntry& entry : m_node.mempool->entryAll()) {
             notifications.transactionAddedToMempool(entry.GetSharedTx());
         }
-    }
-    bool hasAssumedValidChain() override
-    {
-        LOCK(::cs_main);
-        return bool{chainman().CurrentChainstate().m_from_snapshot_blockhash};
     }
 
     NodeContext* context() override { return &m_node; }
@@ -1067,16 +1020,6 @@ class RpcImpl : public Rpc
 {
 public:
     explicit RpcImpl(NodeContext& node) : m_node(node) {}
-
-    UniValue executeRpc(UniValue request, std::string uri, std::string user) override
-    {
-        JSONRPCRequest req;
-        req.context = &m_node;
-        req.URI = std::move(uri);
-        req.authUser = std::move(user);
-        HTTPStatusCode status;
-        return ExecuteHTTPRPC(request, req, status);
-    }
 
     NodeContext& m_node;
 };

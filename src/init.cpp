@@ -172,7 +172,6 @@ using util::TrimStringView;
 
 static constexpr bool DEFAULT_PROXYRANDOMIZE{true};
 static constexpr bool DEFAULT_REST_ENABLE{false};
-static constexpr bool DEFAULT_I2P_ACCEPT_INCOMING{true};
 static constexpr bool DEFAULT_STOPAFTERBLOCKIMPORT{false};
 
 #ifdef WIN32
@@ -273,33 +272,11 @@ bool ShutdownRequested(node::NodeContext& node)
     return bool{*Assert(node.shutdown_signal)};
 }
 
-#if HAVE_SYSTEM
-static void ShutdownNotify(const ArgsManager& args)
-{
-    std::vector<std::thread> threads;
-    for (const auto& cmd : args.GetArgs("-shutdownnotify")) {
-        threads.emplace_back(runCommand, cmd);
-    }
-    for (auto& t : threads) {
-        t.join();
-    }
-}
-#endif
-
 void Interrupt(NodeContext& node)
 {
-#if HAVE_SYSTEM
-    ShutdownNotify(*node.args);
-#endif
     // Wake any threads that may be waiting for the tip to change.
     if (node.notifications) WITH_LOCK(node.notifications->m_tip_block_mutex, node.notifications->m_tip_block_cv.notify_all());
-    InterruptHTTPServer();
-    InterruptHTTPRPC();
-    InterruptRPC();
-    InterruptREST();
-    if (node.tor_controller) {
-        node.tor_controller->Interrupt();
-    }
+
     InterruptMapPort();
     if (node.connman)
         node.connman->Interrupt();
@@ -323,10 +300,6 @@ void Shutdown(NodeContext& node)
     util::ThreadRename("shutoff");
     if (node.mempool) node.mempool->AddTransactionsUpdated(1);
 
-    StopHTTPRPC();
-    StopREST();
-    StopRPC();
-    StopHTTPServer();
     for (auto& client : node.chain_clients) {
         try {
             client->stop();
@@ -341,11 +314,6 @@ void Shutdown(NodeContext& node)
     // using the other before destroying them.
     if (node.peerman && node.validation_signals) node.validation_signals->UnregisterValidationInterface(node.peerman.get());
     if (node.connman) node.connman->Stop();
-
-    if (node.tor_controller) {
-        node.tor_controller->Join();
-        node.tor_controller.reset();
-    }
 
     if (node.background_init_thread.joinable()) node.background_init_thread.join();
     // After everything has been shut down, but before things get flushed, stop the
@@ -389,10 +357,7 @@ void Shutdown(NodeContext& node)
     if (node.validation_signals) node.validation_signals->FlushBackgroundCallbacks();
 
     // Stop and delete all indexes only after flushing background callbacks.
-    for (auto* index : node.indexes) index->Stop();
-    if (g_txindex) g_txindex.reset();
-    if (g_txospenderindex) g_txospenderindex.reset();
-    if (g_coin_stats_index) g_coin_stats_index.reset();
+    // for (auto* index : node.indexes) index->Stop();
     DestroyAllBlockFilterIndexes();
     node.indexes.clear(); // all instances are nullptr now
 
@@ -411,19 +376,6 @@ void Shutdown(NodeContext& node)
             }
         }
     }
-
-    // If any -ipcbind clients are still connected, disconnect them now so they
-    // do not block shutdown.
-    if (interfaces::Ipc* ipc = node.init->ipc()) {
-        ipc->disconnectIncoming();
-    }
-
-#ifdef ENABLE_ZMQ
-    if (g_zmq_notification_interface) {
-        if (node.validation_signals) node.validation_signals->UnregisterValidationInterface(g_zmq_notification_interface.get());
-        g_zmq_notification_interface.reset();
-    }
-#endif
 
     node.chain_clients.clear();
     if (node.validation_signals) {
@@ -507,9 +459,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
         "-choosedatadir", "-lang=<lang>", "-min", "-resetguisettings", "-splash", "-uiplatform"};
 
     argsman.AddArg("-version", "Print version and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-#if HAVE_SYSTEM
-    argsman.AddArg("-alertnotify=<cmd>", "Execute command when an alert is raised (%s in cmd is replaced by message)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-#endif
     argsman.AddArg("-assumevalid=<hex>", strprintf("If this block is in the chain assume that it and its ancestors are valid and potentially skip their script verification (0 to verify all, default: %s, testnet3: %s, testnet4: %s, signet: %s)", defaultChainParams->GetConsensus().defaultAssumeValid.GetHex(), testnetChainParams->GetConsensus().defaultAssumeValid.GetHex(), testnet4ChainParams->GetConsensus().defaultAssumeValid.GetHex(), signetChainParams->GetConsensus().defaultAssumeValid.GetHex()), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksdir=<dir>", "Specify directory to hold blocks subdirectory for *.dat files (default: <datadir>)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksxor",
@@ -520,12 +469,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
                              kernel::DEFAULT_XOR_BLOCKSDIR),
                    ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-fastprune", "Use smaller block files and lower minimum prune height for testing purposes", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
-#if HAVE_SYSTEM
-    argsman.AddArg("-blocknotify=<cmd>", "Execute command when the best block changes (%s in cmd is replaced by block hash). Not run for blocks connected during initial block download or reindexing.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-#endif
     argsman.AddArg("-blockreconstructionextratxn=<n>", strprintf("Extra transactions to keep in memory for compact block reconstructions (default: %u)", DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksonly", strprintf("Whether to reject transactions from network peers. Disables automatic broadcast and rebroadcast of transactions, unless the source peer has the 'forcerelay' permission. RPC transactions are not affected. (default: %u)", DEFAULT_BLOCKSONLY), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-coinstatsindex", strprintf("Maintain coinstats index used by the gettxoutsetinfo RPC (default: %u)", DEFAULT_COINSTATSINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-conf=<file>", strprintf("Specify path to read-only configuration file. Relative paths will be prefixed by datadir location (only useable from command line, not configuration file) (default: %s)", BITCOIN_CONF_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-datadir=<dir>", "Specify data directory", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
     argsman.AddArg("-dbbatchsize", strprintf("Maximum database write batch size in bytes (default: %u)", DEFAULT_DB_CACHE_BATCH), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::OPTIONS);
@@ -552,16 +497,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-reindex", "If enabled, wipe chain state and block index, and rebuild them from blk*.dat files on disk. Also wipe and rebuild other optional indexes that are active. If an assumeutxo snapshot was loaded, its chainstate will be wiped as well. The snapshot can then be reloaded via RPC.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-reindex-chainstate", "If enabled, wipe chain state, and rebuild it from blk*.dat files on disk. If an assumeutxo snapshot was loaded, its chainstate will be wiped as well. The snapshot can then be reloaded via RPC.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-settings=<file>", strprintf("Specify path to dynamic settings data file. Can be disabled with -nosettings. File is written at runtime and not meant to be edited by users (use %s instead for custom settings). Relative paths will be prefixed by datadir location. (default: %s)", BITCOIN_CONF_FILENAME, BITCOIN_SETTINGS_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-#if HAVE_SYSTEM
-    argsman.AddArg("-startupnotify=<cmd>", "Execute command on startup.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-shutdownnotify=<cmd>", "Execute command immediately before beginning shutdown. The need for shutdown may be urgent, so be careful not to delay it long (if the command doesn't require interaction with the server, consider having it fork into the background).", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-#endif
-    argsman.AddArg("-txindex", strprintf("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)", DEFAULT_TXINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-txospenderindex", strprintf("Maintain a transaction output spender index, used by the gettxspendingprevout rpc call (default: %u)", DEFAULT_TXOSPENDERINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-blockfilterindex=<type>",
-                 strprintf("Maintain an index of compact filters by block (default: %s, values: %s).", DEFAULT_BLOCKFILTERINDEX, ListBlockFilterTypes()) +
-                 " If <type> is not supplied or if <type> = 1, indexes for all known types are enabled.",
-                 ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 
     argsman.AddArg("-addnode=<ip>", strprintf("Add a node to connect to and attempt to keep the connection open (see the addnode RPC help for more info). This option can be specified multiple times to add multiple nodes; connections are limited to %u at a time and are counted separately from the -maxconnections limit.", MAX_ADDNODE_CONNECTIONS), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     argsman.AddArg("-asmap=<file>", strprintf("Specify asn mapping used for bucketing of the peers. Relative paths will be prefixed by the net-specific datadir location.%s",
@@ -573,7 +508,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
                 ), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-bantime=<n>", strprintf("Default duration (in seconds) of manually configured bans (default: %u)", DEFAULT_MISBEHAVING_BANTIME), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-bind=<addr>[:<port>][=onion]", strprintf("Bind to given address and always listen on it (default: 0.0.0.0). Use [host]:port notation for IPv6. Append =onion to tag any incoming connections to that address and port as incoming Tor connections (default: 127.0.0.1:%u=onion, testnet3: 127.0.0.1:%u=onion, testnet4: 127.0.0.1:%u=onion, signet: 127.0.0.1:%u=onion, regtest: 127.0.0.1:%u=onion)", defaultChainParams->GetDefaultPort() + 1, testnetChainParams->GetDefaultPort() + 1, testnet4ChainParams->GetDefaultPort() + 1, signetChainParams->GetDefaultPort() + 1, regtestChainParams->GetDefaultPort() + 1), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
-    argsman.AddArg("-cjdnsreachable", "If set, then this host is configured for CJDNS (connecting to fc00::/8 addresses would lead us to the CJDNS network, see doc/cjdns.md) (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-connect=<ip>", "Connect only to the specified node; -noconnect disables automatic connections (the rules for this peer are the same as for -addnode). This option can be specified multiple times to connect to multiple nodes.", ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
     argsman.AddArg("-discover", "Discover own IP addresses (default: 1 when listening and no -externalip or -proxy)", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-dns", strprintf("Allow DNS lookups for -addnode, -seednode and -connect (default: %u)", DEFAULT_NAME_LOOKUP), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
@@ -584,9 +518,8 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-listen", strprintf("Accept connections from outside (default: %u if no -proxy, -connect or -maxconnections=0)", DEFAULT_LISTEN), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-listenonion", strprintf("Automatically create Tor onion service (default: %d)", DEFAULT_LISTEN_ONION), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-maxconnections=<n>", strprintf("Maintain at most <n> automatic connections to peers (default: %u). %u slots of these are reserved for outgoing connections. See -inboundrelaypercent for more information about limits applied to transaction relay inbound peers. "
-                                                    "This limit does not apply to connections manually added via -addnode or the addnode RPC, which have a separate limit of %u. "
-                                                    "It does not apply to short-lived private broadcast connections either, which have a separate limit of %u.",
-                                                    DEFAULT_MAX_PEER_CONNECTIONS, MAX_OUTBOUND_FULL_RELAY_CONNECTIONS + MAX_BLOCK_RELAY_ONLY_CONNECTIONS + MAX_FEELER_CONNECTIONS, MAX_ADDNODE_CONNECTIONS, MAX_PRIVATE_BROADCAST_CONNECTIONS),
+                                                    "This limit does not apply to connections manually added via -addnode or the addnode RPC, which have a separate limit of %u. ",
+                                                    DEFAULT_MAX_PEER_CONNECTIONS, MAX_OUTBOUND_FULL_RELAY_CONNECTIONS + MAX_BLOCK_RELAY_ONLY_CONNECTIONS + MAX_FEELER_CONNECTIONS, MAX_ADDNODE_CONNECTIONS),
                    ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-inboundrelaypercent=<n>", strprintf("Permit a maximum percent of inbound connections to relay transactions, to limit memory utilization (0 to 100, default: %u).", DEFAULT_FULL_RELAY_INBOUND_PCT), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-maxreceivebuffer=<n>", strprintf("Maximum per-connection receive buffer, <n>*1000 bytes (default: %u)", DEFAULT_MAXRECEIVEBUFFER), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
@@ -597,8 +530,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
 #else
     argsman.AddArg("-onion=<ip:port>", "Use separate SOCKS5 proxy to reach peers via Tor onion services, set -noonion to disable (default: -proxy)", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
 #endif
-    argsman.AddArg("-i2psam=<ip:port>", "I2P SAM proxy to reach I2P peers and accept I2P connections", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
-    argsman.AddArg("-i2pacceptincoming", strprintf("Whether to accept inbound I2P connections (default: %i). Ignored if -i2psam is not set. Listening for inbound I2P connections is done through the SAM proxy, not by binding to a local address and port.", DEFAULT_I2P_ACCEPT_INCOMING), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-onlynet=<net>", "Make automatic outbound connections only to network <net> (" + Join(GetNetworkNames(), ", ") + "). Inbound and manual connections are not affected by this option. It can be specified multiple times to allow multiple networks.", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-v2transport", strprintf("Support v2 transport (default: %u)", DEFAULT_V2_TRANSPORT), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-peerbloomfilters", strprintf("Support filtering of blocks and transaction with bloom filters (default: %u)", DEFAULT_PEERBLOOMFILTERS), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
@@ -630,8 +561,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-networkactive", "Enable all P2P network activity (default: 1). Can be changed by the setnetworkactive RPC command", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-timeout=<n>", strprintf("Specify socket connection timeout in milliseconds. If an initial attempt to connect is unsuccessful after this amount of time, drop it (minimum: 1, default: %d)", DEFAULT_CONNECT_TIMEOUT), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-peertimeout=<n>", strprintf("Specify a p2p connection timeout delay in seconds. After connecting to a peer, wait this amount of time before considering disconnection based on inactivity (minimum: 1, default: %d)", DEFAULT_PEER_CONNECT_TIMEOUT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CONNECTION);
-    argsman.AddArg("-torcontrol=<ip>:<port>", strprintf("Tor control host and port to use if onion listening enabled (default: %s). If no port is specified, the default port of %i will be used.", DEFAULT_TOR_CONTROL, DEFAULT_TOR_CONTROL_PORT), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
-    argsman.AddArg("-torpassword=<pass>", "Tor control port password (default: empty)", ArgsManager::ALLOW_ANY | ArgsManager::SENSITIVE, OptionsCategory::CONNECTION);
     argsman.AddArg("-natpmp", strprintf("Use PCP or NAT-PMP to map the listening port (default: %u)", DEFAULT_NATPMP), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
     argsman.AddArg("-whitebind=<[permissions@]addr>", "Bind to the given address and add permission flags to the peers connecting to it. "
         "Use [host]:port notation for IPv6. Allowed permissions: " + Join(NET_PERMISSIONS_DOC, ", ") + ". "
@@ -642,32 +571,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
         "-whitebind. "
         "Additional flags \"in\" and \"out\" control whether permissions apply to incoming connections and/or manual (default: incoming only). "
         "Can be specified multiple times.", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
-
-    g_wallet_init_interface.AddWalletOptions(argsman);
-
-#ifdef ENABLE_ZMQ
-    argsman.AddArg("-zmqpubhashblock=<address>", "Enable publish hash block in <address>", ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubhashtx=<address>", "Enable publish hash transaction in <address>", ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubrawblock=<address>", "Enable publish raw block in <address>", ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubrawtx=<address>", "Enable publish raw transaction in <address>", ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubsequence=<address>", "Enable publish hash block and tx sequence in <address>", ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubhashblockhwm=<n>", strprintf("Set publish hash block outbound message high water mark (default: %d)", CZMQAbstractNotifier::DEFAULT_ZMQ_SNDHWM), ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubhashtxhwm=<n>", strprintf("Set publish hash transaction outbound message high water mark (default: %d)", CZMQAbstractNotifier::DEFAULT_ZMQ_SNDHWM), ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubrawblockhwm=<n>", strprintf("Set publish raw block outbound message high water mark (default: %d)", CZMQAbstractNotifier::DEFAULT_ZMQ_SNDHWM), ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubrawtxhwm=<n>", strprintf("Set publish raw transaction outbound message high water mark (default: %d)", CZMQAbstractNotifier::DEFAULT_ZMQ_SNDHWM), ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-    argsman.AddArg("-zmqpubsequencehwm=<n>", strprintf("Set publish hash sequence message high water mark (default: %d)", CZMQAbstractNotifier::DEFAULT_ZMQ_SNDHWM), ArgsManager::ALLOW_ANY, OptionsCategory::ZMQ);
-#else
-    hidden_args.emplace_back("-zmqpubhashblock=<address>");
-    hidden_args.emplace_back("-zmqpubhashtx=<address>");
-    hidden_args.emplace_back("-zmqpubrawblock=<address>");
-    hidden_args.emplace_back("-zmqpubrawtx=<address>");
-    hidden_args.emplace_back("-zmqpubsequence=<n>");
-    hidden_args.emplace_back("-zmqpubhashblockhwm=<n>");
-    hidden_args.emplace_back("-zmqpubhashtxhwm=<n>");
-    hidden_args.emplace_back("-zmqpubrawblockhwm=<n>");
-    hidden_args.emplace_back("-zmqpubrawtxhwm=<n>");
-    hidden_args.emplace_back("-zmqpubsequencehwm=<n>");
-#endif
 
     argsman.AddArg("-checkblocks=<n>", strprintf("How many blocks to check at startup (default: %u, 0 = all)", DEFAULT_CHECKBLOCKS), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-checklevel=<n>", strprintf("How thorough the block verification of -checkblocks is: %s (0-4, default: %u)", Join(CHECKLEVEL_DOC, ", "), DEFAULT_CHECKLEVEL), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
@@ -690,7 +593,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-limitclustercount=<n>", strprintf("Do not accept transactions into mempool which are directly or indirectly connected to <n> or more other unconfirmed transactions (default: %u, maximum: %u)", DEFAULT_CLUSTER_LIMIT, MAX_CLUSTER_COUNT_LIMIT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-limitclustersize=<n>", strprintf("Do not accept transactions whose virtual size with all in-mempool connected transactions exceeds <n> kilobytes (default: %u)", DEFAULT_CLUSTER_SIZE_LIMIT_KVB), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-capturemessages", "Capture all P2P messages to disk", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
-    argsman.AddArg("-mocktime=<n>", "Replace actual time with " + UNIX_EPOCH_TIME + " (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-maxsigcachesize=<n>", strprintf("Limit sum of signature cache and script execution cache sizes to <n> MiB (default: %u)", DEFAULT_VALIDATION_CACHE_BYTES >> 20), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-maxtipage=<n>",
                    strprintf("Maximum tip age in seconds to consider node in initial block download (default: %u)",
@@ -720,15 +622,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
                    strprintf("Set the maximum ongoing rate for sending transactions to (inbound) peers (default: %u tx/s)",
                              DEFAULT_TX_SEND_RATE),
                    ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::NODE_RELAY);
-    argsman.AddArg("-privatebroadcast",
-                   strprintf(
-                       "Broadcast transactions submitted via sendrawtransaction RPC using short-lived "
-                       "connections through the Tor or I2P networks, without putting them in the mempool first. "
-                       "Transactions submitted through the wallet are not affected by this option "
-                       "(default: %u)",
-                   DEFAULT_PRIVATE_BROADCAST),
-                   ArgsManager::ALLOW_ANY,
-                   OptionsCategory::NODE_RELAY);
     argsman.AddArg("-whitelistforcerelay", strprintf("Add 'forcerelay' permission to whitelisted peers with default permissions. This will relay transactions even if the transactions were already in the mempool. (default: %d)", DEFAULT_WHITELISTFORCERELAY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
     argsman.AddArg("-whitelistrelay", strprintf("Add 'relay' permission to whitelisted peers with default permissions. This will accept relayed transactions even when not relaying transactions (default: %d)", DEFAULT_WHITELISTRELAY), ArgsManager::ALLOW_ANY, OptionsCategory::NODE_RELAY);
 
@@ -769,32 +662,6 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
 
     // Add the hidden options
     argsman.AddHiddenArgs(hidden_args);
-}
-
-#if HAVE_SYSTEM
-static void StartupNotify(const ArgsManager& args)
-{
-    std::string cmd = args.GetArg("-startupnotify", "");
-    if (!cmd.empty()) {
-        std::thread t(runCommand, cmd);
-        t.detach(); // thread runs free
-    }
-}
-#endif
-
-static bool AppInitServers(NodeContext& node)
-{
-    const ArgsManager& args = *Assert(node.args);
-    if (!InitHTTPServer()) {
-        return false;
-    }
-    StartRPC();
-    node.rpc_interruption_point = RpcInterruptionPoint;
-    if (!StartHTTPRPC(&node))
-        return false;
-    if (args.GetBoolArg("-rest", DEFAULT_REST_ENABLE)) StartREST(&node);
-    StartHTTPServer();
-    return true;
 }
 
 // Parameter interaction based on rules
@@ -1006,44 +873,8 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         return InitError(strprintf(_("Specified blocks directory \"%s\" does not exist."), args.GetArg("-blocksdir", "")));
     }
 
-    // parse and validate enabled filter types
-    std::string blockfilterindex_value = args.GetArg("-blockfilterindex", DEFAULT_BLOCKFILTERINDEX);
-    if (blockfilterindex_value == "" || blockfilterindex_value == "1") {
-        g_enabled_filter_types = AllBlockFilterTypes();
-    } else if (blockfilterindex_value != "0") {
-        const std::vector<std::string> names = args.GetArgs("-blockfilterindex");
-        for (const auto& name : names) {
-            BlockFilterType filter_type;
-            if (!BlockFilterTypeByName(name, filter_type)) {
-                return InitError(strprintf(_("Unknown -blockfilterindex value %s."), name));
-            }
-            g_enabled_filter_types.insert(filter_type);
-        }
-    }
 
-    // Signal NODE_P2P_V2 if BIP324 v2 transport is enabled.
-    if (args.GetBoolArg("-v2transport", DEFAULT_V2_TRANSPORT)) {
-        g_local_services = ServiceFlags(g_local_services | NODE_P2P_V2);
-    }
-
-    // Signal NODE_COMPACT_FILTERS if peerblockfilters and basic filters index are both enabled.
-    if (args.GetBoolArg("-peerblockfilters", DEFAULT_PEERBLOCKFILTERS)) {
-        if (!g_enabled_filter_types.contains(BlockFilterType::BASIC)) {
-            return InitError(_("Cannot set -peerblockfilters without -blockfilterindex."));
-        }
-
-        g_local_services = ServiceFlags(g_local_services | NODE_COMPACT_FILTERS);
-    }
-
-    if (args.GetIntArg("-prune", 0)) {
-        if (args.GetBoolArg("-txindex", DEFAULT_TXINDEX))
-            return InitError(_("Prune mode is incompatible with -txindex."));
-        if (args.GetBoolArg("-txospenderindex", DEFAULT_TXOSPENDERINDEX))
-            return InitError(_("Prune mode is incompatible with -txospenderindex."));
-        if (args.GetBoolArg("-reindex-chainstate", false)) {
-            return InitError(_("Prune mode is incompatible with -reindex-chainstate. Use full -reindex instead."));
-        }
-    }
+    g_local_services = ServiceFlags(g_local_services | NODE_P2P_V2);
 
     // If -forcednsseed is set to true, ensure -dnsseed has not been set to false
     if (args.GetBoolArg("-forcednsseed", DEFAULT_FORCEDNSSEED) && !args.GetBoolArg("-dnsseed", DEFAULT_DNSSEED)){
@@ -1071,9 +902,6 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     if (user_p2p_max_connections < 0) {
         return InitError(Untranslated("-maxconnections must be greater or equal than zero"));
     }
-    const size_t max_private{args.GetBoolArg("-privatebroadcast", DEFAULT_PRIVATE_BROADCAST)
-                             ? MAX_PRIVATE_BROADCAST_CONNECTIONS
-                             : 0};
 
     // HTTP server listen sockets: by default two (IPv4 and IPv6 loopback), or one per -rpcbind entry
     int num_rpc_bind = std::max(args.GetArgs("-rpcbind").size(), size_t(2));
@@ -1095,8 +923,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
                               num_p2p_bind +
                               num_rpc_bind +
                               user_rpc_max_connections +
-                              user_p2p_max_connections +
-                              static_cast<int64_t>(max_private);
+                              user_p2p_max_connections;
     if (total_fds > std::numeric_limits<int>::max()) {
         return InitError(Untranslated("Too many file descriptors requested. Try lower values for -rpcmaxconnections "
                                       "or -maxconnections, or fewer settings of "
@@ -1156,8 +983,6 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     }
 
     nBytesPerSigOp = args.GetIntArg("-bytespersigop", nBytesPerSigOp);
-
-    if (!g_wallet_init_interface.ParameterInteraction()) return false;
 
     // Option to startup with mocktime set (used for regression testing):
     if (const auto mocktime{args.GetIntArg("-mocktime")}) {
@@ -1333,40 +1158,6 @@ bool CheckHostPortOptions(const ArgsManager& args) {
     }
 
     return true;
-}
-
-/**
- * @brief Checks for duplicate bindings across all binding configurations.
- *
- * @param[in] conn_options Connection options containing the binding vectors to check
- * @return std::optional<CService> containing the first duplicate found, or std::nullopt if no duplicates
- */
-static std::optional<CService> CheckBindingConflicts(const CConnman::Options& conn_options)
-{
-    std::set<CService> seen;
-
-    // Check all whitelisted bindings
-    for (const auto& wb : conn_options.vWhiteBinds) {
-        if (!seen.insert(wb.m_service).second) {
-            return wb.m_service;
-        }
-    }
-
-    // Check regular bindings
-    for (const auto& bind : conn_options.vBinds) {
-        if (!seen.insert(bind).second) {
-            return bind;
-        }
-    }
-
-    // Check onion bindings
-    for (const auto& onion_bind : conn_options.onion_binds) {
-        if (!seen.insert(onion_bind).second) {
-            return onion_bind;
-        }
-    }
-
-    return std::nullopt;
 }
 
 // A GUI user may opt to retry once with do_reindex set if there is a failure during chainstate initialization.
@@ -1568,35 +1359,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     node.notifications = std::make_unique<KernelNotifications>(Assert(node.shutdown_request), node.exit_status, *Assert(node.warnings));
     ReadNotificationArgs(args, *node.notifications);
 
-    // Create client interfaces for wallets that are supposed to be loaded
-    // according to -wallet and -disablewallet options. This only constructs
-    // the interfaces, it doesn't load wallet data. Wallets actually get loaded
-    // when load() and start() interface methods are called below.
-    g_wallet_init_interface.Construct(node);
-    uiInterface.InitWallet();
-
-    if (interfaces::Ipc* ipc = node.init->ipc()) {
-        for (std::string address : gArgs.GetArgs("-ipcbind")) {
-            try {
-                ipc->listenAddress(address);
-            } catch (const std::exception& e) {
-                return InitError(Untranslated(strprintf("Unable to bind to IPC address '%s'. %s", address, e.what())));
-            }
-            LogInfo("Listening for IPC requests on address %s", address);
-        }
-    }
-
-    /* Register RPC commands regardless of -server setting so they will be
-     * available in the GUI RPC console even if external calls are disabled.
-     */
-    RegisterAllCoreRPCCommands(tableRPC);
-    for (const auto& client : node.chain_clients) {
-        client->registerRpcs();
-    }
-#ifdef ENABLE_ZMQ
-    RegisterZMQRPCCommands(tableRPC);
-#endif
-
     // Check port numbers
     if (!CheckHostPortOptions(args)) return false;
 
@@ -1625,17 +1387,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // 1. -cjdnsreachable is given and
     // 2.1. -onlynet is not given or
     // 2.2. -onlynet=cjdns is given
-
-    /* Start the RPC server already.  It will be started in "warmup" mode
-     * and not really process calls already (but it will signify connections
-     * that the server is there and will be ready later).  Warmup mode will
-     * be disabled when initialisation is finished.
-     */
-    if (args.GetBoolArg("-server", false)) {
-        uiInterface.InitMessage.connect(SetRPCWarmupStatus);
-        if (!AppInitServers(node))
-            return InitError(_("Unable to start HTTP server. See debug log for details."));
-    }
 
     // ********************************************************* Step 5: verify wallet database integrity
     for (const auto& client : node.chain_clients) {
@@ -1892,12 +1643,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     LogInfo("Cache configuration:");
     LogInfo("* Using %.1f MiB for block index database", kernel_cache_sizes.block_tree_db / double(1_MiB));
-    if (args.GetBoolArg("-txindex", DEFAULT_TXINDEX)) {
-        LogInfo("* Using %.1f MiB for transaction index database", index_cache_sizes.tx_index / double(1_MiB));
-    }
-    if (args.GetBoolArg("-txospenderindex", DEFAULT_TXOSPENDERINDEX)) {
-        LogInfo("* Using %.1f MiB for transaction output spender index database", index_cache_sizes.txospender_index / double(1_MiB));
-    }
     for (BlockFilterType filter_type : g_enabled_filter_types) {
         LogInfo("* Using %.1f MiB for %s block filter index database",
                   index_cache_sizes.filter_index / double(1_MiB), BlockFilterTypeName(filter_type));
@@ -1976,31 +1721,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                                      *node.mempool, *node.warnings,
                                      peerman_opts);
     validation_signals.RegisterValidationInterface(node.peerman.get());
-
-    // ********************************************************* Step 8: start indexers
-
-    if (args.GetBoolArg("-txindex", DEFAULT_TXINDEX)) {
-        g_txindex = std::make_unique<TxIndex>(interfaces::MakeChain(node), index_cache_sizes.tx_index, false, do_reindex);
-        node.indexes.emplace_back(g_txindex.get());
-    }
-
-    if (args.GetBoolArg("-txospenderindex", DEFAULT_TXOSPENDERINDEX)) {
-        g_txospenderindex = std::make_unique<TxoSpenderIndex>(interfaces::MakeChain(node), index_cache_sizes.txospender_index, false, do_reindex);
-        node.indexes.emplace_back(g_txospenderindex.get());
-    }
-
-    for (const auto& filter_type : g_enabled_filter_types) {
-        InitBlockFilterIndex([&]{ return interfaces::MakeChain(node); }, filter_type, index_cache_sizes.filter_index, false, do_reindex);
-        node.indexes.emplace_back(GetBlockFilterIndex(filter_type));
-    }
-
-    if (args.GetBoolArg("-coinstatsindex", DEFAULT_COINSTATSINDEX)) {
-        g_coin_stats_index = std::make_unique<CoinStatsIndex>(interfaces::MakeChain(node), /*cache_size=*/0, false, do_reindex);
-        node.indexes.emplace_back(g_coin_stats_index.get());
-    }
-
-    // Init indexes
-    for (auto index : node.indexes) if (!index->Init()) return false;
 
     // ********************************************************* Step 9: load wallet
     for (const auto& client : node.chain_clients) {
@@ -2081,19 +1801,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     check_and_warn_fs(args.GetDataDirNet(), "data directory");
     check_and_warn_fs(args.GetBlocksDirPath(), "blocks directory");
-#endif
-
-#if HAVE_SYSTEM
-    const std::string block_notify = args.GetArg("-blocknotify", "");
-    if (!block_notify.empty()) {
-        uiInterface.NotifyBlockTip.connect([block_notify](SynchronizationState sync_state, const CBlockIndex& block, double /* verification_progress */) {
-            if (sync_state != SynchronizationState::POST_INIT) return;
-            std::string command = block_notify;
-            ReplaceAll(command, "%s", block.GetBlockHash().GetHex());
-            std::thread t(runCommand, command);
-            t.detach(); // thread runs free
-        });
-    }
 #endif
 
     std::vector<fs::path> vImportFiles;
@@ -2270,18 +1977,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         onion_service_target = connOptions.onion_binds.front();
     } else if (!connOptions.vBinds.empty()) {
         onion_service_target = connOptions.vBinds.front();
-    } else {
-        onion_service_target = DefaultOnionServiceTarget(default_bind_port_onion);
-        connOptions.onion_binds.push_back(onion_service_target);
-    }
-
-    if (listenonion) {
-        if (connOptions.onion_binds.size() > 1) {
-            InitWarning(strprintf(_("More than one onion bind address is provided. Using %s "
-                                    "for the automatically created Tor onion service."),
-                                  onion_service_target.ToStringAddrPort()));
-        }
-        node.tor_controller = std::make_unique<TorController>(gArgs.GetArg("-torcontrol", DEFAULT_TOR_CONTROL), onion_service_target);
     }
 
     bool should_discover = connOptions.bind_on_any;
@@ -2342,68 +2037,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
     }
 
-    const std::string& i2psam_arg = args.GetArg("-i2psam", "");
-    if (!i2psam_arg.empty()) {
-        const std::optional<CService> addr{Lookup(i2psam_arg, 7656, fNameLookup)};
-        if (!addr.has_value() || !addr->IsValid()) {
-            return InitError(strprintf(_("Invalid -i2psam address or hostname: '%s'"), i2psam_arg));
-        }
-        SetProxy(NET_I2P, Proxy{addr.value()});
-    } else {
-        if (!onlynets.empty() && g_reachable_nets.Contains(NET_I2P)) {
-            return InitError(
-                _("Outbound connections restricted to i2p (-onlynet=i2p) but "
-                  "-i2psam is not provided"));
-        }
-        g_reachable_nets.Remove(NET_I2P);
-    }
-
-    connOptions.m_i2p_accept_incoming = args.GetBoolArg("-i2pacceptincoming", DEFAULT_I2P_ACCEPT_INCOMING);
-
-    if (auto conflict = CheckBindingConflicts(connOptions)) {
-        return InitError(strprintf(
-            _("Duplicate binding configuration for address %s. "
-                "Please check your -bind, -bind=...=onion and -whitebind settings."),
-                    conflict->ToStringAddrPort()));
-    }
-
-    if (args.GetBoolArg("-privatebroadcast", DEFAULT_PRIVATE_BROADCAST)) {
-        // If -listenonion is set, then NET_ONION may not be reachable now
-        // but may become reachable later, thus only error here if it is not
-        // reachable and will not become reachable for sure.
-        const bool onion_may_become_reachable{listenonion && (!args.IsArgSet("-onlynet") || onlynet_used_with_onion)};
-        if (!g_reachable_nets.Contains(NET_I2P) &&
-            !g_reachable_nets.Contains(NET_ONION) &&
-            !onion_may_become_reachable) {
-            return InitError(_("Private broadcast of own transactions requested (-privatebroadcast), "
-                               "but none of Tor or I2P networks is reachable"));
-        }
-        if (!connOptions.m_use_addrman_outgoing) {
-            return InitError(_("Private broadcast of own transactions requested (-privatebroadcast), "
-                               "but -connect is also configured. They are incompatible because the "
-                               "private broadcast needs to open new connections to randomly "
-                               "chosen Tor or I2P peers. Consider using -maxconnections=0 -addnode=... "
-                               "instead"));
-        }
-        if (!proxyRandomize && (g_reachable_nets.Contains(NET_ONION) || onion_may_become_reachable)) {
-            InitWarning(_("Private broadcast of own transactions requested (-privatebroadcast) and "
-                          "-proxyrandomize is disabled. Tor circuits for private broadcast connections "
-                          "may be correlated to other connections over Tor. For maximum privacy set "
-                          "-proxyrandomize=1."));
-        }
-    }
-
     if (!node.connman->Start(scheduler, connOptions)) {
         return false;
     }
 
     // ********************************************************* Step 13: finished
-
-    // At this point, the RPC is "started", but still in warmup, which means it
-    // cannot yet be called. Before we make it callable, we need to make sure
-    // that the RPC's view of the best block is valid and consistent with
-    // ChainstateManager's active tip.
-    SetRPCWarmupFinished();
 
     uiInterface.InitMessage(_("Done loading"));
 
@@ -2417,10 +2055,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }, DUMP_BANS_INTERVAL);
 
     if (node.peerman) node.peerman->StartScheduledTasks(scheduler);
-
-#if HAVE_SYSTEM
-    StartupNotify(args);
-#endif
 
     return true;
 }

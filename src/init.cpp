@@ -296,10 +296,10 @@ void Interrupt(NodeContext& node)
 #endif
     // Wake any threads that may be waiting for the tip to change.
     if (node.notifications) WITH_LOCK(node.notifications->m_tip_block_mutex, node.notifications->m_tip_block_cv.notify_all());
-    InterruptHTTPServer();
-    InterruptHTTPRPC();
-    InterruptRPC();
-    InterruptREST();
+    //InterruptHTTPServer();
+    //InterruptHTTPRPC();
+    //InterruptRPC();
+    //InterruptREST();
     if (node.tor_controller) {
         node.tor_controller->Interrupt();
     }
@@ -326,10 +326,10 @@ void Shutdown(NodeContext& node)
     util::ThreadRename("shutoff");
     if (node.mempool) node.mempool->AddTransactionsUpdated(1);
 
-    StopHTTPRPC();
-    StopREST();
-    StopRPC();
-    StopHTTPServer();
+    //StopHTTPRPC();
+    //StopREST();
+    //StopRPC();
+    //StopHTTPServer();
     for (auto& client : node.chain_clients) {
         try {
             client->stop();
@@ -784,20 +784,20 @@ static void StartupNotify(const ArgsManager& args)
 }
 #endif
 
-static bool AppInitServers(NodeContext& node)
-{
-    const ArgsManager& args = *Assert(node.args);
-    if (!InitHTTPServer()) {
-        return false;
-    }
-    StartRPC();
-    node.rpc_interruption_point = RpcInterruptionPoint;
-    if (!StartHTTPRPC(&node))
-        return false;
-    if (args.GetBoolArg("-rest", DEFAULT_REST_ENABLE)) StartREST(&node);
-    StartHTTPServer();
-    return true;
-}
+// static bool AppInitServers(NodeContext& node)
+// {
+//     const ArgsManager& args = *Assert(node.args);
+//     if (!InitHTTPServer()) {
+//         return false;
+//     }
+//     StartRPC();
+//     node.rpc_interruption_point = RpcInterruptionPoint;
+//     if (!StartHTTPRPC(&node))
+//         return false;
+//     if (args.GetBoolArg("-rest", DEFAULT_REST_ENABLE)) StartREST(&node);
+//     StartHTTPServer();
+//     return true;
+// }
 
 // Parameter interaction based on rules
 void InitParameterInteraction(ArgsManager& args)
@@ -1547,13 +1547,13 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     /* Register RPC commands regardless of -server setting so they will be
      * available in the GUI RPC console even if external calls are disabled.
      */
-    RegisterAllCoreRPCCommands(tableRPC);
-    for (const auto& client : node.chain_clients) {
-        client->registerRpcs();
-    }
-#ifdef ENABLE_ZMQ
-    RegisterZMQRPCCommands(tableRPC);
-#endif
+    //RegisterAllCoreRPCCommands(tableRPC);
+//     for (const auto& client : node.chain_clients) {
+//         client->registerRpcs();
+//     }
+// #ifdef ENABLE_ZMQ
+//     RegisterZMQRPCCommands(tableRPC);
+// #endif
 
     // Check port numbers
     if (!CheckHostPortOptions(args)) return false;
@@ -1589,11 +1589,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
      * that the server is there and will be ready later).  Warmup mode will
      * be disabled when initialisation is finished.
      */
-    if (args.GetBoolArg("-server", false)) {
-        uiInterface.InitMessage.connect(SetRPCWarmupStatus);
-        if (!AppInitServers(node))
-            return InitError(_("Unable to start HTTP server. See debug log for details."));
-    }
+    // if (args.GetBoolArg("-server", false)) {
+    //     uiInterface.InitMessage.connect(SetRPCWarmupStatus);
+    //     if (!AppInitServers(node))
+    //         return InitError(_("Unable to start HTTP server. See debug log for details."));
+    // }
 
     // ********************************************************* Step 5: verify wallet database integrity
     for (const auto& client : node.chain_clients) {
@@ -2361,7 +2361,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // cannot yet be called. Before we make it callable, we need to make sure
     // that the RPC's view of the best block is valid and consistent with
     // ChainstateManager's active tip.
-    SetRPCWarmupFinished();
+    //SetRPCWarmupFinished();
 
     uiInterface.InitMessage(_("Done loading"));
 

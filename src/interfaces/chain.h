@@ -277,7 +277,7 @@ public:
     virtual bool havePruned() = 0;
 
     //! Get the current prune height.
-    virtual std::optional<int> getPruneHeight() = 0;
+//    virtual std::optional<int> getPruneHeight() = 0;
 
     //! Check if the node is ready to broadcast transactions.
     virtual bool isReadyToBroadcast() = 0;
@@ -337,13 +337,6 @@ public:
     //! Wait for all pending notifications up to this point to be processed
     virtual void waitForNotifications() = 0;
 
-    //! Register handler for RPC. Command is not copied, so reference
-    //! needs to remain valid until Handler is disconnected.
-    virtual std::unique_ptr<Handler> handleRpc(const CRPCCommand& command) = 0;
-
-    //! Check if deprecated RPC is enabled.
-    virtual bool rpcEnableDeprecated(const std::string& method) = 0;
-
     //! Get settings value.
     virtual common::SettingsValue getSetting(const std::string& arg) = 0;
 
@@ -380,11 +373,6 @@ public:
     //! to be prepared to handle this by ignoring notifications about unknown
     //! removed transactions and already added new transactions.
     virtual void requestMempoolTransactions(Notifications& notifications) = 0;
-
-    //! Return true if an assumed-valid snapshot is in use. Note that this
-    //! returns true even after the snapshot is validated, until the next node
-    //! restart.
-    virtual bool hasAssumedValidChain() = 0;
 
     //! Get internal node context. Useful for testing, but not
     //! accessible across processes.

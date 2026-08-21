@@ -3299,75 +3299,6 @@ void CConnman::ThreadI2PAcceptIncoming()
     }
 }
 
-void CConnman::ThreadPrivateBroadcast()
-{
-    AssertLockNotHeld(m_nodes_mutex);
-    AssertLockNotHeld(m_unused_i2p_sessions_mutex);
-
-    size_t addrman_num_bad_addresses{0};
-    while (!m_interrupt_net->interrupted()) {
-
-        if (!fNetworkActive) {
-            m_interrupt_net->sleep_for(5s);
-            continue;
-        }
-
-        CountingSemaphoreGrant<> conn_max_grant{m_private_broadcast.m_sem_conn_max}; // Would block if too many are opened.
-
-        m_private_broadcast.NumToOpenWait();
-
-        if (m_interrupt_net->interrupted()) {
-            break;
-        }
-
-        std::optional<Proxy> proxy;
-        const std::optional<Network> net{m_private_broadcast.PickNetwork(proxy)};
-        if (!net.has_value()) {
-            LogWarning("Unable to open -privatebroadcast connections: neither Tor nor I2P is reachable");
-            m_interrupt_net->sleep_for(5s);
-            continue;
-        }
-
-        const auto [addr, _] = addrman.get().Select(/*new_only=*/false, {net.value()});
-
-        if (!addr.IsValid() || IsLocal(addr)) {
-            ++addrman_num_bad_addresses;
-            if (addrman_num_bad_addresses > 100) {
-                LogDebug(BCLog::PRIVBROADCAST, "Connections needed but addrman keeps returning bad addresses, will retry");
-                m_interrupt_net->sleep_for(500ms);
-            }
-            continue;
-        }
-        addrman_num_bad_addresses = 0;
-
-        auto target_str{addr.ToStringAddrPort()};
-        if (proxy.has_value()) {
-            target_str += " through the proxy at " + proxy->ToString();
-        }
-
-        const bool use_v2transport(addr.nServices & GetLocalServices() & NODE_P2P_V2);
-
-        if (OpenNetworkConnection(addr,
-                                  /*fCountFailure=*/true,
-                                  std::move(conn_max_grant),
-                                  /*pszDest=*/nullptr,
-                                  ConnectionType::PRIVATE_BROADCAST,
-                                  use_v2transport,
-                                  proxy)) {
-            const size_t remaining{m_private_broadcast.NumToOpenSub(1)};
-            LogDebug(BCLog::PRIVBROADCAST, "Socket connected to %s; remaining connections to open: %d", target_str, remaining);
-        } else {
-            const size_t remaining{m_private_broadcast.NumToOpen()};
-            if (remaining == 0) {
-                LogDebug(BCLog::PRIVBROADCAST, "Failed to connect to %s, will not retry, no more connections needed", target_str);
-            } else {
-                LogDebug(BCLog::PRIVBROADCAST, "Failed to connect to %s, will retry to a different address; remaining connections to open: %d", target_str, remaining);
-                m_interrupt_net->sleep_for(100ms); // Prevent busy loop if OpenNetworkConnection() fails fast repeatedly.
-            }
-        }
-    }
-}
-
 bool CConnman::BindListenPort(const CService& addrBind, bilingual_str& strError, NetPermissionFlags permissions)
 {
     int nOne = 1;
@@ -3650,11 +3581,6 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
             std::thread(&util::TraceThread, "i2paccept", [this] { ThreadI2PAcceptIncoming(); });
     }
 
-    if (gArgs.GetBoolArg("-privatebroadcast", DEFAULT_PRIVATE_BROADCAST)) {
-        threadPrivateBroadcast =
-            std::thread(&util::TraceThread, "privbcast", [this] { ThreadPrivateBroadcast(); });
-    }
-
     // Dump network addresses
     scheduler.scheduleEvery([this] { DumpAddresses(); }, DUMP_PEERS_INTERVAL);
 
@@ -3711,9 +3637,6 @@ void CConnman::Interrupt()
 
 void CConnman::StopThreads()
 {
-    if (threadPrivateBroadcast.joinable()) {
-        threadPrivateBroadcast.join();
-    }
     if (threadI2PAcceptIncoming.joinable()) {
         threadI2PAcceptIncoming.join();
     }
@@ -4149,25 +4072,9 @@ bool CConnman::NodeFullyConnected(const CNode* pnode)
     return pnode && pnode->fSuccessfullyConnected && !pnode->fDisconnect;
 }
 
-/// Private broadcast connections only need to send certain message types.
-/// Other messages are not needed and may degrade privacy.
-static bool IsOutboundMessageAllowedInPrivateBroadcast(std::string_view type) noexcept
-{
-    return type == NetMsgType::VERSION ||
-           type == NetMsgType::VERACK ||
-           type == NetMsgType::INV ||
-           type == NetMsgType::TX ||
-           type == NetMsgType::PING;
-}
-
 void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
 {
     AssertLockNotHeld(m_total_bytes_sent_mutex);
-
-    if (pnode->IsPrivateBroadcastConn() && !IsOutboundMessageAllowedInPrivateBroadcast(msg.m_type)) {
-        LogDebug(BCLog::PRIVBROADCAST, "Omitting send of message '%s', %s", msg.m_type, pnode->LogPeer());
-        return;
-    }
 
     if (!m_private_broadcast.m_outbound_tor_ok_at_least_once.load() && !pnode->IsInboundConn() &&
         pnode->addr.IsTor() && msg.m_type == NetMsgType::VERACK) {

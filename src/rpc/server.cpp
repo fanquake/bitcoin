@@ -167,7 +167,6 @@ static RPCMethod stop()
 {
     // Event loop will exit after current HTTP requests have been handled, so
     // this reply will get back to the client.
-    CHECK_NONFATAL((CHECK_NONFATAL(EnsureAnyNodeContext(jsonRequest.context).shutdown_request))());
     if (jsonRequest.params[0].isNum()) {
         UninterruptibleSleep(std::chrono::milliseconds{jsonRequest.params[0].getInt<int>()});
     }

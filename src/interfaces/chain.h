@@ -247,11 +247,6 @@ public:
     //  shared ancestry by multiple UTXOs after coin selection.
     virtual std::optional<CAmount> calculateCombinedBumpFee(const std::vector<COutPoint>& outpoints, const CFeeRate& target_feerate) = 0;
 
-    //! Get the node's package limits.
-    //! Currently only returns the ancestor and descendant count limits, but could be enhanced to
-    //! return more policy settings.
-    virtual void getPackageLimits(unsigned int& limit_ancestor_count, unsigned int& limit_descendant_count) = 0;
-
     //! Check if transaction will pass the mempool's chain limits.
     virtual util::Result<void> checkChainLimits(const CTransactionRef& tx) = 0;
 

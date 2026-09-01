@@ -72,10 +72,6 @@ inline constexpr unsigned int DEFAULT_MIN_RELAY_TX_FEE{100};
 inline constexpr unsigned int DEFAULT_CLUSTER_LIMIT{64};
 /** Maximum size of cluster in virtual kilobytes */
 inline constexpr unsigned int DEFAULT_CLUSTER_SIZE_LIMIT_KVB{101};
-/** Default for -limitancestorcount, max number of in-mempool ancestors */
-inline constexpr unsigned int DEFAULT_ANCESTOR_LIMIT{25};
-/** Default for -limitdescendantcount, max number of in-mempool descendants */
-inline constexpr unsigned int DEFAULT_DESCENDANT_LIMIT{25};
 /** Default for -datacarrier */
 inline constexpr bool DEFAULT_ACCEPT_DATACARRIER = true;
 /**

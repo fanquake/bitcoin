@@ -20,10 +20,6 @@ struct MemPoolLimits {
     unsigned cluster_count{DEFAULT_CLUSTER_LIMIT};
     //! The maximum allowed size in virtual bytes of a cluster.
     int64_t cluster_size_vbytes{DEFAULT_CLUSTER_SIZE_LIMIT_KVB * 1'000};
-    //! The maximum allowed number of transactions in a package including the entry and its ancestors.
-    int64_t ancestor_count{DEFAULT_ANCESTOR_LIMIT};
-    //! The maximum allowed number of transactions in a package including the entry and its descendants.
-    int64_t descendant_count{DEFAULT_DESCENDANT_LIMIT};
 
     /**
      * @return MemPoolLimits with all the limits set to the maximum
@@ -31,7 +27,7 @@ struct MemPoolLimits {
     static constexpr MemPoolLimits NoLimits()
     {
         int64_t no_limit{std::numeric_limits<int64_t>::max()};
-        return {std::numeric_limits<unsigned>::max(), no_limit, no_limit, no_limit};
+        return {std::numeric_limits<unsigned>::max(), no_limit};
     }
 };
 } // namespace kernel

@@ -200,7 +200,6 @@ chain for " target " development."))
                   "--enable-host-bind-now=yes"
                   "--enable-initfini-array=yes"
                   "--enable-standard-branch-protection=yes"
-                  "--disable-gcov"
                   "--disable-libgomp"
                   "--disable-libquadmath"
                   "--disable-libsanitizer"

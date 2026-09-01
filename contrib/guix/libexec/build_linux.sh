@@ -24,10 +24,18 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    LDFLAGS="-flto -march=native" \
                                    LTO=1
 
+PGO_CFLAGS=""
+if [ -n "$PGO_GENERATE" ]; then
+    PGO_CFLAGS="-fprofile-generate=/pgo_data -fprofile-update=atomic -fprofile-reproducible=multithreaded"
+elif [ -n "$PGO_USE" ]; then
+    PGO_CFLAGS="-fprofile-use=/pgo_data -fprofile-correction -fprofile-partial-training -Wno-error=coverage-mismatch"
+fi
+
 # CFLAGS
 HOST_CFLAGS="-O3 -g"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 HOST_CFLAGS+=" -fdebug-prefix-map=${DISTSRC}/src=."
+HOST_CFLAGS+=" ${PGO_CFLAGS}"
 
 # CXXFLAGS
 HOST_CXXFLAGS="$HOST_CFLAGS"
@@ -38,10 +46,11 @@ esac
 
 # LDFLAGS
 HOST_LDFLAGS="-Wl,--as-needed -Wl,--dynamic-linker=$(glibc_dynamic_linker "$HOST") -Wl,-O2"
+HOST_LDFLAGS+=" ${PGO_CFLAGS}"
 
 # EXE FLAGS
 case "$HOST" in
-    aarch64-linux-gnu|x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O2" ;;
+    aarch64-linux-gnu|x86_64-linux-gnu) CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-pie -static-libgcc -Wl,-O2 ${PGO_CFLAGS}" ;;
     *linux*)  CMAKE_EXE_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=${HOST_LDFLAGS} -static-libstdc++ -static-libgcc" ;;
 esac
 

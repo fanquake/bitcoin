@@ -5,6 +5,10 @@
 export LC_ALL=C.UTF-8
 set -o errexit -o pipefail
 
+if [ -n "${PGO_GENERATE}${PGO_USE}" ] && [ -z "$FORCE_VERSION" ]; then
+    export FORCE_VERSION="pgo"
+fi
+
 # Source the common prelude, which:
 #   1. Checks if we're at the top directory of the Bitcoin Core repository
 #   2. Defines a few common functions and variables
@@ -71,6 +75,17 @@ exit 1
 fi
 
 mkdir -p "$VERSION_BASE"
+
+################
+# PGO_GENERATE and PGO_USE are mutually exclusive
+################
+
+if [ -n "$PGO_GENERATE" ] && [ -n "$PGO_USE" ]; then
+cat << EOF
+ERR: PGO_GENERATE and PGO_USE are mutually exclusive.
+EOF
+exit 1
+fi
 
 ################
 # SOURCE_DATE_EPOCH should not unintentionally be set
@@ -343,6 +358,8 @@ INFO: Building ${VERSION:?not set} for platform triple ${HOST:?not set}:
           ADDITIONAL_GUIX_COMMON_FLAGS: ${ADDITIONAL_GUIX_COMMON_FLAGS}
           ADDITIONAL_GUIX_ENVIRONMENT_FLAGS: ${ADDITIONAL_GUIX_ENVIRONMENT_FLAGS}
           ADDITIONAL_GUIX_TIMEMACHINE_FLAGS: ${ADDITIONAL_GUIX_TIMEMACHINE_FLAGS}
+          PGO_GENERATE: ${PGO_GENERATE:-<unset>}
+          PGO_USE: ${PGO_USE:-<unset>}
 EOF
 
         # Run the build scripts 'contrib/guix/libexec/*.sh' in the build
@@ -427,6 +444,7 @@ EOF
             ${SOURCES_PATH:+--share="$SOURCES_PATH"}
             ${BASE_CACHE:+--share="$BASE_CACHE"}
             ${SDK_PATH:+--share="$SDK_PATH"}
+            ${PGO_USE:+--share=/pgo_data}
             --cores="$JOBS"
             --keep-failed
             --fallback
@@ -441,6 +459,8 @@ EOF
                 ${SOURCES_PATH:+SOURCES_PATH="$SOURCES_PATH"}
                 ${BASE_CACHE:+BASE_CACHE="$BASE_CACHE"}
                 ${SDK_PATH:+SDK_PATH="$SDK_PATH"}
+                ${PGO_GENERATE:+PGO_GENERATE="$PGO_GENERATE"}
+                ${PGO_USE:+PGO_USE="$PGO_USE"}
                 DISTSRC="$(distsrc_for_host "$HOST" "" /distsrc-base)"
                 OUTDIR="$(outdir_for_host "$HOST" "" /outdir-base)"
                 DIST_ARCHIVE_BASE=/outdir-base/dist-archive

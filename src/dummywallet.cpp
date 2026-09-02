@@ -53,12 +53,3 @@ void DummyWalletInit::AddWalletOptions(ArgsManager& argsman) const
 }
 
 const WalletInitInterface& g_wallet_init_interface = DummyWalletInit();
-
-namespace interfaces {
-
-std::unique_ptr<WalletLoader> MakeWalletLoader(Chain& chain, ArgsManager& args)
-{
-    throw std::logic_error("Wallet function called in non-wallet build.");
-}
-
-} // namespace interfaces

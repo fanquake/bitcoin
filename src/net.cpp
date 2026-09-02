@@ -3584,12 +3584,6 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
     // Dump network addresses
     scheduler.scheduleEvery([this] { DumpAddresses(); }, DUMP_PEERS_INTERVAL);
 
-    // Run the ASMap Health check once and then schedule it to run every 24h.
-    if (m_netgroupman.UsingASMap()) {
-        ASMapHealthCheck();
-        scheduler.scheduleEvery([this] { ASMapHealthCheck(); }, ASMAP_HEALTH_CHECK_INTERVAL);
-    }
-
     return true;
 }
 
@@ -4085,9 +4079,6 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
 
     size_t nMessageSize = msg.data.size();
     LogDebug(BCLog::NET, "sending %s (%d bytes) peer=%d\n", msg.m_type, nMessageSize, pnode->GetId());
-    if (m_capture_messages) {
-        CaptureMessage(pnode->addr, msg.m_type, msg.data, /*is_incoming=*/false);
-    }
 
     TRACEPOINT(net, outbound_message,
         pnode->GetId(),
@@ -4195,46 +4186,3 @@ void CConnman::ASMapHealthCheck()
         [](const CAddress& addr) { return static_cast<CNetAddr>(addr); });
     m_netgroupman.ASMapHealthCheck(clearnet_addrs);
 }
-
-// Dump binary message to file, with timestamp.
-static void CaptureMessageToFile(const CAddress& addr,
-                                 const std::string& msg_type,
-                                 std::span<const unsigned char> data,
-                                 bool is_incoming)
-{
-    // Note: This function captures the message at the time of processing,
-    // not at socket receive/send time.
-    // This ensures that the messages are always in order from an application
-    // layer (processing) perspective.
-    auto now = GetTime<std::chrono::microseconds>();
-
-    // Windows folder names cannot include a colon
-    std::string clean_addr = addr.ToStringAddrPort();
-    std::replace(clean_addr.begin(), clean_addr.end(), ':', '_');
-
-    fs::path base_path = gArgs.GetDataDirNet() / "message_capture" / fs::u8path(clean_addr);
-    fs::create_directories(base_path);
-
-    fs::path path = base_path / (is_incoming ? "msgs_recv.dat" : "msgs_sent.dat");
-    AutoFile f{fsbridge::fopen(path, "ab")};
-
-    ser_writedata64(f, now.count());
-    f << std::span{msg_type};
-    for (auto i = msg_type.length(); i < CMessageHeader::MESSAGE_TYPE_SIZE; ++i) {
-        f << uint8_t{'\0'};
-    }
-    uint32_t size = data.size();
-    ser_writedata32(f, size);
-    f << data;
-
-    if (f.fclose() != 0) {
-        throw std::ios_base::failure(
-            strprintf("Error closing %s after write, file contents are likely incomplete", fs::PathToString(path)));
-    }
-}
-
-std::function<void(const CAddress& addr,
-                   const std::string& msg_type,
-                   std::span<const unsigned char> data,
-                   bool is_incoming)>
-    CaptureMessage = CaptureMessageToFile;

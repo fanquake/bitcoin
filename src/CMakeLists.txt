@@ -108,9 +108,7 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   common/messages.cpp
   common/netif.cpp
   common/pcp.cpp
-  common/run_command.cpp
   common/settings.cpp
-  common/signmessage.cpp
   common/system.cpp
   common/url.cpp
   compressor.cpp
@@ -125,17 +123,13 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   net_types.cpp
   netaddress.cpp
   netbase.cpp
-  outputtype.cpp
   policy/feerate.cpp
   policy/policy.cpp
   pow.cpp
   protocol.cpp
   psbt.cpp
   scheduler.cpp
-  script/descriptor.cpp
-  script/miniscript.cpp
   script/parsing.cpp
-  script/sign.cpp
   script/signingprovider.cpp
   script/solver.cpp
 )
@@ -241,7 +235,6 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   policy/settings.cpp
   policy/truc_policy.cpp
   script/sigcache.cpp
-  signet.cpp
   txdb.cpp
   txgraph.cpp
   txmempool.cpp

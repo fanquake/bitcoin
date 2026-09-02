@@ -1073,12 +1073,6 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
         return false;
     }
 
-    // Signet only: check block solution
-    if (GetConsensus().signet_blocks && !CheckSignetBlockSolution(block, GetConsensus())) {
-        LogError("Errors in block solution at %s while reading block", pos.ToString());
-        return false;
-    }
-
     if (expected_hash && block_hash != *expected_hash) {
         LogError("GetHash() doesn't match index at %s while reading block (%s != %s)",
                  pos.ToString(), block_hash.ToString(), expected_hash->ToString());

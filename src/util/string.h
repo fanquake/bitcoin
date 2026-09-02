@@ -244,18 +244,6 @@ inline std::string MakeUnorderedList(const std::vector<std::string>& items)
 }
 
 /**
- * Locale-independent version of std::to_string
- */
-template <typename T>
-std::string ToString(const T& t)
-{
-    std::ostringstream oss;
-    oss.imbue(std::locale::classic());
-    oss << t;
-    return oss.str();
-}
-
-/**
  * Check whether a container begins with the given prefix.
  */
 template <typename T1, size_t PREFIX_LEN>

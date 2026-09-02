@@ -75,14 +75,6 @@ public:
     //! Disconnect any incoming connections that are still connected.
     virtual void disconnectIncoming() = 0;
 
-    //! Add cleanup callback to remote interface that will run when the
-    //! interface is deleted.
-    template<typename Interface>
-    void addCleanup(Interface& iface, std::function<void()> cleanup)
-    {
-        addCleanup(typeid(Interface), &iface, std::move(cleanup));
-    }
-
     //! IPC context struct accessor (see struct definition for more description).
     virtual ipc::Context& context() = 0;
 

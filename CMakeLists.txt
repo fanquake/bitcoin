@@ -527,6 +527,8 @@ try_append_cxx_flags("-fmacro-prefix-map=A=B" TARGET core_interface SKIP_LINK
 # -fstack-reuse=none for all gcc builds. (Only gcc understands this flag).
 try_append_cxx_flags("-fstack-reuse=none" TARGET core_interface)
 
+try_append_cxx_flags("-fno-rtti" TARGET warn_interface SKIP_LINK)
+
 if(MSVC)
   try_append_linker_flag("/DYNAMICBASE" TARGET core_interface)
   try_append_linker_flag("/HIGHENTROPYVA" TARGET core_interface)

@@ -11,7 +11,6 @@
 #include <exception>
 #include <iostream>
 #include <string>
-#include <typeinfo>
 
 #ifdef WIN32
 #include <windows.h>
@@ -27,7 +26,7 @@ static std::string FormatException(const std::exception* pex, std::string_view t
 #endif
     if (pex)
         return strprintf(
-            "EXCEPTION: %s       \n%s       \n%s in %s       \n", typeid(*pex).name(), pex->what(), pszModule, thread_name);
+            "EXCEPTION: %s       \n%s in %s       \n", pex->what(), pszModule, thread_name);
     else
         return strprintf(
             "UNKNOWN EXCEPTION       \n%s in %s       \n", pszModule, thread_name);

@@ -507,7 +507,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
             return a.GetTx().GetHash() == b.GetTx().GetHash();
         };
         for (auto &txentry : GetParents(*it)) {
-            setParentsStored.insert(dynamic_cast<const CTxMemPoolEntry&>(txentry.get()));
+            setParentsStored.insert(txentry);
         }
         assert(setParentCheck.size() == setParentsStored.size());
         assert(std::equal(setParentCheck.begin(), setParentCheck.end(), setParentsStored.begin(), comp));
@@ -522,7 +522,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
             setChildrenCheck.insert(*childit);
         }
         for (auto &txentry : GetChildren(*it)) {
-            setChildrenStored.insert(dynamic_cast<const CTxMemPoolEntry&>(txentry.get()));
+            setChildrenStored.insert(txentry);
         }
         assert(setChildrenCheck.size() == setChildrenStored.size());
         assert(std::equal(setChildrenCheck.begin(), setChildrenCheck.end(), setChildrenStored.begin(), comp));

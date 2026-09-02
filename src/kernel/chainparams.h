@@ -116,15 +116,6 @@ public:
     const std::vector<uint8_t>& FixedSeeds() const { return vFixedSeeds; }
     const HeadersSyncParams& HeadersSync() const { return m_headers_sync_params; }
 
-    std::optional<AssumeutxoData> AssumeutxoForHeight(int height) const
-    {
-        return FindFirst(m_assumeutxo_data, [&](const auto& d) { return d.height == height; });
-    }
-    std::optional<AssumeutxoData> AssumeutxoForBlockhash(const uint256& blockhash) const
-    {
-        return FindFirst(m_assumeutxo_data, [&](const auto& d) { return d.blockhash == blockhash; });
-    }
-
     const ChainTxData& TxData() const { return chainTxData; }
 
     /**
@@ -195,7 +186,7 @@ protected:
     std::vector<uint8_t> vFixedSeeds;
     bool fDefaultConsistencyChecks;
     bool m_is_mockable_chain;
-    std::vector<AssumeutxoData> m_assumeutxo_data;
+//    std::vector<AssumeutxoData> m_assumeutxo_data;
     ChainTxData chainTxData;
     HeadersSyncParams m_headers_sync_params;
 

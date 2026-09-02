@@ -372,10 +372,6 @@ public:
                                     TxBroadcast::MEMPOOL_AND_BROADCAST_TO_ALL,
                                     /*wait_callback=*/false);
     }
-    WalletLoader& walletLoader() override
-    {
-        return *Assert(m_context->wallet_loader);
-    }
     std::unique_ptr<Handler> handleInitMessage(InitMessageFn fn) override
     {
         return MakeSignalHandler(::uiInterface.InitMessage.connect(fn));
@@ -391,10 +387,6 @@ public:
     std::unique_ptr<Handler> handleShowProgress(ShowProgressFn fn) override
     {
         return MakeSignalHandler(::uiInterface.ShowProgress.connect(fn));
-    }
-    std::unique_ptr<Handler> handleInitWallet(InitWalletFn fn) override
-    {
-        return MakeSignalHandler(::uiInterface.InitWallet.connect(fn));
     }
     std::unique_ptr<Handler> handleNotifyNumConnectionsChanged(NotifyNumConnectionsChangedFn fn) override
     {

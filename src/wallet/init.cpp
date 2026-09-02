@@ -99,17 +99,4 @@ bool WalletInit::ParameterInteraction() const
     return true;
 }
 
-void WalletInit::Construct(NodeContext& node) const
-{
-    ArgsManager& args = *Assert(node.args);
-    if (args.GetBoolArg("-disablewallet", DEFAULT_DISABLE_WALLET)) {
-        LogInfo("Wallet disabled!");
-        return;
-    }
-    auto wallet_loader = node.init->makeWalletLoader(*node.chain);
-    node.wallet_loader = wallet_loader.get();
-    node.chain_clients.emplace_back(std::move(wallet_loader));
-}
 } // namespace wallet
-
-const WalletInitInterface& g_wallet_init_interface = wallet::WalletInit();

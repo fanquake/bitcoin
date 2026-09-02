@@ -182,8 +182,6 @@ static bool AppInit(NodeContext& node)
     std::any context{&node};
     try
     {
-        // -server defaults to true for bitcoind but not for the GUI so do this here
-        args.SoftSetBoolArg("-server", true);
         // Set this early so that parameter interactions go to console
         InitLogging(args);
         InitParameterInteraction(args);

@@ -1901,11 +1901,4 @@ private:
     friend struct ConnmanTestMsg;
 };
 
-/** Defaults to `CaptureMessageToFile()`, but can be overridden by unit tests. */
-extern std::function<void(const CAddress& addr,
-                          const std::string& msg_type,
-                          std::span<const unsigned char> data,
-                          bool is_incoming)>
-    CaptureMessage;
-
 #endif // BITCOIN_NET_H

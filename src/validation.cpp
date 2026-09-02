@@ -3990,11 +3990,6 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW))
         return false;
 
-    // Signet only: check block solution
-    if (consensusParams.signet_blocks && fCheckPOW && !CheckSignetBlockSolution(block, consensusParams)) {
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-signet-blksig", "signet block signature validation failure");
-    }
-
     // Check the merkle root.
     if (fCheckMerkleRoot && !CheckMerkleRoot(block, state)) {
         return false;
@@ -5672,13 +5667,6 @@ util::Result<CBlockIndex*> ChainstateManager::ActivateSnapshot(
 
         if (this->CurrentChainstate().m_from_snapshot_blockhash) {
             return util::Error{Untranslated("Can't activate a snapshot-based chainstate more than once")};
-        }
-        if (!GetParams().AssumeutxoForBlockhash(base_blockhash).has_value()) {
-            auto available_heights = GetParams().GetAvailableSnapshotHeights();
-            std::string heights_formatted = util::Join(available_heights, ", ", [&](const auto& i) { return util::ToString(i); });
-            return util::Error{Untranslated(strprintf("assumeutxo block hash in snapshot metadata not recognized (hash: %s). The following snapshot heights are available: %s",
-                base_blockhash.ToString(),
-                heights_formatted))};
         }
 
         snapshot_start_block = m_blockman.LookupBlockIndex(base_blockhash);

@@ -84,7 +84,7 @@ inline void LogPrintFormatInternal_(SourceLocation&& source_loc, BCLog::LogFlags
 {
     std::string log_msg;
     try {
-        log_msg = tfm::format(fmt, args...);
+        log_msg = tfm::format(fmt, tfm::decayArray(args)...);
     } catch (tinyformat::format_error& fmterr) {
         log_msg = "Error \"" + std::string{fmterr.what()} + "\" while formatting log message: " + fmt.fmt;
     }

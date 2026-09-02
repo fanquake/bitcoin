@@ -976,6 +976,11 @@ class FormatList
 /// Reference to type-opaque format list for passing to vformat()
 typedef const FormatList& FormatListRef;
 
+// Force array-to-pointer decay on the deduced argument type.
+template<typename T>
+constexpr const T& decayArray(const T& value) noexcept { return value; }
+template<typename T, std::size_t N>
+constexpr const T* decayArray(const T (&value)[N]) noexcept { return value; }
 
 namespace detail {
 
@@ -1078,7 +1083,7 @@ inline void vformat(std::ostream& out, const char* fmt, FormatListRef list)
 template<typename... Args>
 void format(std::ostream& out, FormatStringCheck<sizeof...(Args)> fmt, const Args&... args)
 {
-    vformat(out, fmt, makeFormatList(args...));
+    vformat(out, fmt, makeFormatList(decayArray(args)...));
 }
 
 /// Format list of arguments according to the given format string and return

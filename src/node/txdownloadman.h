@@ -8,6 +8,7 @@
 #include <net.h>
 #include <node/txorphanage.h>
 #include <policy/packages.h>
+#include <tinyformat.h>
 
 #include <cstdint>
 #include <memory>

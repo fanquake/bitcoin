@@ -19,7 +19,6 @@
 #include <util/log.h>
 #include <util/signalinterrupt.h>
 #include <util/time.h>
-#include <util/translation.h>
 #include <validation.h>
 
 #include <algorithm>
@@ -42,20 +41,20 @@ static ChainstateLoadResult CompleteChainstateInitialization(
     // Note that it also sets m_blockfiles_indexed based on the disk flag!
     if (!chainman.LoadBlockIndex()) {
         if (chainman.m_interrupt) return {ChainstateLoadStatus::INTERRUPTED, {}};
-        return {ChainstateLoadStatus::FAILURE, _("Error loading block database")};
+        return {ChainstateLoadStatus::FAILURE, "Error loading block database"};
     }
 
     if (!chainman.BlockIndex().empty() &&
             !chainman.m_blockman.LookupBlockIndex(chainman.GetConsensus().hashGenesisBlock)) {
         // If the loaded chain has a wrong genesis, bail out immediately
         // (we're likely using a testnet datadir, or the other way around).
-        return {ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB, _("Incorrect or no genesis block found. Wrong datadir for network?")};
+        return {ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB, "Incorrect or no genesis block found. Wrong datadir for network?"};
     }
 
     // Check for changed -prune state.  What we are concerned about is a user who has pruned blocks
     // in the past, but is now trying to run unpruned.
     if (chainman.m_blockman.m_have_pruned && !options.prune) {
-        return {ChainstateLoadStatus::FAILURE, _("You need to rebuild the database using -reindex to go back to unpruned mode.  This will redownload the entire blockchain")};
+        return {ChainstateLoadStatus::FAILURE, "You need to rebuild the database using -reindex to go back to unpruned mode.  This will redownload the entire blockchain"};
     }
 
     // At this point blocktree args are consistent with what's on disk.
@@ -63,7 +62,7 @@ static ChainstateLoadResult CompleteChainstateInitialization(
     // (otherwise we use the one already on disk).
     // This is called again in ImportBlocks after the reindex completes.
     if (chainman.m_blockman.m_blockfiles_indexed && !chainman.LoadGenesisBlock()) {
-        return {ChainstateLoadStatus::FAILURE, _("Error initializing block database")};
+        return {ChainstateLoadStatus::FAILURE, "Error initializing block database"};
     }
 
     auto is_coinsview_empty = [&](Chainstate& chainstate) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
@@ -93,7 +92,7 @@ static ChainstateLoadResult CompleteChainstateInitialization(
                 /*should_wipe=*/options.wipe_chainstate_db);
         } catch (dbwrapper_error& err) {
             LogError("%s\n", err.what());
-            return {ChainstateLoadStatus::FAILURE, _("Error opening coins database")};
+            return {ChainstateLoadStatus::FAILURE, "Error opening coins database"};
         }
 
         if (options.coins_error_cb) {
@@ -103,14 +102,14 @@ static ChainstateLoadResult CompleteChainstateInitialization(
         // Refuse to load unsupported database format.
         // This is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
         if (chainstate->CoinsDB().NeedsUpgrade()) {
-            return {ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB, _("Unsupported chainstate database format found. "
+            return {ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB, "Unsupported chainstate database format found. "
                                                                      "Please restart with -reindex-chainstate. This will "
-                                                                     "rebuild the chainstate database.")};
+                                                                     "rebuild the chainstate database."};
         }
 
         // ReplayBlocks is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
         if (!chainstate->ReplayBlocks()) {
-            return {ChainstateLoadStatus::FAILURE, _("Unable to replay blocks. You will need to rebuild the database using -reindex-chainstate.")};
+            return {ChainstateLoadStatus::FAILURE, "Unable to replay blocks. You will need to rebuild the database using -reindex-chainstate."};
         }
 
         // The on-disk coinsdb is now in a good state, create the cache
@@ -120,7 +119,7 @@ static ChainstateLoadResult CompleteChainstateInitialization(
         if (!is_coinsview_empty(*chainstate)) {
             // LoadChainTip initializes the chain based on CoinsTip()'s best block
             if (!chainstate->LoadChainTip()) {
-                return {ChainstateLoadStatus::FAILURE, _("Error initializing block database")};
+                return {ChainstateLoadStatus::FAILURE, "Error initializing block database"};
             }
             assert(chainstate->m_chain.Tip() != nullptr);
         }
@@ -136,7 +135,7 @@ static ChainstateLoadResult CompleteChainstateInitialization(
     const auto& chainstates{chainman.m_chainstates};
     if (std::any_of(chainstates.begin(), chainstates.end(),
                     [](const auto& cs) EXCLUSIVE_LOCKS_REQUIRED(cs_main) { return cs->NeedsRedownload(); })) {
-        return {ChainstateLoadStatus::FAILURE, strprintf(_("Witness data for blocks after height %d requires validation. Please restart with -reindex."),
+        return {ChainstateLoadStatus::FAILURE, strprintf("Witness data for blocks after height %d requires validation. Please restart with -reindex.",
                                                          chainman.GetConsensus().SegwitHeight)};
     };
 
@@ -183,7 +182,7 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
         validated_cs.SetTargetBlock(nullptr);
         LogInfo("[snapshot] deleting snapshot chainstate due to reindexing");
         if (!chainman.DeleteChainstate(*assumeutxo_cs)) {
-            return {ChainstateLoadStatus::FAILURE_FATAL, Untranslated("Couldn't remove snapshot chainstate.")};
+            return {ChainstateLoadStatus::FAILURE_FATAL, "Couldn't remove snapshot chainstate."};
         }
         assumeutxo_cs = nullptr;
     }
@@ -210,7 +209,7 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
     } else if (snapshot_completion == SnapshotCompletionResult::SUCCESS) {
         LogInfo("[snapshot] cleaning up unneeded background chainstate, then reinitializing");
         if (!chainman.ValidatedSnapshotCleanup(validated_cs, *assumeutxo_cs)) {
-            return {ChainstateLoadStatus::FAILURE_FATAL, Untranslated("Background chainstate cleanup failed unexpectedly.")};
+            return {ChainstateLoadStatus::FAILURE_FATAL, "Background chainstate cleanup failed unexpectedly."};
         }
 
         // Because ValidatedSnapshotCleanup() has torn down chainstates with
@@ -229,9 +228,9 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
             return {init_status, init_error};
         }
     } else {
-        return {ChainstateLoadStatus::FAILURE_FATAL, _(
+        return {ChainstateLoadStatus::FAILURE_FATAL, 
            "UTXO snapshot failed to validate. "
-           "Restart to resume normal initial block download, or try loading a different snapshot.")};
+           "Restart to resume normal initial block download, or try loading a different snapshot."};
     }
 
     return {ChainstateLoadStatus::SUCCESS, {}};
@@ -249,9 +248,9 @@ ChainstateLoadResult VerifyLoadedChainstate(ChainstateManager& chainman, const C
         if (!is_coinsview_empty(*chainstate)) {
             const CBlockIndex* tip = chainstate->m_chain.Tip();
             if (tip && tip->nTime > GetTime() + MAX_FUTURE_BLOCK_TIME) {
-                return {ChainstateLoadStatus::FAILURE, _("The block database contains a block which appears to be from the future. "
+                return {ChainstateLoadStatus::FAILURE, "The block database contains a block which appears to be from the future. "
                                                          "This may be due to your computer's date and time being set incorrectly. "
-                                                         "Only rebuild the block database if you are sure that your computer's date and time are correct")};
+                                                         "Only rebuild the block database if you are sure that your computer's date and time are correct"};
             }
 
             VerifyDBResult result = CVerifyDB(chainman.GetNotifications()).VerifyDB(
@@ -263,12 +262,12 @@ ChainstateLoadResult VerifyLoadedChainstate(ChainstateManager& chainman, const C
             case VerifyDBResult::SKIPPED_MISSING_BLOCKS:
                 break;
             case VerifyDBResult::INTERRUPTED:
-                return {ChainstateLoadStatus::INTERRUPTED, _("Block verification was interrupted")};
+                return {ChainstateLoadStatus::INTERRUPTED, "Block verification was interrupted"};
             case VerifyDBResult::CORRUPTED_BLOCK_DB:
-                return {ChainstateLoadStatus::FAILURE, _("Corrupted block database detected")};
+                return {ChainstateLoadStatus::FAILURE, "Corrupted block database detected"};
             case VerifyDBResult::SKIPPED_L3_CHECKS:
                 if (options.require_full_verification) {
-                    return {ChainstateLoadStatus::FAILURE_INSUFFICIENT_DBCACHE, _("Insufficient dbcache for block verification")};
+                    return {ChainstateLoadStatus::FAILURE_INSUFFICIENT_DBCACHE, "Insufficient dbcache for block verification"};
                 }
                 break;
             } // no default case, so the compiler can warn about missing cases

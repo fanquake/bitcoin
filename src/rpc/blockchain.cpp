@@ -50,7 +50,6 @@
 #include <util/fs.h>
 #include <util/strencodings.h>
 #include <util/syserror.h>
-#include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
 #include <versionbits.h>
@@ -3509,7 +3508,7 @@ static RPCMethod loadtxoutset()
 
     auto activation_result{chainman.ActivateSnapshot(afile, metadata, false)};
     if (!activation_result) {
-        throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to load UTXO snapshot: %s. (%s)", util::ErrorString(activation_result).original, path.utf8string()));
+        throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to load UTXO snapshot: %s. (%s)", util::ErrorString(activation_result), path.utf8string()));
     }
 
     // Because we can't provide historical blocks during tip or background sync.

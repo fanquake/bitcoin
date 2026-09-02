@@ -6,6 +6,7 @@
 #include <protocol.h>
 
 #include <common/system.h>
+#include <tinyformat.h>
 
 CMessageHeader::CMessageHeader(const MessageStartChars& pchMessageStartIn, const char* msg_type, unsigned int nMessageSizeIn)
     : pchMessageStart{pchMessageStartIn}

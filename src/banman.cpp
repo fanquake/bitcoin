@@ -11,7 +11,6 @@
 #include <sync.h>
 #include <util/log.h>
 #include <util/time.h>
-#include <util/translation.h>
 
 
 BanMan::BanMan(fs::path ban_file, CClientUIInterface* client_interface, int64_t default_ban_time)
@@ -30,7 +29,7 @@ void BanMan::LoadBanlist()
 {
     LOCK(m_banned_mutex);
 
-    if (m_client_interface) m_client_interface->InitMessage(_("Loading banlist…"));
+    if (m_client_interface) m_client_interface->InitMessage("Loading banlist…");
 
     const auto start{SteadyClock::now()};
     if (m_ban_db.Read(m_banned)) {

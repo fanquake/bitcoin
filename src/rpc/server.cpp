@@ -15,6 +15,7 @@
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <sync.h>
+#include <tinyformat.h>
 #include <util/overloaded.h>
 #include <util/signalinterrupt.h>
 #include <util/strencodings.h>

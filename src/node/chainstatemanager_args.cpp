@@ -15,7 +15,6 @@
 #include <util/log.h>
 #include <util/result.h>
 #include <util/strencodings.h>
-#include <util/translation.h>
 #include <validation.h>
 
 #include <algorithm>
@@ -34,7 +33,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
         if (auto min_work{uint256::FromUserHex(*value)}) {
             opts.minimum_chain_work = UintToArith256(*min_work);
         } else {
-            return util::Error{Untranslated(strprintf("Invalid minimum work specified (%s), must be up to %d hex digits", *value, uint256::size() * 2))};
+            return util::Error{strprintf("Invalid minimum work specified (%s), must be up to %d hex digits", *value, uint256::size() * 2)};
         }
     }
 
@@ -42,7 +41,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
         if (auto block_hash{uint256::FromUserHex(*value)}) {
             opts.assumed_valid_block = *block_hash;
         } else {
-            return util::Error{Untranslated(strprintf("Invalid assumevalid block hash specified (%s), must be up to %d hex digits (or 0 to disable)", *value, uint256::size() * 2))};
+            return util::Error{strprintf("Invalid assumevalid block hash specified (%s), must be up to %d hex digits (or 0 to disable)", *value, uint256::size() * 2)};
         }
     }
 
@@ -62,7 +61,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
 
     if (auto value{args.GetArg<int32_t>("-prevoutfetchthreads")}) {
         if (*value < 0) {
-            return util::Error{Untranslated(strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 to disable parallel input fetching.", *value))};
+            return util::Error{strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 to disable parallel input fetching.", *value)};
         }
         opts.prevoutfetch_threads_num = std::min(*value, MAX_PREVOUTFETCH_THREADS);
     }

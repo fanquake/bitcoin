@@ -5,7 +5,6 @@
 #ifndef BITCOIN_COMMON_INIT_H
 #define BITCOIN_COMMON_INIT_H
 
-#include <util/translation.h>
 
 #include <functional>
 #include <optional>
@@ -23,14 +22,14 @@ enum class ConfigStatus {
 
 struct ConfigError {
     ConfigStatus status;
-    bilingual_str message{};
+    std::string message{};
     std::vector<std::string> details{};
 };
 
 //! Callback function to let the user decide whether to abort loading if
 //! settings.json file exists and can't be parsed, or to ignore the error and
 //! overwrite the file.
-using SettingsAbortFn = std::function<bool(const bilingual_str& message, const std::vector<std::string>& details)>;
+using SettingsAbortFn = std::function<bool(const std::string& message, const std::vector<std::string>& details)>;
 
 /* Read config files, and create datadir and settings.json if they don't exist. */
 std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn settings_abort_fn = nullptr);

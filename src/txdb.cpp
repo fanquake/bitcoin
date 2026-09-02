@@ -11,6 +11,7 @@
 #include <primitives/transaction.h>
 #include <random.h>
 #include <serialize.h>
+#include <tinyformat.h>
 #include <uint256.h>
 #include <util/byte_units.h>
 #include <util/log.h>

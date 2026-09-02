@@ -6,7 +6,7 @@
 #include <common/system.h>
 #include <net_permissions.h>
 #include <netbase.h>
-#include <util/translation.h>
+#include <tinyformat.h>
 
 using common::ResolveErrMsg;
 
@@ -23,7 +23,7 @@ const std::vector<std::string> NET_PERMISSIONS_DOC{
 namespace {
 
 // Parse the following format: "perm1,perm2@xxxxxx"
-static bool TryParsePermissionFlags(const std::string& str, NetPermissionFlags& output, ConnectionDirection* output_connection_direction, size_t& readen, bilingual_str& error)
+static bool TryParsePermissionFlags(const std::string& str, NetPermissionFlags& output, ConnectionDirection* output_connection_direction, size_t& readen, std::string& error)
 {
     NetPermissionFlags flags = NetPermissionFlags::None;
     ConnectionDirection connection_direction = ConnectionDirection::None;
@@ -59,14 +59,14 @@ static bool TryParsePermissionFlags(const std::string& str, NetPermissionFlags& 
             else if (permission == "out") {
                 if (output_connection_direction == nullptr) {
                     // Only NetWhitebindPermissions() should pass a nullptr.
-                    error = _("whitebind may only be used for incoming connections (\"out\" was passed)");
+                    error = "whitebind may only be used for incoming connections (\"out\" was passed)";
                     return false;
                 }
                 connection_direction |= ConnectionDirection::Out;
             }
             else if (permission.length() == 0); // Allow empty entries
             else {
-                error = strprintf(_("Invalid P2P permission: '%s'"), permission);
+                error = strprintf("Invalid P2P permission: '%s'", permission);
                 return false;
             }
         }
@@ -77,13 +77,13 @@ static bool TryParsePermissionFlags(const std::string& str, NetPermissionFlags& 
     if (connection_direction == ConnectionDirection::None) {
         connection_direction = ConnectionDirection::In;
     } else if (flags == NetPermissionFlags::None) {
-        error = strprintf(_("Only direction was set, no permissions: '%s'"), str);
+        error = strprintf("Only direction was set, no permissions: '%s'", str);
         return false;
     }
 
     output = flags;
     if (output_connection_direction) *output_connection_direction = connection_direction;
-    error = Untranslated("");
+    error = "";
     return true;
 }
 
@@ -102,7 +102,7 @@ std::vector<std::string> NetPermissions::ToStrings(NetPermissionFlags flags)
     return strings;
 }
 
-bool NetWhitebindPermissions::TryParse(const std::string& str, NetWhitebindPermissions& output, bilingual_str& error)
+bool NetWhitebindPermissions::TryParse(const std::string& str, NetWhitebindPermissions& output, std::string& error)
 {
     NetPermissionFlags flags;
     size_t offset;
@@ -115,17 +115,17 @@ bool NetWhitebindPermissions::TryParse(const std::string& str, NetWhitebindPermi
         return false;
     }
     if (addrBind.value().GetPort() == 0) {
-        error = strprintf(_("Need to specify a port with -whitebind: '%s'"), strBind);
+        error = strprintf("Need to specify a port with -whitebind: '%s'", strBind);
         return false;
     }
 
     output.m_flags = flags;
     output.m_service = addrBind.value();
-    error = Untranslated("");
+    error = "";
     return true;
 }
 
-bool NetWhitelistPermissions::TryParse(const std::string& str, NetWhitelistPermissions& output, ConnectionDirection& output_connection_direction, bilingual_str& error)
+bool NetWhitelistPermissions::TryParse(const std::string& str, NetWhitelistPermissions& output, ConnectionDirection& output_connection_direction, std::string& error)
 {
     NetPermissionFlags flags;
     size_t offset;
@@ -135,12 +135,12 @@ bool NetWhitelistPermissions::TryParse(const std::string& str, NetWhitelistPermi
     const std::string net = str.substr(offset);
     const CSubNet subnet{LookupSubNet(net)};
     if (!subnet.IsValid()) {
-        error = strprintf(_("Invalid netmask specified in -whitelist: '%s'"), net);
+        error = strprintf("Invalid netmask specified in -whitelist: '%s'", net);
         return false;
     }
 
     output.m_flags = flags;
     output.m_subnet = subnet;
-    error = Untranslated("");
+    error = "";
     return true;
 }

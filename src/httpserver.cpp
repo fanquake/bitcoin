@@ -17,6 +17,7 @@
 #include <rpc/protocol.h>
 #include <span.h>
 #include <sync.h>
+#include <tinyformat.h>
 #include <util/check.h>
 #include <util/signalinterrupt.h>
 #include <util/sock.h>
@@ -25,7 +26,6 @@
 #include <util/threadnames.h>
 #include <util/threadpool.h>
 #include <util/time.h>
-#include <util/translation.h>
 
 #include <condition_variable>
 #include <cstdio>
@@ -100,7 +100,7 @@ bool HTTPServer::InitHTTPAllowList()
         const CSubNet subnet{LookupSubNet(strAllow)};
         if (!subnet.IsValid()) {
             uiInterface.ThreadSafeMessageBox(
-                Untranslated(strprintf("Invalid -rpcallowip subnet specification: %s. Valid values are a single IP (e.g. 1.2.3.4), a network/netmask (e.g. 1.2.3.4/255.255.255.0), a network/CIDR (e.g. 1.2.3.4/24), all ipv4 (0.0.0.0/0), or all ipv6 (::/0). RFC4193 is allowed only if -cjdnsreachable=0.", strAllow)),
+                strprintf("Invalid -rpcallowip subnet specification: %s. Valid values are a single IP (e.g. 1.2.3.4), a network/netmask (e.g. 1.2.3.4/255.255.255.0), a network/CIDR (e.g. 1.2.3.4/24), all ipv4 (0.0.0.0/0), or all ipv6 (::/0). RFC4193 is allowed only if -cjdnsreachable=0.", strAllow),
                 CClientUIInterface::MSG_ERROR);
             return false;
         }
@@ -229,7 +229,7 @@ static std::vector<std::pair<std::string, uint16_t>> GetBindAddresses()
             uint16_t port{http_port};
             std::string host;
             if (!SplitHostPort(strRPCBind, port, host)) {
-                LogError("%s\n", InvalidPortErrMsg("-rpcbind", strRPCBind).original);
+                LogError("%s\n", InvalidPortErrMsg("-rpcbind", strRPCBind));
                 return {}; // empty
             }
             endpoints.emplace_back(host, port);

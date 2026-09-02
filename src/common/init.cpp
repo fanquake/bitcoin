@@ -9,7 +9,6 @@
 #include <tinyformat.h>
 #include <util/fs.h>
 #include <util/log.h>
-#include <util/translation.h>
 
 #include <exception>
 #include <optional>
@@ -19,7 +18,7 @@ std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn setting
 {
     try {
         if (!CheckDataDirOption(args)) {
-            return ConfigError{ConfigStatus::FAILED, strprintf(_("Specified data directory \"%s\" does not exist."), args.GetArg("-datadir", ""))};
+            return ConfigError{ConfigStatus::FAILED, strprintf("Specified data directory \"%s\" does not exist.", args.GetArg("-datadir", ""))};
         }
 
         // Record original datadir and config paths before parsing the config
@@ -36,7 +35,7 @@ std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn setting
 
         std::string error;
         if (!args.ReadConfigFiles(error, true)) {
-            return ConfigError{ConfigStatus::FAILED, strprintf(_("Error reading configuration file: %s"), error)};
+            return ConfigError{ConfigStatus::FAILED, strprintf("Error reading configuration file: %s", error)};
         }
 
         // Check for chain settings (Params() calls are only valid after this clause)
@@ -90,7 +89,7 @@ std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn setting
                     LogWarning("%s", error);
                 } else {
                     error += "\n- Set allowignoredconf=1 option to treat this condition as a warning, not an error.";
-                    return ConfigError{ConfigStatus::FAILED, Untranslated(error)};
+                    return ConfigError{ConfigStatus::FAILED, error};
                 }
             }
         }
@@ -99,7 +98,7 @@ std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn setting
         if (args.GetSettingsPath()) {
             std::vector<std::string> details;
             if (!args.ReadSettingsFile(&details)) {
-                const bilingual_str& message = _("Settings file could not be read");
+                const std::string& message = "Settings file could not be read";
                 if (!settings_abort_fn) {
                     return ConfigError{ConfigStatus::FAILED, message, details};
                 } else if (settings_abort_fn(message, details)) {
@@ -109,12 +108,12 @@ std::optional<ConfigError> InitConfig(ArgsManager& args, SettingsAbortFn setting
                 }
             }
             if (!args.WriteSettingsFile(&details)) {
-                const bilingual_str& message = _("Settings file could not be written");
+                const std::string& message = "Settings file could not be written";
                 return ConfigError{ConfigStatus::FAILED_WRITE, message, details};
             }
         }
     } catch (const std::exception& e) {
-        return ConfigError{ConfigStatus::FAILED, Untranslated(e.what())};
+        return ConfigError{ConfigStatus::FAILED, e.what()};
     }
     return {};
 }

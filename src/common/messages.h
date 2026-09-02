@@ -15,7 +15,6 @@
 #include <string_view>
 #include <utility>
 
-struct bilingual_str;
 enum class FeeEstimateMode;
 enum class FeeReason;
 namespace node {
@@ -31,12 +30,12 @@ std::string FeeModes(const std::string& delimiter);
 std::string FeeModeInfo(std::pair<std::string, FeeEstimateMode>& mode);
 std::string FeeModesDetail(std::string default_info);
 std::string InvalidEstimateModeErrorMessage();
-bilingual_str PSBTErrorString(PSBTError error);
-bilingual_str TransactionErrorString(node::TransactionError error);
-bilingual_str ResolveErrMsg(const std::string& optname, const std::string& strBind);
-bilingual_str InvalidPortErrMsg(const std::string& optname, const std::string& strPort);
-bilingual_str AmountHighWarn(const std::string& optname);
-bilingual_str AmountErrMsg(const std::string& optname, const std::string& strValue);
+std::string PSBTErrorString(PSBTError error);
+std::string TransactionErrorString(node::TransactionError error);
+std::string ResolveErrMsg(const std::string& optname, const std::string& strBind);
+std::string InvalidPortErrMsg(const std::string& optname, const std::string& strPort);
+std::string AmountHighWarn(const std::string& optname);
+std::string AmountErrMsg(const std::string& optname, const std::string& strValue);
 } // namespace common
 
 #endif // BITCOIN_COMMON_MESSAGES_H

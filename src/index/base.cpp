@@ -27,7 +27,6 @@
 #include <util/thread.h>
 #include <util/threadinterrupt.h>
 #include <util/time.h>
-#include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
 
@@ -53,7 +52,7 @@ template <typename... Args>
 void BaseIndex::FatalErrorf(util::ConstevalFormatString<sizeof...(Args)> fmt, const Args&... args)
 {
     auto message = tfm::format(fmt, args...);
-    node::AbortNode(m_chain->context()->shutdown_request, m_chain->context()->exit_status, Untranslated(message), m_chain->context()->warnings.get());
+    node::AbortNode(m_chain->context()->shutdown_request, m_chain->context()->exit_status, message, m_chain->context()->warnings.get());
 }
 
 CBlockLocator GetLocator(interfaces::Chain& chain, const uint256& block_hash)
@@ -129,7 +128,7 @@ bool BaseIndex::Init()
         // best chain, we will rewind to the fork point during index sync
         const CBlockIndex* locator_index{m_chainstate->m_blockman.LookupBlockIndex(locator.vHave.at(0))};
         if (!locator_index) {
-            return InitError(Untranslated(strprintf("best block of %s not found. Please rebuild the index.", GetName())));
+            return InitError(strprintf("best block of %s not found. Please rebuild the index.", GetName()));
         }
         SetBestBlockIndex(locator_index);
     }

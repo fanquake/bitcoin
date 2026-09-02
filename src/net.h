@@ -43,6 +43,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <unordered_set>
@@ -53,7 +54,6 @@ class BanMan;
 class CChainParams;
 class CNode;
 class CScheduler;
-struct bilingual_str;
 
 /** Time after which to disconnect, after waiting for a ping response (or inactivity). */
 inline constexpr std::chrono::minutes TIMEOUT_INTERVAL{20};
@@ -1447,7 +1447,7 @@ private:
     //! in case of no limit, it will always return 0
     std::chrono::seconds GetMaxOutboundTimeLeftInCycle_() const EXCLUSIVE_LOCKS_REQUIRED(m_total_bytes_sent_mutex);
 
-    bool BindListenPort(const CService& bindAddr, bilingual_str& strError, NetPermissionFlags permissions);
+    bool BindListenPort(const CService& bindAddr, std::string& strError, NetPermissionFlags permissions);
     bool Bind(const CService& addr, unsigned int flags, NetPermissionFlags permissions);
     bool InitBinds(const Options& options);
 

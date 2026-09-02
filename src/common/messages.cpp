@@ -12,7 +12,6 @@
 #include <util/fees.h>
 #include <util/strencodings.h>
 #include <util/string.h>
-#include <util/translation.h>
 
 #include <map>
 #include <string>
@@ -94,69 +93,69 @@ bool FeeModeFromString(std::string_view mode_string, FeeEstimateMode& fee_estima
     return false;
 }
 
-bilingual_str PSBTErrorString(PSBTError err)
+std::string PSBTErrorString(PSBTError err)
 {
     switch (err) {
         case PSBTError::MISSING_INPUTS:
-            return Untranslated("Inputs missing or spent");
+            return "Inputs missing or spent";
         case PSBTError::SIGHASH_MISMATCH:
-            return Untranslated("Specified sighash value does not match value stored in PSBT");
+            return "Specified sighash value does not match value stored in PSBT";
         case PSBTError::EXTERNAL_SIGNER_NOT_FOUND:
-            return Untranslated("External signer not found");
+            return "External signer not found";
         case PSBTError::EXTERNAL_SIGNER_FAILED:
-            return Untranslated("External signer failed to sign");
+            return "External signer failed to sign";
         case PSBTError::UNSUPPORTED:
-            return Untranslated("Signer does not support PSBT");
+            return "Signer does not support PSBT";
         case PSBTError::INCOMPLETE:
-            return Untranslated("Input needs additional signatures or other data");
+            return "Input needs additional signatures or other data";
         case PSBTError::INVALID_TX:
-            return Untranslated("The transaction cannot be valid");
+            return "The transaction cannot be valid";
     } // no default case, so the compiler can warn about missing cases
     assert(false);
 }
 
-bilingual_str TransactionErrorString(const TransactionError err)
+std::string TransactionErrorString(const TransactionError err)
 {
     switch (err) {
         case TransactionError::OK:
-            return Untranslated("No error");
+            return "No error";
         case TransactionError::MISSING_INPUTS:
-            return Untranslated("Inputs missing or spent");
+            return "Inputs missing or spent";
         case TransactionError::ALREADY_IN_UTXO_SET:
-            return Untranslated("Transaction outputs already in utxo set");
+            return "Transaction outputs already in utxo set";
         case TransactionError::MEMPOOL_REJECTED:
-            return Untranslated("Transaction rejected by mempool");
+            return "Transaction rejected by mempool";
         case TransactionError::MEMPOOL_ERROR:
-            return Untranslated("Mempool internal error");
+            return "Mempool internal error";
         case TransactionError::MAX_FEE_EXCEEDED:
-            return Untranslated("Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)");
+            return "Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)";
         case TransactionError::MAX_BURN_EXCEEDED:
-            return Untranslated("Unspendable output exceeds maximum configured by user (maxburnamount)");
+            return "Unspendable output exceeds maximum configured by user (maxburnamount)";
         case TransactionError::INVALID_PACKAGE:
-            return Untranslated("Transaction rejected due to invalid package");
+            return "Transaction rejected due to invalid package";
         case TransactionError::PRIVATE_BROADCAST_FULL:
-            return Untranslated("Private broadcast queue is full");
+            return "Private broadcast queue is full";
     } // no default case, so the compiler can warn about missing cases
     assert(false);
 }
 
-bilingual_str ResolveErrMsg(const std::string& optname, const std::string& strBind)
+std::string ResolveErrMsg(const std::string& optname, const std::string& strBind)
 {
-    return strprintf(_("Cannot resolve -%s address: '%s'"), optname, strBind);
+    return strprintf("Cannot resolve -%s address: '%s'", optname, strBind);
 }
 
-bilingual_str InvalidPortErrMsg(const std::string& optname, const std::string& invalid_value)
+std::string InvalidPortErrMsg(const std::string& optname, const std::string& invalid_value)
 {
-    return strprintf(_("Invalid port specified in %s: '%s'"), optname, invalid_value);
+    return strprintf("Invalid port specified in %s: '%s'", optname, invalid_value);
 }
 
-bilingual_str AmountHighWarn(const std::string& optname)
+std::string AmountHighWarn(const std::string& optname)
 {
-    return strprintf(_("%s is set very high!"), optname);
+    return strprintf("%s is set very high!", optname);
 }
 
-bilingual_str AmountErrMsg(const std::string& optname, const std::string& strValue)
+std::string AmountErrMsg(const std::string& optname, const std::string& strValue)
 {
-    return strprintf(_("Invalid amount for -%s=<amount>: '%s'"), optname, strValue);
+    return strprintf("Invalid amount for -%s=<amount>: '%s'", optname, strValue);
 }
 } // namespace common

@@ -7,7 +7,6 @@
 #define BITCOIN_NODE_WARNINGS_H
 
 #include <sync.h>
-#include <util/translation.h>
 
 #include <map>
 #include <variant>
@@ -41,7 +40,7 @@ class Warnings
     typedef std::variant<kernel::Warning, node::Warning> warning_type;
 
     mutable Mutex m_mutex;
-    std::map<warning_type, bilingual_str> m_warnings GUARDED_BY(m_mutex);
+    std::map<warning_type, std::string> m_warnings GUARDED_BY(m_mutex);
 
 public:
     Warnings();
@@ -60,7 +59,7 @@ public:
      * @returns true if the warning was indeed set (i.e. there is no
      *          active warning with this `id`), otherwise false.
      */
-    bool Set(warning_type id, bilingual_str message) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
+    bool Set(warning_type id, std::string message) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
     /**
      * @brief Unset a warning message. If a warning with the specified
      *        `id` is active, it is unset, the UI is updated, and true
@@ -75,7 +74,7 @@ public:
     bool Unset(warning_type id) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
     /** Return potential problems detected by the node, sorted by the
      * warning_type id */
-    std::vector<bilingual_str> GetMessages() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
+    std::vector<std::string> GetMessages() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
 };
 
 /**

@@ -15,7 +15,6 @@
 
 class CBlockIndex;
 enum class SynchronizationState;
-struct bilingual_str;
 
 /** Signals for UI communication. */
 class CClientUIInterface
@@ -65,10 +64,10 @@ public:
     };
 
     /** Show message box. */
-    btcsignals::signal<void(const bilingual_str& message, unsigned int style)> ThreadSafeMessageBox;
+    btcsignals::signal<void(const std::string& message, unsigned int style)> ThreadSafeMessageBox;
 
     /** If possible, ask the user a question. If not, falls back to ThreadSafeMessageBox(noninteractive_message, style) and returns false. */
-    btcsignals::signal<bool(const bilingual_str& message, const std::string& noninteractive_message, unsigned int style), btcsignals::any_of> ThreadSafeQuestion;
+    btcsignals::signal<bool(const std::string& message, const std::string& noninteractive_message, unsigned int style), btcsignals::any_of> ThreadSafeQuestion;
 
     /** Progress message during initialization. */
     btcsignals::signal<void(const std::string& message)> InitMessage;
@@ -104,11 +103,11 @@ public:
 };
 
 /** Show warning message **/
-void InitWarning(const bilingual_str& str);
+void InitWarning(const std::string& str);
 
 /** Show error message **/
-bool InitError(const bilingual_str& str);
-bool InitError(const bilingual_str& str, const std::vector<std::string>& details);
+bool InitError(const std::string& str);
+bool InitError(const std::string& str, const std::vector<std::string>& details);
 
 extern CClientUIInterface uiInterface;
 

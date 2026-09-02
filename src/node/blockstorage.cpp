@@ -38,7 +38,6 @@
 #include <util/strencodings.h>
 #include <util/syserror.h>
 #include <util/time.h>
-#include <util/translation.h>
 #include <validation.h>
 
 #include <cerrno>
@@ -447,7 +446,7 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
     if (snapshot_blockhash) {
         const std::optional<AssumeutxoData> maybe_au_data = GetParams().AssumeutxoForBlockhash(*snapshot_blockhash);
         if (!maybe_au_data) {
-            m_opts.notifications.fatalError(strprintf(_("Assumeutxo data not found for the given blockhash '%s'."), snapshot_blockhash->ToString()));
+            m_opts.notifications.fatalError(strprintf("Assumeutxo data not found for the given blockhash '%s'.", snapshot_blockhash->ToString()));
             return false;
         }
         const AssumeutxoData& au_data = *Assert(maybe_au_data);
@@ -751,7 +750,7 @@ bool BlockManager::FlushUndoFile(int block_file, bool finalize)
 {
     FlatFilePos undo_pos_old(block_file, m_blockfile_info[block_file].nUndoSize);
     if (!m_undo_file_seq.Flush(undo_pos_old, finalize)) {
-        m_opts.notifications.flushError(_("Flushing undo file to disk failed. This is likely the result of an I/O error."));
+        m_opts.notifications.flushError("Flushing undo file to disk failed. This is likely the result of an I/O error.");
         return false;
     }
     return true;
@@ -773,7 +772,7 @@ bool BlockManager::FlushBlockFile(int blockfile_num, bool fFinalize, bool finali
 
     FlatFilePos block_pos_old(blockfile_num, m_blockfile_info[blockfile_num].nSize);
     if (!m_block_file_seq.Flush(block_pos_old, fFinalize)) {
-        m_opts.notifications.flushError(_("Flushing block file to disk failed. This is likely the result of an I/O error."));
+        m_opts.notifications.flushError("Flushing block file to disk failed. This is likely the result of an I/O error.");
         success = false;
     }
     // we do not always flush the undo file, as the chain tip may be lagging behind the incoming blocks,
@@ -925,7 +924,7 @@ FlatFilePos BlockManager::FindNextBlockPos(unsigned int nAddSize, unsigned int n
     bool out_of_space;
     size_t bytes_allocated = m_block_file_seq.Allocate(pos, nAddSize, out_of_space);
     if (out_of_space) {
-        m_opts.notifications.fatalError(_("Disk space is too low!"));
+        m_opts.notifications.fatalError("Disk space is too low!");
         return {};
     }
     if (bytes_allocated != 0 && IsPruneMode()) {
@@ -969,7 +968,7 @@ bool BlockManager::FindUndoPos(BlockValidationState& state, int nFile, FlatFileP
     bool out_of_space;
     size_t bytes_allocated = m_undo_file_seq.Allocate(pos, nAddSize, out_of_space);
     if (out_of_space) {
-        return FatalError(m_opts.notifications, state, _("Disk space is too low!"));
+        return FatalError(m_opts.notifications, state, "Disk space is too low!");
     }
     if (bytes_allocated != 0 && IsPruneMode()) {
         m_check_for_pruning = true;
@@ -997,7 +996,7 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
         AutoFile file{OpenUndoFile(pos)};
         if (file.IsNull()) {
             LogError("OpenUndoFile failed for %s while writing block undo", pos.ToString());
-            return FatalError(m_opts.notifications, state, _("Failed to write undo data."));
+            return FatalError(m_opts.notifications, state, "Failed to write undo data.");
         }
         {
             BufferedWriter fileout{file};
@@ -1018,7 +1017,7 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
         // Make sure that the file is closed before we call `FlushUndoFile`.
         if (file.fclose() != 0) {
             LogError("Failed to close block undo file %s: %s", pos.ToString(), SysErrorString(errno));
-            return FatalError(m_opts.notifications, state, _("Failed to close block undo file."));
+            return FatalError(m_opts.notifications, state, "Failed to close block undo file.");
         }
 
         // rev files are written in block height order, whereas blk files are written as blocks come in (often out of order)
@@ -1151,7 +1150,7 @@ FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
     AutoFile file{OpenBlockFile(pos, /*fReadOnly=*/false)};
     if (file.IsNull()) {
         LogError("OpenBlockFile failed for %s while writing block", pos.ToString());
-        m_opts.notifications.fatalError(_("Failed to write block."));
+        m_opts.notifications.fatalError("Failed to write block.");
         return FlatFilePos();
     }
     {
@@ -1166,7 +1165,7 @@ FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
 
     if (file.fclose() != 0) {
         LogError("Failed to close block file %s: %s", pos.ToString(), SysErrorString(errno));
-        m_opts.notifications.fatalError(_("Failed to close file when writing block."));
+        m_opts.notifications.fatalError("Failed to close file when writing block.");
         return FlatFilePos();
     }
 

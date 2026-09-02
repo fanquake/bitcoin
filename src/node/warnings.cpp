@@ -11,7 +11,6 @@
 #include <node/interface_ui.h>
 #include <sync.h>
 #include <univalue.h>
-#include <util/translation.h>
 
 #include <utility>
 #include <vector>
@@ -23,10 +22,10 @@ Warnings::Warnings()
     if (!CLIENT_VERSION_IS_RELEASE) {
         m_warnings.insert(
             {Warning::PRE_RELEASE_TEST_BUILD,
-             _("This is a pre-release test build - use at your own risk - do not use for mining or merchant applications")});
+             "This is a pre-release test build - use at your own risk - do not use for mining or merchant applications"});
     }
 }
-bool Warnings::Set(warning_type id, bilingual_str message)
+bool Warnings::Set(warning_type id, std::string message)
 {
     const auto& [_, inserted]{WITH_LOCK(m_mutex, return m_warnings.insert({id, std::move(message)}))};
     if (inserted) uiInterface.NotifyAlertChanged();
@@ -40,10 +39,10 @@ bool Warnings::Unset(warning_type id)
     return success;
 }
 
-std::vector<bilingual_str> Warnings::GetMessages() const
+std::vector<std::string> Warnings::GetMessages() const
 {
     LOCK(m_mutex);
-    std::vector<bilingual_str> messages;
+    std::vector<std::string> messages;
     messages.reserve(m_warnings.size());
     for (const auto& [id, msg] : m_warnings) {
         messages.push_back(msg);
@@ -55,12 +54,12 @@ UniValue GetWarningsForRpc(const Warnings& warnings, bool use_deprecated)
 {
     if (use_deprecated) {
         const auto all_messages{warnings.GetMessages()};
-        return all_messages.empty() ? "" : all_messages.back().original;
+        return all_messages.empty() ? "" : all_messages.back();
     }
 
     UniValue messages{UniValue::VARR};
     for (auto&& message : warnings.GetMessages()) {
-        messages.push_back(std::move(message.original));
+        messages.push_back(std::move(message));
     }
     return messages;
 }

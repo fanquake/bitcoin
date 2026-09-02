@@ -25,7 +25,6 @@
 #include <util/result.h>
 #include <util/strencodings.h>
 #include <util/string.h>
-#include <util/translation.h>
 
 #include <algorithm>
 #include <iterator>
@@ -362,7 +361,7 @@ std::optional<int> ParseSighashString(const UniValue& sighash)
     }
     const auto result{SighashFromStr(sighash.get_str())};
     if (!result) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, util::ErrorString(result).original);
+        throw JSONRPCError(RPC_INVALID_PARAMETER, util::ErrorString(result));
     }
     return result.value();
 }
@@ -405,7 +404,7 @@ RPCErrorCode RPCErrorFromTransactionError(TransactionError terr)
 
 UniValue JSONRPCPSBTError(PSBTError err)
 {
-    return JSONRPCError(RPCErrorFromPSBTError(err), PSBTErrorString(err).original);
+    return JSONRPCError(RPCErrorFromPSBTError(err), PSBTErrorString(err));
 }
 
 UniValue JSONRPCTransactionError(TransactionError terr, const std::string& err_string)
@@ -413,7 +412,7 @@ UniValue JSONRPCTransactionError(TransactionError terr, const std::string& err_s
     if (err_string.length() > 0) {
         return JSONRPCError(RPCErrorFromTransactionError(terr), err_string);
     } else {
-        return JSONRPCError(RPCErrorFromTransactionError(terr), TransactionErrorString(terr).original);
+        return JSONRPCError(RPCErrorFromTransactionError(terr), TransactionErrorString(terr));
     }
 }
 
@@ -1390,12 +1389,12 @@ std::vector<uint32_t> ParsePathBIP32(const std::string& path)
 }
 
 /** Convert a vector of bilingual strings to a UniValue::VARR containing their original untranslated values. */
-[[nodiscard]] static UniValue BilingualStringsToUniValue(const std::vector<bilingual_str>& bilingual_strings)
+[[nodiscard]] static UniValue BilingualStringsToUniValue(const std::vector<std::string>& bilingual_strings)
 {
     CHECK_NONFATAL(!bilingual_strings.empty());
     UniValue result{UniValue::VARR};
     for (const auto& s : bilingual_strings) {
-        result.push_back(s.original);
+        result.push_back(s);
     }
     return result;
 }
@@ -1406,7 +1405,7 @@ void PushWarnings(const UniValue& warnings, UniValue& obj)
     obj.pushKV("warnings", warnings);
 }
 
-void PushWarnings(const std::vector<bilingual_str>& warnings, UniValue& obj)
+void PushWarnings(const std::vector<std::string>& warnings, UniValue& obj)
 {
     if (warnings.empty()) return;
     obj.pushKV("warnings", BilingualStringsToUniValue(warnings));

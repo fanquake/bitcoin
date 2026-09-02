@@ -101,7 +101,6 @@
 #include <util/thread.h>
 #include <util/threadnames.h>
 #include <util/time.h>
-#include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
 #include <walletinitinterface.h>
@@ -212,7 +211,7 @@ static fs::path GetPidFile(const ArgsManager& args)
         g_generated_pid = true;
         return true;
     } else {
-        return InitError(strprintf(_("Unable to create the PID file '%s': %s"), fs::PathToString(GetPidFile(args)), SysErrorString(errno)));
+        return InitError(strprintf("Unable to create the PID file '%s': %s", fs::PathToString(GetPidFile(args)), SysErrorString(errno)));
     }
 }
 
@@ -745,7 +744,7 @@ bool AppInitBasicSetup(const ArgsManager& args, std::atomic<int>& exit_status)
     HeapSetInformation(nullptr, HeapEnableTerminationOnCorruption, nullptr, 0);
 #endif
     if (!SetupNetworking()) {
-        return InitError(Untranslated("Initializing networking failed."));
+        return InitError("Initializing networking failed.");
     }
 
 #ifndef WIN32
@@ -776,7 +775,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
 
     // We removed checkpoints but keep the option to warn users who still have it in their config.
     if (args.IsArgSet("-checkpoints")) {
-        InitWarning(_("Option '-checkpoints' is set but checkpoints were removed. This option has no effect."));
+        InitWarning("Option '-checkpoints' is set but checkpoints were removed. This option has no effect.");
     }
 
     // Error if network-specific options (-addnode, -connect, etc) are
@@ -786,9 +785,9 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     if (chain == ChainType::SIGNET) {
         LogInfo("Signet derived magic (message start): %s", HexStr(chainparams.MessageStart()));
     }
-    bilingual_str errors;
+    std::string errors;
     for (const auto& arg : args.GetUnsuitableSectionOnlyArgs()) {
-        errors += strprintf(_("Config setting for %s only applied on %s network when in [%s] section."), arg, ChainTypeToString(chain), ChainTypeToString(chain)) + Untranslated("\n");
+        errors += strprintf("Config setting for %s only applied on %s network when in [%s] section.", arg, ChainTypeToString(chain), ChainTypeToString(chain)) + "\n";
     }
 
     if (!errors.empty()) {
@@ -801,9 +800,9 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     }
 
     // Warn if unrecognized section name are present in the config file.
-    bilingual_str warnings;
+    std::string warnings;
     for (const auto& section : args.GetUnrecognizedSections()) {
-        warnings += Untranslated(strprintf("%s:%i ", section.m_file, section.m_line)) + strprintf(_("Section [%s] is not recognized."), section.m_name) + Untranslated("\n");
+        warnings += strprintf("%s:%i ", section.m_file, section.m_line) + strprintf("Section [%s] is not recognized.", section.m_name) + "\n";
     }
 
     if (!warnings.empty()) {
@@ -811,7 +810,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     }
 
     if (!fs::is_directory(args.GetBlocksDirPath())) {
-        return InitError(strprintf(_("Specified blocks directory \"%s\" does not exist."), args.GetArg("-blocksdir", "")));
+        return InitError(strprintf("Specified blocks directory \"%s\" does not exist.", args.GetArg("-blocksdir", "")));
     }
 
 
@@ -819,18 +818,18 @@ bool AppInitParameterInteraction(const ArgsManager& args)
 
     // If -forcednsseed is set to true, ensure -dnsseed has not been set to false
     if (args.GetBoolArg("-forcednsseed", DEFAULT_FORCEDNSSEED) && !args.GetBoolArg("-dnsseed", DEFAULT_DNSSEED)){
-        return InitError(_("Cannot set -forcednsseed to true when setting -dnsseed to false."));
+        return InitError("Cannot set -forcednsseed to true when setting -dnsseed to false.");
     }
 
     // -bind and -whitebind can't be set when not listening
     size_t num_user_p2p_bind = args.GetArgs("-bind").size() + args.GetArgs("-whitebind").size();
     if (num_user_p2p_bind != 0 && !args.GetBoolArg("-listen", DEFAULT_LISTEN)) {
-        return InitError(Untranslated("Cannot set -bind or -whitebind together with -listen=0"));
+        return InitError("Cannot set -bind or -whitebind together with -listen=0");
     }
 
     // if listen=0, then disallow listenonion=1
     if (!args.GetBoolArg("-listen", DEFAULT_LISTEN) && args.GetBoolArg("-listenonion", DEFAULT_LISTEN_ONION)) {
-        return InitError(Untranslated("Cannot set -listen=0 together with -listenonion=1"));
+        return InitError("Cannot set -listen=0 together with -listenonion=1");
     }
 
     // Make sure enough file descriptors are available. We need to reserve enough FDs to account for the bare minimum,
@@ -841,7 +840,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // Maximum number of connections with other nodes, this accounts for all types of outbounds and inbounds except for manual
     int user_p2p_max_connections = args.GetIntArg("-maxconnections", DEFAULT_MAX_PEER_CONNECTIONS);
     if (user_p2p_max_connections < 0) {
-        return InitError(Untranslated("-maxconnections must be greater or equal than zero"));
+        return InitError("-maxconnections must be greater or equal than zero");
     }
 
     // HTTP server listen sockets: by default two (IPv4 and IPv6 loopback), or one per -rpcbind entry
@@ -849,7 +848,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // HTTP server connected client sockets
     int user_rpc_max_connections = args.GetArg<int>("-rpcmaxconnections", DEFAULT_MAX_HTTP_CONNECTIONS);
     if (user_rpc_max_connections < 1) {
-        return InitError(Untranslated("-rpcmaxconnections must be greater than zero. Use -server=0 to disable HTTP."));
+        return InitError("-rpcmaxconnections must be greater than zero. Use -server=0 to disable HTTP.");
     }
     if (!args.GetBoolArg("-server", false)) {
         num_rpc_bind = 0;
@@ -866,9 +865,9 @@ bool AppInitParameterInteraction(const ArgsManager& args)
                               user_rpc_max_connections +
                               user_p2p_max_connections;
     if (total_fds > std::numeric_limits<int>::max()) {
-        return InitError(Untranslated("Too many file descriptors requested. Try lower values for -rpcmaxconnections "
+        return InitError("Too many file descriptors requested. Try lower values for -rpcmaxconnections "
                                       "or -maxconnections, or fewer settings of "
-                                      "-rpcbind, -bind and -whitebind"));
+                                      "-rpcbind, -bind and -whitebind");
     }
 
     // Subset of total_fds must also be a safe int
@@ -886,14 +885,14 @@ bool AppInitParameterInteraction(const ArgsManager& args)
 #endif
     // The system can't support our bare minimum
     if (available_fds < min_required_fds)
-        return InitError(strprintf(_("Not enough file descriptors available. %d available, %d required."), available_fds, min_required_fds));
+        return InitError(strprintf("Not enough file descriptors available. %d available, %d required.", available_fds, min_required_fds));
 
     // The system can support our minimum but not the full amount the user requested.
     if (available_fds < total_fds) {
         // If the user is requesting extra HTTP connections, abort. They need to change that.
         if (user_rpc_max_connections > DEFAULT_MAX_HTTP_CONNECTIONS) {
-            return InitError(strprintf(_("Not enough file descriptors available. "
-                                         "Try reducing -rpcmaxconnections or using the default value of %d"),
+            return InitError(strprintf("Not enough file descriptors available. "
+                                         "Try reducing -rpcmaxconnections or using the default value of %d",
                                          DEFAULT_MAX_HTTP_CONNECTIONS));
         }
     }
@@ -902,7 +901,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     num_p2p_max_connections = std::min(available_fds - min_required_fds, user_p2p_max_connections);
 
     if (num_p2p_max_connections < user_p2p_max_connections)
-        InitWarning(strprintf(_("Reducing -maxconnections from %d to %d, because of system limitations."), user_p2p_max_connections, num_p2p_max_connections));
+        InitWarning(strprintf("Reducing -maxconnections from %d to %d, because of system limitations.", user_p2p_max_connections, num_p2p_max_connections));
 
     // ********************************************************* Step 3: parameter-to-internal-flags
     if (auto result{init::SetLoggingCategories(args)}; !result) return InitError(util::ErrorString(result));
@@ -915,7 +914,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
 
     peer_connect_timeout = args.GetIntArg("-peertimeout", DEFAULT_PEER_CONNECT_TIMEOUT);
     if (peer_connect_timeout <= 0) {
-        return InitError(Untranslated("peertimeout must be a positive integer."));
+        return InitError("peertimeout must be a positive integer.");
     }
 
     auto mining_result{node::ReadMiningArgs(args)};
@@ -936,7 +935,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     const std::vector<std::string> test_options = args.GetArgs("-test");
     if (!test_options.empty()) {
         if (chainparams.GetChainType() != ChainType::REGTEST) {
-            return InitError(Untranslated("-test=<option> can only be used with regtest"));
+            return InitError("-test=<option> can only be used with regtest");
         }
         for (const std::string& option : test_options) {
             auto it = std::find_if(TEST_OPTIONS_DOC.begin(), TEST_OPTIONS_DOC.end(), [&option](const std::string& doc_option) {
@@ -944,7 +943,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
                 return (pos != std::string::npos) && (doc_option.substr(0, pos) == option);
             });
             if (it == TEST_OPTIONS_DOC.end()) {
-                InitWarning(strprintf(_("Unrecognised option \"%s\" provided in -test=<option>."), option));
+                InitWarning(strprintf("Unrecognised option \"%s\" provided in -test=<option>.", option));
             }
         }
     }
@@ -952,10 +951,10 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // Prevent setting deployment parameters on mainnet.
     if (chainparams.GetChainType() == ChainType::MAIN) {
         if (args.IsArgSet("-testactivationheight")) {
-            return InitError(_("The -testactivationheight option may not be used on mainnet."));
+            return InitError("The -testactivationheight option may not be used on mainnet.");
         }
         if (args.IsArgSet("-vbparams")) {
-            return InitError(_("The -vbparams option may not be used on mainnet."));
+            return InitError("The -vbparams option may not be used on mainnet.");
         }
     }
 
@@ -999,9 +998,9 @@ static bool LockDirectory(const fs::path& dir, bool probeOnly)
     // Make sure only a single process is using the directory.
     switch (util::LockDirectory(dir, ".lock", probeOnly)) {
     case util::LockResult::ErrorWrite:
-        return InitError(strprintf(_("Cannot write to directory '%s'; check permissions."), fs::PathToString(dir)));
+        return InitError(strprintf("Cannot write to directory '%s'; check permissions.", fs::PathToString(dir)));
     case util::LockResult::ErrorLock:
-        return InitError(strprintf(_("Cannot obtain a lock on directory %s. %s is probably already running."), fs::PathToString(dir), CLIENT_NAME));
+        return InitError(strprintf("Cannot obtain a lock on directory %s. %s is probably already running.", fs::PathToString(dir), CLIENT_NAME));
     case util::LockResult::Success: return true;
     } // no default case, so the compiler can warn about missing cases
     assert(false);
@@ -1018,11 +1017,11 @@ bool AppInitSanityChecks(const kernel::Context& kernel)
     auto result{kernel::SanityChecks(kernel)};
     if (!result) {
         InitError(util::ErrorString(result));
-        return InitError(strprintf(_("Initialization sanity check failed. %s is shutting down."), CLIENT_NAME));
+        return InitError(strprintf("Initialization sanity check failed. %s is shutting down.", CLIENT_NAME));
     }
 
     if (!ECC_InitSanityCheck()) {
-        return InitError(strprintf(_("Elliptic curve cryptography sanity check failure. %s is shutting down."), CLIENT_NAME));
+        return InitError(strprintf("Elliptic curve cryptography sanity check failure. %s is shutting down.", CLIENT_NAME));
     }
 
     // Probe the directory locks to give an early error message, if possible
@@ -1122,7 +1121,7 @@ static ChainstateLoadResult InitAndLoadChainstate(
         .signals = node.validation_signals.get(),
     };
     Assert(ApplyArgsManOptions(args, chainparams, mempool_opts)); // no error can happen, already checked in AppInitParameterInteraction
-    bilingual_str mempool_error;
+    std::string mempool_error;
     Assert(!node.mempool); // Was reset above
     node.mempool = std::make_unique<CTxMemPool>(mempool_opts, mempool_error);
     if (!mempool_error.empty()) {
@@ -1162,9 +1161,9 @@ static ChainstateLoadResult InitAndLoadChainstate(
         node.chainman = std::make_unique<ChainstateManager>(*Assert(node.shutdown_signal), chainman_opts, blockman_opts);
     } catch (dbwrapper_error& e) {
         LogError("%s", e.what());
-        return {ChainstateLoadStatus::FAILURE, _("Error opening block database")};
+        return {ChainstateLoadStatus::FAILURE, "Error opening block database"};
     } catch (std::exception& e) {
-        return {ChainstateLoadStatus::FAILURE_FATAL, Untranslated(strprintf("Failed to initialize ChainstateManager: %s", e.what()))};
+        return {ChainstateLoadStatus::FAILURE_FATAL, strprintf("Failed to initialize ChainstateManager: %s", e.what())};
     }
     ChainstateManager& chainman = *node.chainman;
     if (chainman.m_interrupt) return {ChainstateLoadStatus::INTERRUPTED, {}};
@@ -1198,21 +1197,21 @@ static ChainstateLoadResult InitAndLoadChainstate(
     options.require_full_verification = args.IsArgSet("-checkblocks") || args.IsArgSet("-checklevel");
     options.coins_error_cb = [] {
         uiInterface.ThreadSafeMessageBox(
-            _("Error reading from database, shutting down."),
+            "Error reading from database, shutting down.",
             CClientUIInterface::MSG_ERROR);
     };
-    uiInterface.InitMessage(_("Loading block index…"));
+    uiInterface.InitMessage("Loading block index…");
     auto catch_exceptions = [](auto&& f) -> ChainstateLoadResult {
         try {
             return f();
         } catch (const std::exception& e) {
             LogError("%s\n", e.what());
-            return std::make_tuple(node::ChainstateLoadStatus::FAILURE, _("Error loading databases"));
+            return std::make_tuple(node::ChainstateLoadStatus::FAILURE, "Error loading databases");
         }
     };
     auto [status, error] = catch_exceptions([&] { return LoadChainstate(chainman, cache_sizes, options); });
     if (status == node::ChainstateLoadStatus::SUCCESS) {
-        uiInterface.InitMessage(_("Verifying blocks…"));
+        uiInterface.InitMessage("Verifying blocks…");
         if (chainman.m_blockman.m_have_pruned && options.check_blocks > MIN_BLOCKS_TO_KEEP) {
             LogWarning("pruned datadir may not have more than %d blocks; only checking available blocks\n",
                        MIN_BLOCKS_TO_KEEP);
@@ -1233,7 +1232,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     auto opt_max_upload = ParseByteUnits(args.GetArg("-maxuploadtarget", DEFAULT_MAX_UPLOAD_TARGET), ByteUnit::M);
     if (!opt_max_upload) {
-        return InitError(strprintf(_("Unable to parse -maxuploadtarget: '%s'"), args.GetArg("-maxuploadtarget", "")));
+        return InitError(strprintf("Unable to parse -maxuploadtarget: '%s'", args.GetArg("-maxuploadtarget", "")));
     }
 
     // ********************************************************* Step 4a: application initialization
@@ -1311,7 +1310,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         for (const std::string& snet : onlynets) {
             enum Network net = ParseNetwork(snet);
             if (net == NET_UNROUTABLE)
-                return InitError(strprintf(_("Unknown network specified in -onlynet: '%s'"), snet));
+                return InitError(strprintf("Unknown network specified in -onlynet: '%s'", snet));
             g_reachable_nets.Add(net);
         }
     }
@@ -1319,8 +1318,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     if (!args.IsArgSet("-cjdnsreachable")) {
         if (!onlynets.empty() && g_reachable_nets.Contains(NET_CJDNS)) {
             return InitError(
-                _("Outbound connections restricted to CJDNS (-onlynet=cjdns) but "
-                  "-cjdnsreachable is not provided"));
+                "Outbound connections restricted to CJDNS (-onlynet=cjdns) but "
+                  "-cjdnsreachable is not provided");
         }
         g_reachable_nets.Remove(NET_CJDNS);
     }
@@ -1363,14 +1362,14 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                 // If a specific path was passed with the asmap argument check if
                 // the file actually exists in that location
                 if (!fs::exists(asmap_path)) {
-                    InitError(strprintf(_("Could not find asmap file %s"), fs::quoted(fs::PathToString(asmap_path))));
+                    InitError(strprintf("Could not find asmap file %s", fs::quoted(fs::PathToString(asmap_path))));
                     return false;
                 }
 
                 // If a file exists at the path, try to read the file
                 std::vector<std::byte> asmap{DecodeAsmap(asmap_path)};
                 if (asmap.empty()) {
-                    InitError(strprintf(_("Could not parse asmap file %s"), fs::quoted(fs::PathToString(asmap_path))));
+                    InitError(strprintf("Could not parse asmap file %s", fs::quoted(fs::PathToString(asmap_path))));
                     return false;
                 }
                 asmap_version = AsmapVersion(asmap);
@@ -1380,7 +1379,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                     // Use the embedded asmap data
                     std::span<const std::byte> asmap{node::data::ip_asn};
                     if (asmap.empty() || !CheckStandardAsmap(asmap)) {
-                        InitError(strprintf(_("Could not read embedded asmap data")));
+                        InitError(strprintf("Could not read embedded asmap data"));
                         return false;
                     }
                     node.netgroupman = std::make_unique<NetGroupManager>(NetGroupManager::WithEmbeddedAsmap(asmap));
@@ -1389,7 +1388,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                 #else
                     // If there is no embedded data, fail and report it since
                     // the user tried to use it
-                    InitError(strprintf(_("Embedded asmap data not available")));
+                    InitError(strprintf("Embedded asmap data not available"));
                     return false;
                 #endif
             }
@@ -1401,7 +1400,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
         // Initialize addrman
         assert(!node.addrman);
-        uiInterface.InitMessage(_("Loading P2P addresses…"));
+        uiInterface.InitMessage("Loading P2P addresses…");
         auto addrman{LoadAddrman(*node.netgroupman, args)};
         if (!addrman) return InitError(util::ErrorString(addrman));
         node.addrman = std::move(*addrman);
@@ -1428,12 +1427,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     std::vector<std::string> uacomments;
     for (const std::string& cmt : args.GetArgs("-uacomment")) {
         if (cmt != SanitizeString(cmt, SAFE_CHARS_UA_COMMENT))
-            return InitError(strprintf(_("User Agent comment (%s) contains unsafe characters."), cmt));
+            return InitError(strprintf("User Agent comment (%s) contains unsafe characters.", cmt));
         uacomments.push_back(cmt);
     }
     strSubVersion = FormatSubVersion(UA_NAME, CLIENT_VERSION, uacomments);
     if (strSubVersion.size() > MAX_SUBVERSION_LENGTH) {
-        return InitError(strprintf(_("Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments."),
+        return InitError(strprintf("Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.",
             strSubVersion.size(), MAX_SUBVERSION_LENGTH));
     }
 
@@ -1441,7 +1440,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // If -dnsseed=1 is explicitly specified, abort. If it's left unspecified by the user, we skip
     // the DNS seeds by adjusting -dnsseed in InitParameterInteraction.
     if (args.GetBoolArg("-dnsseed") == true && !g_reachable_nets.Contains(NET_IPV4) && !g_reachable_nets.Contains(NET_IPV6)) {
-        return InitError(strprintf(_("Incompatible options: -dnsseed=1 was explicitly specified, but -onlynet forbids connections to IPv4/IPv6")));
+        return InitError(strprintf("Incompatible options: -dnsseed=1 was explicitly specified, but -onlynet forbids connections to IPv4/IPv6"));
     };
 
     // Check for host lookup allowed before parsing any network related parameters
@@ -1461,7 +1460,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         std::string net_str;
         if (eq_pos != std::string::npos) {
             if (eq_pos + 1 == param_value.length()) {
-                return InitError(strprintf(_("Invalid -proxy address or hostname, ends with '=': '%s'"), param_value));
+                return InitError(strprintf("Invalid -proxy address or hostname, ends with '=': '%s'", param_value));
             }
             net_str = ToLower(param_value.substr(eq_pos + 1)); // e.g. 127.0.0.1:9050=ipv4 -> ipv4
         }
@@ -1473,12 +1472,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             } else {
                 const std::optional<CService> addr{Lookup(proxy_str, DEFAULT_TOR_SOCKS_PORT, fNameLookup)};
                 if (!addr.has_value()) {
-                    return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxy_str));
+                    return InitError(strprintf("Invalid -proxy address or hostname: '%s'", proxy_str));
                 }
                 proxy = Proxy{addr.value(), /*tor_stream_isolation=*/proxyRandomize};
             }
             if (!proxy.IsValid()) {
-                return InitError(strprintf(_("Invalid -proxy address or hostname: '%s'"), proxy_str));
+                return InitError(strprintf("Invalid -proxy address or hostname: '%s'", proxy_str));
             }
         }
 
@@ -1493,7 +1492,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         } else if (net_str == "cjdns") {
             cjdns_proxy = proxy;
         } else {
-            return InitError(strprintf(_("Unrecognized network in -proxy='%s': '%s'"), param_value, net_str));
+            return InitError(strprintf("Unrecognized network in -proxy='%s': '%s'", param_value, net_str));
         }
     }
     if (ipv4_proxy.IsValid()) {
@@ -1520,8 +1519,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             onion_proxy = Proxy{};
             if (onlynet_used_with_onion) {
                 return InitError(
-                    _("Outbound connections restricted to Tor (-onlynet=onion) but the proxy for "
-                      "reaching the Tor network is explicitly forbidden: -onion=0"));
+                    "Outbound connections restricted to Tor (-onlynet=onion) but the proxy for "
+                      "reaching the Tor network is explicitly forbidden: -onion=0");
             }
         } else {
             if (IsUnixSocketPath(onionArg)) {
@@ -1529,7 +1528,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             } else {
                 const std::optional<CService> addr{Lookup(onionArg, DEFAULT_TOR_SOCKS_PORT, fNameLookup)};
                 if (!addr.has_value() || !addr->IsValid()) {
-                    return InitError(strprintf(_("Invalid -onion address or hostname: '%s'"), onionArg));
+                    return InitError(strprintf("Invalid -onion address or hostname: '%s'", onionArg));
                 }
 
                 onion_proxy = Proxy(addr.value(), /*tor_stream_isolation=*/proxyRandomize);
@@ -1545,9 +1544,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         // later from the torcontrol thread and may retrieve the onion proxy from there.
         if (onlynet_used_with_onion && !listenonion) {
             return InitError(
-                _("Outbound connections restricted to Tor (-onlynet=onion) but the proxy for "
+                "Outbound connections restricted to Tor (-onlynet=onion) but the proxy for "
                   "reaching the Tor network is not provided: none of -proxy, -onion or "
-                  "-listenonion is given"));
+                  "-listenonion is given");
         }
         g_reachable_nets.Remove(NET_ONION);
     }
@@ -1607,8 +1606,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         // suggest a reindex
         bool do_retry{HasTestOption(args, "reindex_after_failure_noninteractive_yes") ||
             uiInterface.ThreadSafeQuestion(
-            error + Untranslated(".\n\n") + _("Do you want to rebuild the databases now?"),
-            error.original + ".\nPlease restart with -reindex or -reindex-chainstate to recover.",
+            error + ".\n\n" + "Do you want to rebuild the databases now?",
+            error + ".\nPlease restart with -reindex or -reindex-chainstate to recover.",
             CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT)};
         if (!do_retry) {
             return false;
@@ -1643,7 +1642,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     if (!peerman_opts.ignore_incoming_txs) {
         bool read_stale_estimates = args.GetBoolArg("-acceptstalefeeestimates", DEFAULT_ACCEPT_STALE_FEE_ESTIMATES);
         if (read_stale_estimates && (chainparams.GetChainType() != ChainType::REGTEST)) {
-            return InitError(strprintf(_("acceptstalefeeestimates is not supported on %s chain."), chainparams.GetChainTypeString()));
+            return InitError(strprintf("acceptstalefeeestimates is not supported on %s chain.", chainparams.GetChainTypeString()));
         }
         MaybeMigrateLegacyFeeEstimates(args);
         node.fee_estimator_man = std::make_unique<FeeRateEstimatorManager>(BlockPolicyFeeEstPath(args), read_stale_estimates, MempoolPolicyEstimatorPath(args), *Assert(node.mempool), chainman);
@@ -1678,7 +1677,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (chainman.m_blockman.m_blockfiles_indexed) {
             LOCK(cs_main);
             for (const auto& chainstate : chainman.m_chainstates) {
-                uiInterface.InitMessage(_("Pruning blockstore…"));
+                uiInterface.InitMessage("Pruning blockstore…");
                 chainstate->PruneAndFlush();
             }
         }
@@ -1695,11 +1694,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // ********************************************************* Step 11: import blocks
 
     if (!CheckDiskSpace(args.GetDataDirNet())) {
-        InitError(strprintf(_("Error: Disk space is low for %s"), fs::quoted(fs::PathToString(args.GetDataDirNet()))));
+        InitError(strprintf("Error: Disk space is low for %s", fs::quoted(fs::PathToString(args.GetDataDirNet()))));
         return false;
     }
     if (!CheckDiskSpace(args.GetBlocksDirPath())) {
-        InitError(strprintf(_("Error: Disk space is low for %s"), fs::quoted(fs::PathToString(args.GetBlocksDirPath()))));
+        InitError(strprintf("Error: Disk space is low for %s", fs::quoted(fs::PathToString(args.GetBlocksDirPath()))));
         return false;
     }
 
@@ -1714,10 +1713,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                 assumed_chain_bytes};
 
         if (!CheckDiskSpace(args.GetBlocksDirPath(), additional_bytes_needed)) {
-            InitWarning(strprintf(_(
+            InitWarning(strprintf(
                     "Disk space for %s may not accommodate the block files. " \
                     "Approximately %u GB of data will be stored in this directory."
-                ),
+                ,
                 fs::quoted(fs::PathToString(args.GetBlocksDirPath())),
                 chainparams.AssumedBlockchainSize()
             ));
@@ -1729,8 +1728,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         const auto path_desc{strprintf("%s (\"%s\")", desc, fs::PathToString(path))};
         switch (GetFilesystemType(path)) {
         case FSType::EXFAT:
-            InitWarning(strprintf(_("The %s path uses exFAT, which is known to have intermittent corruption problems on macOS. "
-                "Move this directory to a different filesystem to avoid data loss."), path_desc));
+            InitWarning(strprintf("The %s path uses exFAT, which is known to have intermittent corruption problems on macOS. "
+                "Move this directory to a different filesystem to avoid data loss.", path_desc));
             break;
         case FSType::ERROR:
             LogInfo("Failed to detect filesystem type for %s", path_desc);
@@ -1771,7 +1770,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
         // Start indexes initial sync
         if (!StartIndexBackgroundSync(node)) {
-            bilingual_str err_str = _("Failed to start indexes, shutting down…");
+            std::string err_str = "Failed to start indexes, shutting down…";
             chainman.GetNotifications().fatalError(err_str);
             return;
         }
@@ -1860,9 +1859,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     const uint16_t default_bind_port_onion = default_bind_port + 1;
 
     const auto BadPortWarning = [](const char* prefix, uint16_t port) {
-        return strprintf(_("%s request to listen on port %u. This port is considered \"bad\" and "
+        return strprintf("%s request to listen on port %u. This port is considered \"bad\" and "
                            "thus it is unlikely that any peer will connect to it. See "
-                           "doc/p2p-bad-ports.md for details and a full list."),
+                           "doc/p2p-bad-ports.md for details and a full list.",
                          prefix,
                          port);
     };
@@ -1895,7 +1894,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     for (const std::string& strBind : args.GetArgs("-whitebind")) {
         NetWhitebindPermissions whitebind;
-        bilingual_str error;
+        std::string error;
         if (!NetWhitebindPermissions::TryParse(strBind, whitebind, error)) return InitError(error);
         connOptions.vWhiteBinds.push_back(whitebind);
     }
@@ -1948,7 +1947,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     for (const auto& net : args.GetArgs("-whitelist")) {
         NetWhitelistPermissions subnet;
         ConnectionDirection connection_direction;
-        bilingual_str error;
+        std::string error;
         if (!NetWhitelistPermissions::TryParse(net, subnet, connection_direction, error)) return InitError(error);
         if (connection_direction & ConnectionDirection::In) {
             connOptions.vWhitelistedRangeIncoming.push_back(subnet);
@@ -1984,7 +1983,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     // ********************************************************* Step 13: finished
 
-    uiInterface.InitMessage(_("Done loading"));
+    uiInterface.InitMessage("Done loading");
 
     for (const auto& client : node.chain_clients) {
         client->start(scheduler);
@@ -2059,7 +2058,7 @@ bool StartIndexBackgroundSync(NodeContext& node)
         if (undo_start) {
             LOCK(::cs_main);
             if (!chainman.m_blockman.CheckBlockDataAvailability(*index_chain.Tip(), *Assert(undo_start.value()), BlockStatus{BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO})) {
-                return InitError(Untranslated(strprintf("%s best block of the index goes beyond pruned data (including undo data). Please disable the index or reindex (which will download the whole blockchain again)", undo_start_name)));
+                return InitError(strprintf("%s best block of the index goes beyond pruned data (including undo data). Please disable the index or reindex (which will download the whole blockchain again)", undo_start_name));
             }
         }
 
@@ -2067,7 +2066,7 @@ bool StartIndexBackgroundSync(NodeContext& node)
         if (block_start && !(undo_start && undo_start.value()->nHeight <= block_start.value()->nHeight)) {
             LOCK(::cs_main);
             if (!chainman.m_blockman.CheckBlockDataAvailability(*index_chain.Tip(), *Assert(block_start.value()), BlockStatus{BLOCK_HAVE_DATA})) {
-                return InitError(Untranslated(strprintf("%s best block of the index goes beyond pruned data. Please disable the index or reindex (which will download the whole blockchain again)", block_start_name)));
+                return InitError(strprintf("%s best block of the index goes beyond pruned data. Please disable the index or reindex (which will download the whole blockchain again)", block_start_name));
             }
         }
     }

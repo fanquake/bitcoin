@@ -8,6 +8,7 @@
 #include <common/run_command.h>
 #include <core_io.h>
 #include <psbt.h>
+#include <tinyformat.h>
 #include <util/strencodings.h>
 #include <util/subprocess.h>
 
@@ -117,7 +118,7 @@ bool ExternalSigner::SignTransaction(PartiallySignedTransaction& psbtx, std::str
 
     util::Result<PartiallySignedTransaction> signer_psbtx = DecodeBase64PSBT(signer_result.find_value("psbt").get_str());
     if (!signer_psbtx) {
-        error = strprintf("TX decode failed %s", util::ErrorString(signer_psbtx).original);
+        error = strprintf("TX decode failed %s", util::ErrorString(signer_psbtx));
         return false;
     }
 

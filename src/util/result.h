@@ -6,14 +6,14 @@
 #define BITCOIN_UTIL_RESULT_H
 
 #include <attributes.h>
-#include <util/translation.h>
 
+#include <string>
 #include <variant>
 
 namespace util {
 
 struct Error {
-    bilingual_str message;
+    std::string message;
 };
 
 //! The util::Result class provides a standard way for functions to return
@@ -37,7 +37,7 @@ class Result
 private:
     using T = std::conditional_t<std::is_same_v<M, void>, std::monostate, M>;
 
-    std::variant<bilingual_str, T> m_variant;
+    std::variant<std::string, T> m_variant;
 
     //! Disallow copy constructor, require Result to be moved for efficiency.
     Result(const Result&) = delete;
@@ -50,7 +50,7 @@ private:
     Result& operator=(Result&&) = delete;
 
     template <typename FT>
-    friend bilingual_str ErrorString(const Result<FT>& result);
+    friend std::string ErrorString(const Result<FT>& result);
 
 public:
     Result() : m_variant{std::in_place_index_t<1>{}, std::monostate{}} {}  // constructor for void
@@ -90,9 +90,9 @@ public:
 };
 
 template <typename T>
-bilingual_str ErrorString(const Result<T>& result)
+std::string ErrorString(const Result<T>& result)
 {
-    return result ? bilingual_str{} : std::get<0>(result.m_variant);
+    return result ? std::string{} : std::get<0>(result.m_variant);
 }
 } // namespace util
 

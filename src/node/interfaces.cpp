@@ -67,7 +67,6 @@
 #include <util/signalinterrupt.h>
 #include <util/string.h>
 #include <util/time.h>
-#include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
 
@@ -123,7 +122,7 @@ public:
     explicit NodeImpl(NodeContext& context) { setContext(&context); }
     void initLogging() override { InitLogging(args()); }
     void initParameterInteraction() override { InitParameterInteraction(args()); }
-    bilingual_str getWarnings() override { return Join(Assert(m_context->warnings)->GetMessages(), Untranslated("<hr />")); }
+    std::string getWarnings() override { return Join(Assert(m_context->warnings)->GetMessages(), "<hr />"); }
     int getExitStatus() override { return Assert(m_context)->exit_status.load(); }
     BCLog::CategoryMask getLogCategories() override { return LogInstance().GetCategoryMask(); }
     bool baseInitialize() override
@@ -685,7 +684,7 @@ public:
     {
         if (!m_node.mempool) return {};
         if (!m_node.mempool->CheckPolicyLimits(tx)) {
-            return util::Error{Untranslated("too many unconfirmed transactions in cluster")};
+            return util::Error{"too many unconfirmed transactions in cluster"};
         }
         return {};
     }
@@ -731,8 +730,8 @@ public:
     }
     bool shutdownRequested() override { return ShutdownRequested(m_node); }
     void initMessage(const std::string& message) override { ::uiInterface.InitMessage(message); }
-    void initWarning(const bilingual_str& message) override { InitWarning(message); }
-    void initError(const bilingual_str& message) override { InitError(message); }
+    void initWarning(const std::string& message) override { InitWarning(message); }
+    void initError(const std::string& message) override { InitError(message); }
     void showProgress(const std::string& title, int progress, bool resume_possible) override
     {
         ::uiInterface.ShowProgress(title, progress, resume_possible);

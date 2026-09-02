@@ -6,6 +6,7 @@
 #ifndef BITCOIN_LOGGING_TIMER_H
 #define BITCOIN_LOGGING_TIMER_H
 
+#include <tinyformat.h>
 #include <util/log.h>
 #include <util/macros.h>
 #include <util/time.h>

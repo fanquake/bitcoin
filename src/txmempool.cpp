@@ -23,7 +23,6 @@
 #include <util/result.h>
 #include <util/time.h>
 #include <util/trace.h>
-#include <util/translation.h>
 #include <validationinterface.h>
 
 #include <algorithm>
@@ -163,17 +162,17 @@ CTxMemPool::setEntries CTxMemPool::CalculateMemPoolAncestors(const CTxMemPoolEnt
     return ret;
 }
 
-static CTxMemPool::Options&& Flatten(CTxMemPool::Options&& opts, bilingual_str& error)
+static CTxMemPool::Options&& Flatten(CTxMemPool::Options&& opts, std::string& error)
 {
     opts.check_ratio = std::clamp<int>(opts.check_ratio, 0, 1'000'000);
     int64_t cluster_limit_bytes = opts.limits.cluster_size_vbytes * 40;
     if (opts.max_size_bytes < 0 || (opts.max_size_bytes > 0 && opts.max_size_bytes < cluster_limit_bytes)) {
-        error = strprintf(_("-maxmempool must be at least %d MB"), std::ceil(cluster_limit_bytes / 1'000'000.0));
+        error = strprintf("-maxmempool must be at least %d MB", std::ceil(cluster_limit_bytes / 1'000'000.0));
     }
     return std::move(opts);
 }
 
-CTxMemPool::CTxMemPool(Options opts, bilingual_str& error)
+CTxMemPool::CTxMemPool(Options opts, std::string& error)
     : m_opts{Flatten(std::move(opts), error)}
 {
     m_txgraph = MakeTxGraph(
@@ -1044,7 +1043,7 @@ util::Result<std::pair<std::vector<FeeFrac>, std::vector<FeeFrac>>> CTxMemPool::
     LOCK(m_pool->cs);
 
     if (!CheckMemPoolPolicyLimits()) {
-        return util::Error{Untranslated("cluster size limit exceeded")};
+        return util::Error{"cluster size limit exceeded"};
     }
 
     return m_pool->m_txgraph->GetMainStagingDiagrams();

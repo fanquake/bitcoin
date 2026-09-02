@@ -24,6 +24,7 @@
 #include <rpc/server_util.h>
 #include <streams.h>
 #include <sync.h>
+#include <tinyformat.h>
 #include <txmempool.h>
 #include <undo.h>
 #include <util/any.h>

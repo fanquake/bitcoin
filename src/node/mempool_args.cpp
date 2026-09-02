@@ -17,7 +17,6 @@
 #include <txgraph.h>
 #include <util/log.h>
 #include <util/moneystr.h>
-#include <util/translation.h>
 
 #include <chrono>
 #include <memory>
@@ -45,7 +44,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
     if (auto mb = argsman.GetIntArg("-maxmempool")) {
         constexpr bool is_32bit{sizeof(void*) == 4};
         if (is_32bit && *mb > MAX_32BIT_MEMPOOL_MB) {
-            return util::Error{Untranslated(strprintf("-maxmempool is set to %i but can't be over %i MB on 32-bit systems", *mb, MAX_32BIT_MEMPOOL_MB))};
+            return util::Error{strprintf("-maxmempool is set to %i but can't be over %i MB on 32-bit systems", *mb, MAX_32BIT_MEMPOOL_MB)};
         }
         mempool_opts.max_size_bytes = *mb * 1'000'000;
     }
@@ -96,7 +95,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
 
     mempool_opts.require_standard = !argsman.GetBoolArg("-acceptnonstdtxn", DEFAULT_ACCEPT_NON_STD_TXN);
     if (!chainparams.IsTestChain() && !mempool_opts.require_standard) {
-        return util::Error{Untranslated(strprintf("acceptnonstdtxn is not currently supported for %s chain", chainparams.GetChainTypeString()))};
+        return util::Error{strprintf("acceptnonstdtxn is not currently supported for %s chain", chainparams.GetChainTypeString())};
     }
 
     mempool_opts.persist_v1_dat = argsman.GetBoolArg("-persistmempoolv1", mempool_opts.persist_v1_dat);
@@ -104,7 +103,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
     ApplyArgsManOptions(argsman, mempool_opts.limits);
 
     if (mempool_opts.limits.cluster_count > MAX_CLUSTER_COUNT_LIMIT) {
-        return util::Error{Untranslated(strprintf("limitclustercount must be less than or equal to %d", MAX_CLUSTER_COUNT_LIMIT))};
+        return util::Error{strprintf("limitclustercount must be less than or equal to %d", MAX_CLUSTER_COUNT_LIMIT)};
     }
 
     return {};

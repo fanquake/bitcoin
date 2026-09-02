@@ -8,6 +8,7 @@
 #include <policy/packages.h>
 #include <policy/policy.h>
 #include <primitives/transaction.h>
+#include <tinyformat.h>
 #include <txmempool.h>
 #include <util/check.h>
 #include <util/hasher.h>

@@ -35,7 +35,6 @@ class JSONRPCRequest;
 enum ServiceFlags : uint64_t;
 enum class OutputType;
 struct FlatSigningProvider;
-struct bilingual_str;
 namespace common {
 enum class PSBTError;
 } // namespace common
@@ -548,7 +547,7 @@ private:
  * @param[out] obj      UniValue object to push the warnings array object to.
  */
 void PushWarnings(const UniValue& warnings, UniValue& obj);
-void PushWarnings(const std::vector<bilingual_str>& warnings, UniValue& obj);
+void PushWarnings(const std::vector<std::string>& warnings, UniValue& obj);
 
 std::vector<RPCResult> ScriptPubKeyDoc();
 

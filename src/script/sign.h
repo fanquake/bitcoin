@@ -19,6 +19,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -27,7 +28,6 @@ class CTxIn;
 class CTxOut;
 class Coin;
 
-struct bilingual_str;
 struct CMutableTransaction;
 struct SignatureData;
 
@@ -130,6 +130,6 @@ void UpdateInput(CTxIn& input, const SignatureData& data);
 bool IsSegWitOutput(const SigningProvider& provider, const CScript& script);
 
 /** Sign the CMutableTransaction */
-bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* provider, const std::map<COutPoint, Coin>& coins, const SignOptions& options, std::map<int, bilingual_str>& input_errors);
+bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* provider, const std::map<COutPoint, Coin>& coins, const SignOptions& options, std::map<int, std::string>& input_errors);
 
 #endif // BITCOIN_SCRIPT_SIGN_H

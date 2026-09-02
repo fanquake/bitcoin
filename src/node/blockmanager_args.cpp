@@ -10,7 +10,6 @@
 #include <tinyformat.h>
 #include <util/byte_units.h>
 #include <util/result.h>
-#include <util/translation.h>
 #include <validation.h>
 
 #include <cstdint>
@@ -22,14 +21,14 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, BlockManager::Op
     // block pruning; get the amount of disk space (in MiB) to allot for block & undo files
     int64_t nPruneArg{args.GetIntArg("-prune", opts.prune_target)};
     if (nPruneArg < 0) {
-        return util::Error{_("Prune cannot be configured with a negative value.")};
+        return util::Error{"Prune cannot be configured with a negative value."};
     }
     uint64_t nPruneTarget{uint64_t(nPruneArg) * 1_MiB};
     if (nPruneArg == 1) { // manual pruning: -prune=1
         nPruneTarget = BlockManager::PRUNE_TARGET_MANUAL;
     } else if (nPruneTarget) {
         if (nPruneTarget < MIN_DISK_SPACE_FOR_BLOCK_FILES) {
-            return util::Error{strprintf(_("Prune configured below the minimum of %d MiB.  Please use a higher number."), MIN_DISK_SPACE_FOR_BLOCK_FILES / 1_MiB)};
+            return util::Error{strprintf("Prune configured below the minimum of %d MiB.  Please use a higher number.", MIN_DISK_SPACE_FOR_BLOCK_FILES / 1_MiB)};
         }
     }
     opts.prune_target = nPruneTarget;

@@ -21,6 +21,7 @@
 #include <node/interface_ui.h>
 #include <node/warnings.h>
 #include <noui.h>
+#include <tinyformat.h>
 #include <util/check.h>
 #include <util/exception.h>
 #include <util/signalinterrupt.h>
@@ -28,15 +29,12 @@
 #include <util/syserror.h>
 #include <util/threadnames.h>
 #include <util/tokenpipe.h>
-#include <util/translation.h>
 
 #include <any>
 #include <functional>
 #include <optional>
 
 using node::NodeContext;
-
-const TranslateFn G_TRANSLATION_FUN{nullptr};
 
 #if HAVE_DECL_FORK
 
@@ -118,7 +116,7 @@ static bool ParseArgs(NodeContext& node, int argc, char* argv[])
     SetupServerArgs(args, node.init->canListenIpc());
     std::string error;
     if (!args.ParseParameters(argc, argv, error)) {
-        return InitError(Untranslated(strprintf("Error parsing command line arguments: %s", error)));
+        return InitError(strprintf("Error parsing command line arguments: %s", error));
     }
 
     if (auto error = common::InitConfig(args)) {
@@ -128,7 +126,7 @@ static bool ParseArgs(NodeContext& node, int argc, char* argv[])
     // Error out when loose non-argument tokens are encountered on command line
     for (int i = 1; i < argc; i++) {
         if (!IsSwitchChar(argv[i][0])) {
-            return InitError(Untranslated(strprintf("Command line contains unexpected token '%s', see bitcoind -h for a list of options.", argv[i])));
+            return InitError(strprintf("Command line contains unexpected token '%s', see bitcoind -h for a list of options.", argv[i]));
         }
     }
     return true;
@@ -220,7 +218,7 @@ static bool AppInit(NodeContext& node)
                 }
                 break;
             case -1: // Error happened.
-                return InitError(Untranslated(strprintf("fork_daemon() failed: %s", SysErrorString(errno))));
+                return InitError(strprintf("fork_daemon() failed: %s", SysErrorString(errno)));
             default: { // Parent: wait and exit.
                 int token = daemon_ep.TokenRead();
                 if (token) { // Success
@@ -232,7 +230,7 @@ static bool AppInit(NodeContext& node)
             }
             }
 #else
-            return InitError(Untranslated("-daemon is not supported on this operating system"));
+            return InitError("-daemon is not supported on this operating system");
 #endif // HAVE_DECL_FORK
         }
         // Lock critical directories after daemonization

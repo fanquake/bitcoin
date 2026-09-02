@@ -28,6 +28,7 @@
 #include <rpc/protocol.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
+#include <tinyformat.h>
 #include <sync.h>
 #include <univalue.h>
 #include <util/asmap.h>
@@ -35,7 +36,6 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/time.h>
-#include <util/translation.h>
 #include <validation.h>
 
 #include <chrono>

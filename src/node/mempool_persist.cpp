@@ -11,6 +11,7 @@
 #include <serialize.h>
 #include <streams.h>
 #include <sync.h>
+#include <tinyformat.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/fs.h>

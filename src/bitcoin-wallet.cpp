@@ -17,7 +17,6 @@
 #include <pubkey.h>
 #include <tinyformat.h>
 #include <util/exception.h>
-#include <util/translation.h>
 #include <wallet/wallettool.h>
 
 #include <exception>

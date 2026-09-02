@@ -44,7 +44,6 @@
 class CChain;
 class ValidationSignals;
 
-struct bilingual_str;
 
 /** Fake height value used in Coin to signify they are only in the memory pool (since 0.8) */
 inline constexpr uint32_t MEMPOOL_HEIGHT = 0x7FFFFFFF;
@@ -305,7 +304,7 @@ public:
      * accepting transactions becomes O(N^2) where N is the number of transactions
      * in the pool.
      */
-    explicit CTxMemPool(Options opts, bilingual_str& error);
+    explicit CTxMemPool(Options opts, std::string& error);
 
     /**
      * If sanity-checking is turned on, check makes sure the pool is

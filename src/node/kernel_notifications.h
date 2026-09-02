@@ -13,11 +13,11 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <string>
 
 class ArgsManager;
 class CBlockIndex;
 enum class SynchronizationState;
-struct bilingual_str;
 
 namespace kernel {
 enum class Warning;
@@ -50,15 +50,15 @@ public:
 
     void headerTip(SynchronizationState state, int64_t height, int64_t timestamp, bool presync) override;
 
-    void progress(const bilingual_str& title, int progress_percent, bool resume_possible) override;
+    void progress(const std::string& title, int progress_percent, bool resume_possible) override;
 
-    void warningSet(kernel::Warning id, const bilingual_str& message) override;
+    void warningSet(kernel::Warning id, const std::string& message) override;
 
     void warningUnset(kernel::Warning id) override;
 
-    void flushError(const bilingual_str& message) override;
+    void flushError(const std::string& message) override;
 
-    void fatalError(const bilingual_str& message) override;
+    void fatalError(const std::string& message) override;
 
     void setChainstateLoaded(bool chainstate_loaded) EXCLUSIVE_LOCKS_REQUIRED(!m_tip_block_mutex) {
         LOCK(m_tip_block_mutex);

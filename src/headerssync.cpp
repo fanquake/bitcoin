@@ -5,6 +5,7 @@
 #include <headerssync.h>
 
 #include <pow.h>
+#include <tinyformat.h>
 #include <util/check.h>
 #include <util/log.h>
 #include <util/time.h>

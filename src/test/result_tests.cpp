@@ -8,12 +8,12 @@
 
 inline bool operator==(const bilingual_str& a, const bilingual_str& b)
 {
-    return a.original == b.original && a.translated == b.translated;
+    return a.original == b.original;
 }
 
 inline std::ostream& operator<<(std::ostream& os, const bilingual_str& s)
 {
-    return os << "bilingual_str('" << s.original << "' , '" << s.translated << "')";
+    return os << "bilingual_str('" << s.original << "')";
 }
 
 BOOST_AUTO_TEST_SUITE(result_tests)

@@ -32,6 +32,7 @@
 #include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
+#include <tinyformat.h>
 #include <uint256.h>
 #include <undo.h>
 #include <util/bip32.h>
@@ -129,7 +130,7 @@ PartiallySignedTransaction ProcessPSBT(const std::string& psbt_string, const std
     // Unserialize the transactions
     util::Result<PartiallySignedTransaction> psbt_res = DecodeBase64PSBT(psbt_string);
     if (!psbt_res) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res).original));
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res)));
     }
     PartiallySignedTransaction psbtx = *psbt_res;
 
@@ -1102,7 +1103,7 @@ static RPCMethod decodepsbt()
     // Unserialize the transactions
     util::Result<PartiallySignedTransaction> psbt_res = DecodeBase64PSBT(request.params[0].get_str());
     if (!psbt_res) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res).original));
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res)));
     }
     PartiallySignedTransaction psbtx = *psbt_res;
 
@@ -1623,7 +1624,7 @@ static RPCMethod combinepsbt()
     for (unsigned int i = 0; i < txs.size(); ++i) {
         util::Result<PartiallySignedTransaction> psbt_res = DecodeBase64PSBT(txs[i].get_str());
         if (!psbt_res) {
-            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res).original));
+            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res)));
         }
         psbtxs.push_back(*psbt_res);
     }
@@ -1668,7 +1669,7 @@ static RPCMethod finalizepsbt()
     // Unserialize the transactions
     util::Result<PartiallySignedTransaction> psbt_res = DecodeBase64PSBT(request.params[0].get_str());
     if (!psbt_res) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res).original));
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res)));
     }
     PartiallySignedTransaction psbtx = *psbt_res;
 
@@ -1893,7 +1894,7 @@ static RPCMethod joinpsbts()
     for (unsigned int i = 0; i < txs.size(); ++i) {
         util::Result<PartiallySignedTransaction> psbt_res = DecodeBase64PSBT(txs[i].get_str());
         if (!psbt_res) {
-            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res).original));
+            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res)));
         }
         psbtxs.push_back(*psbt_res);
         const PartiallySignedTransaction& psbtx = psbtxs.back();
@@ -1991,7 +1992,7 @@ static RPCMethod analyzepsbt()
     // Unserialize the transaction
     util::Result<PartiallySignedTransaction> psbt_res = DecodeBase64PSBT(request.params[0].get_str());
     if (!psbt_res) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res).original));
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", util::ErrorString(psbt_res)));
     }
     const PartiallySignedTransaction& psbtx = *psbt_res;
 

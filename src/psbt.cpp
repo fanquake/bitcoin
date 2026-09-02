@@ -870,7 +870,7 @@ util::Result<PartiallySignedTransaction> DecodeBase64PSBT(const std::string& bas
 {
     auto tx_data = DecodeBase64(base64_tx);
     if (!tx_data) {
-        return util::Error{Untranslated("invalid base64")};
+        return util::Error{"invalid base64"};
     }
     return DecodeRawPSBT(MakeByteSpan(*tx_data));
 }
@@ -881,11 +881,11 @@ util::Result<PartiallySignedTransaction> DecodeRawPSBT(std::span<const std::byte
     try {
         PartiallySignedTransaction psbt(deserialize, ss_data);
         if (!ss_data.empty()) {
-            return util::Error{Untranslated("extra data after PSBT")};
+            return util::Error{"extra data after PSBT"};
         }
         return psbt;
     } catch (const std::exception& e) {
-        return util::Error{Untranslated(e.what())};
+        return util::Error{e.what()};
     }
 }
 

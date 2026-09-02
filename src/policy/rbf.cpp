@@ -130,7 +130,7 @@ std::optional<std::pair<DiagramCheckError, std::string>> ImprovesFeerateDiagram(
     const auto chunk_results{changeset.CalculateChunksForRBF()};
 
     if (!chunk_results.has_value()) {
-        return std::make_pair(DiagramCheckError::UNCALCULABLE, util::ErrorString(chunk_results).original);
+        return std::make_pair(DiagramCheckError::UNCALCULABLE, util::ErrorString(chunk_results));
     }
 
     if (!std::is_gt(CompareChunks(chunk_results.value().second, chunk_results.value().first))) {

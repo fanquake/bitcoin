@@ -7,19 +7,19 @@
 #include <logging.h>
 #include <node/interface_ui.h>
 #include <node/warnings.h>
+#include <tinyformat.h>
 #include <util/fs.h>
 #include <util/signalinterrupt.h>
-#include <util/translation.h>
 
 #include <atomic>
 #include <cstdlib>
 
 namespace node {
 
-void AbortNode(const std::function<bool()>& shutdown_request, std::atomic<int>& exit_status, const bilingual_str& message, node::Warnings* warnings)
+void AbortNode(const std::function<bool()>& shutdown_request, std::atomic<int>& exit_status, const std::string& message, node::Warnings* warnings)
 {
     if (warnings) warnings->Set(Warning::FATAL_INTERNAL_ERROR, message);
-    InitError(strprintf(_("A fatal internal error occurred, see %s for details: %s"), fs::PathToString(LogInstance().m_file_path.filename()), message));
+    InitError(strprintf("A fatal internal error occurred, see %s for details: %s", fs::PathToString(LogInstance().m_file_path.filename()), message));
     exit_status.store(EXIT_FAILURE);
     if (shutdown_request && !shutdown_request()) {
         LogError("Failed to send shutdown signal\n");

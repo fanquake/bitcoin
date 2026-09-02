@@ -36,7 +36,6 @@
 #include <util/result.h>
 #include <util/signalinterrupt.h>
 #include <util/time.h>
-#include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
 #include <versionbits.h>
@@ -105,7 +104,7 @@ BlockAssembler::BlockAssembler(Chainstate& chainstate,
       m_chainstate{chainstate},
       m_options{[&] {
           if (auto result{CheckMiningOptions(options, /*use_argnames=*/false)}; !result) {
-              throw std::runtime_error(util::ErrorString(result).original);
+              throw std::runtime_error(util::ErrorString(result));
           }
           return FlattenMiningOptions(std::move(options));
       }()}

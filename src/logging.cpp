@@ -5,6 +5,7 @@
 
 #include <logging.h>
 #include <memusage.h>
+#include <tinyformat.h>
 #include <util/check.h>
 #include <util/fs.h>
 #include <util/string.h>

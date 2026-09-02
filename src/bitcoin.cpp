@@ -11,7 +11,6 @@
 #include <util/fs.h>
 #include <util/exec.h>
 #include <util/strencodings.h>
-#include <util/translation.h>
 
 #include <iostream>
 #include <string>

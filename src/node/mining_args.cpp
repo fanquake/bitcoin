@@ -14,7 +14,6 @@
 #include <tinyformat.h>
 #include <util/moneystr.h>
 #include <util/result.h>
-#include <util/translation.h>
 
 #include <cstdint>
 #include <optional>
@@ -31,31 +30,31 @@ Result<void> CheckMiningOptions(BlockCreateOptions options, bool use_argnames)
 {
     options = FlattenMiningOptions(std::move(options));
     if (*options.block_reserved_weight < MINIMUM_BLOCK_RESERVED_WEIGHT) {
-        return Error{Untranslated(strprintf("%s (%d) is lower than minimum safety value of (%d)",
+        return Error{strprintf("%s (%d) is lower than minimum safety value of (%d)",
                                             use_argnames ? "-blockreservedweight" : "block_reserved_weight",
-                                            *options.block_reserved_weight, MINIMUM_BLOCK_RESERVED_WEIGHT))};
+                                            *options.block_reserved_weight, MINIMUM_BLOCK_RESERVED_WEIGHT)};
     }
     if (*options.block_reserved_weight > MAX_BLOCK_WEIGHT) {
-        return Error{Untranslated(strprintf("%s (%d) exceeds consensus maximum block weight (%d)",
+        return Error{strprintf("%s (%d) exceeds consensus maximum block weight (%d)",
                                             use_argnames ? "-blockreservedweight" : "block_reserved_weight",
-                                            *options.block_reserved_weight, MAX_BLOCK_WEIGHT))};
+                                            *options.block_reserved_weight, MAX_BLOCK_WEIGHT)};
     }
     if (*options.block_max_weight > MAX_BLOCK_WEIGHT) {
-        return Error{Untranslated(strprintf("%s (%d) exceeds consensus maximum block weight (%d)",
+        return Error{strprintf("%s (%d) exceeds consensus maximum block weight (%d)",
                                             use_argnames ? "-blockmaxweight" : "block_max_weight",
-                                            *options.block_max_weight, MAX_BLOCK_WEIGHT))};
+                                            *options.block_max_weight, MAX_BLOCK_WEIGHT)};
     }
     if (*options.block_reserved_weight > *options.block_max_weight) {
-        return Error{Untranslated(strprintf("%s (%d) exceeds %s (%d)",
+        return Error{strprintf("%s (%d) exceeds %s (%d)",
                                             use_argnames ? "-blockreservedweight" : "block_reserved_weight",
                                             *options.block_reserved_weight,
                                             use_argnames ? "-blockmaxweight" : "block_max_weight",
-                                            *options.block_max_weight))};
+                                            *options.block_max_weight)};
     }
     if (options.coinbase_output_max_additional_sigops > MAX_BLOCK_SIGOPS_COST) {
-        return Error{Untranslated(strprintf("%s (%zu) exceeds consensus maximum block sigops cost (%d)",
+        return Error{strprintf("%s (%zu) exceeds consensus maximum block sigops cost (%d)",
                                             "coinbase_output_max_additional_sigops",
-                                            options.coinbase_output_max_additional_sigops, MAX_BLOCK_SIGOPS_COST))};
+                                            options.coinbase_output_max_additional_sigops, MAX_BLOCK_SIGOPS_COST)};
     }
     return {};
 }

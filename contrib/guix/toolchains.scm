@@ -205,6 +205,8 @@ chain for " target " development."))
                   "--disable-libsanitizer"
                   "--disable-nls"
                   "--disable-tm-clone-registry"
+                  "CFLAGS_FOR_TARGET=-O3 -flto -march=native -ffunction-sections -fdata-sections"
+                  "CXXFLAGS_FOR_TARGET=-O3 -flto -march=native -ffunction-sections -fdata-sections"
                   #$building-on)))
         ((#:phases phases)
           #~(modify-phases #$phases
@@ -299,7 +301,7 @@ chain for " target " development."))
                (lambda _
                  (let ((mapping ,(guix-store-prefix-map-flags)))
                    (for-each (lambda (var)
-                               (setenv var (string-append "-O2 -g" (or (getenv var) "") mapping)))
+                               (setenv var (string-append "-O2 -g -march=native" (or (getenv var) "") mapping)))
                              '("CFLAGS" "CPPFLAGS")))
                  #t))
              (add-after 'pre-configure 'use-portable-shell

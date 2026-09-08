@@ -205,8 +205,8 @@ chain for " target " development."))
                   "--disable-libsanitizer"
                   "--disable-nls"
                   "--disable-tm-clone-registry"
-                  "CFLAGS_FOR_TARGET=-O3 -flto -march=native -ffunction-sections -fdata-sections"
-                  "CXXFLAGS_FOR_TARGET=-O3 -flto -march=native -ffunction-sections -fdata-sections"
+                  "CFLAGS_FOR_TARGET=-O3 -march=native -ffunction-sections -fdata-sections"
+                  "CXXFLAGS_FOR_TARGET=-O3 -march=native -ffunction-sections -fdata-sections"
                   #$building-on)))
         ((#:phases phases)
           #~(modify-phases #$phases

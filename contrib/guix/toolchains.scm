@@ -205,6 +205,7 @@ chain for " target " development."))
                   "--disable-libsanitizer"
                   "--disable-nls"
                   "--disable-tm-clone-registry"
+                  "--disable-wchar_t"
                   "CFLAGS_FOR_TARGET=-O3 -march=native -ffunction-sections -fdata-sections"
                   "CXXFLAGS_FOR_TARGET=-O3 -march=native -ffunction-sections -fdata-sections"
                   #$building-on)))

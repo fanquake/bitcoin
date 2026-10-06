@@ -328,11 +328,6 @@ void RandAddStaticEnv(CSHA512& hasher)
     if (GetComputerNameA(hname, &size) != 0) {
         hasher.Write(UCharCast(hname), size);
     }
-#else
-    char hname[256];
-    if (gethostname(hname, 256) == 0) {
-        hasher.Write((const unsigned char*)hname, strnlen(hname, 256));
-    }
 #endif
 
 #ifdef HAVE_IFADDRS

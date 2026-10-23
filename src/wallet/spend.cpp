@@ -52,21 +52,21 @@ static bool IsSegwit(const Descriptor& desc) {
 }
 
 /** Whether to assume ECDSA signatures' will be high-r. */
-static bool UseMaxSig(const std::optional<CTxIn>& txin, const CCoinControl* coin_control) {
+static bool UseMaxSig(const CTxIn& txin, const CCoinControl* coin_control) {
     // Use max sig if watch only inputs were used or if this particular input is an external input
     // to ensure a sufficient fee is attained for the requested feerate.
-    return coin_control && txin && coin_control->IsExternalSelected(txin->prevout);
+    return coin_control && coin_control->IsExternalSelected(txin.prevout);
 }
 
 /** Get the size of an input (in witness units) once it's signed.
  *
  * @param desc The output script descriptor of the coin spent by this input.
- * @param txin Optionally the txin to estimate the size of. Used to determine the size of ECDSA signatures.
+ * @param txin The txin to estimate the size of. Used to determine the size of ECDSA signatures.
  * @param coin_control Information about the context to determine the size of ECDSA signatures.
  * @param tx_is_segwit Whether the transaction has at least a single input spending a segwit coin.
  * @param can_grind_r Whether the signer will be able to grind the R of the signature.
  */
-static std::optional<int64_t> MaxInputWeight(const Descriptor& desc, const std::optional<CTxIn>& txin,
+static std::optional<int64_t> MaxInputWeight(const Descriptor& desc, const CTxIn& txin,
                                              const CCoinControl* coin_control, const bool tx_is_segwit,
                                              const bool can_grind_r) {
     if (const auto sat_weight = desc.MaxSatisfactionWeight(!can_grind_r || UseMaxSig(txin, coin_control))) {
@@ -135,7 +135,7 @@ static std::optional<int64_t> GetSignedTxinWeight(const CWallet* wallet, const C
 
     // Otherwise, use the maximum satisfaction size provided by the descriptor.
     std::unique_ptr<Descriptor> desc{GetDescriptor(wallet, coin_control, txo.scriptPubKey)};
-    if (desc) return MaxInputWeight(*desc, {txin}, coin_control, tx_is_segwit, can_grind_r);
+    if (desc) return MaxInputWeight(*desc, txin, coin_control, tx_is_segwit, can_grind_r);
 
     return {};
 }

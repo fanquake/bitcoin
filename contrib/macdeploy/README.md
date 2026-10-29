@@ -34,7 +34,7 @@ path to the `.xip` as the first argument.
 ```
 
 The generated archive should be: `Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar`.
-The `sha256sum` should be `9600fa93644df674ee916b5e2c8a6ba8dacf631996a65dc922d003b98b5ea3b1`.
+The `sha256sum` should be `407e390f6f6e14bbf3e2534b92a1be41e80ae28582443389efbb838af8507324`.
 
 ## Deterministic macOS App Notes
 

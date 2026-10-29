@@ -123,6 +123,17 @@ def extract(xip, dest):
                 path.chmod(stat.S_IMODE(mode))
 
 
+def normalize(tarinfo):
+    """Drop Swift/module files and make metadata deterministic."""
+    if tarinfo.name.endswith(('.swiftmodule', '.modulemap')):
+        return None
+    tarinfo.mtime = 0
+    tarinfo.uid = tarinfo.gid = 0
+    tarinfo.uname = tarinfo.gname = ''
+    tarinfo.mode = 0o755 if tarinfo.mode & 0o100 else 0o644
+    return tarinfo
+
+
 def run():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('xcode_xip', metavar='XCODEXIP', type=pathlib.Path)
@@ -142,19 +153,6 @@ def run():
 
         out_name = f"Xcode-{xcode['CFBundleShortVersionString']}-{xcode['ProductBuildVersion']}-extracted-SDK-with-libcxx-headers"
         out_sdkt = args.out_sdkt or pathlib.Path(f'{out_name}.tar')
-
-        def normalize(tarinfo):
-            """Drop Swift/module files and make metadata deterministic."""
-            if tarinfo.name.endswith(('.swiftmodule', '.modulemap')):
-                return None
-            # Kept for compatibility with previously generated SDK tarballs.
-            if tarinfo.linkname.startswith('./'):
-                tarinfo.linkname = f'{out_name}/{tarinfo.linkname[2:]}'
-            tarinfo.mtime = 0
-            tarinfo.uid = tarinfo.gid = 0
-            tarinfo.uname = tarinfo.gname = ''
-            tarinfo.mode = 0o755 if tarinfo.mode & 0o100 else 0o644
-            return tarinfo
 
         with tarfile.open(out_sdkt, 'w', format=tarfile.PAX_FORMAT) as tar:
             # recursion adds entries in sorted order

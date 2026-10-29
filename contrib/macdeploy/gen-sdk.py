@@ -1,93 +1,167 @@
 #!/usr/bin/env python3
+"""Generate a macOS SDK tarball from an Xcode .xip archive.
+"""
 import argparse
-import plistlib
-import pathlib
-import tarfile
+import io
+import lzma
 import os
-import contextlib
+import pathlib
+import plistlib
+import stat
+import struct
+import tarfile
+import tempfile
+import xml.etree.ElementTree as ET
+import zlib
 
-@contextlib.contextmanager
-def cd(path):
-    """Context manager that restores PWD even if an exception was raised."""
-    old_pwd = os.getcwd()
-    os.chdir(str(path))
-    try:
-        yield
-    finally:
-        os.chdir(old_pwd)
+SDK_DIR = 'Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk'
+SDK_SUBDIRS = ('usr/include', 'usr/lib', 'System/Library/Frameworks')
+# Paths, relative to Xcode.app, to extract from the .xip.
+WANTED = (
+    'Contents/version.plist',
+    f'{SDK_DIR}/System/Library/CoreServices/SystemVersion.plist',
+    *(f'{SDK_DIR}/{d}' for d in SDK_SUBDIRS),
+)
+
+
+def pbzx_chunks(fp):
+    """Yield the decompressed chunks of the pbzx "Content" file in a .xip (xar) archive."""
+    magic, header_size, _version, toc_size = struct.unpack('>4sHHQ', fp.read(16))
+    assert magic == b'xar!', "not a .xip archive"
+    fp.seek(header_size)
+    toc = ET.fromstring(zlib.decompress(fp.read(toc_size)))
+    offset = next(int(f.findtext('data/offset')) for f in toc.iter('file') if f.findtext('name') == 'Content')
+    fp.seek(header_size + toc_size + offset)
+    magic, flags = struct.unpack('>4sQ', fp.read(12))
+    assert magic == b'pbzx', "unexpected .xip content"
+    while flags & (1 << 24):
+        flags, size = struct.unpack('>QQ', fp.read(16))
+        data = fp.read(size)
+        # chunks are either xz-compressed or stored as-is
+        yield lzma.decompress(data) if data.startswith(b'\xfd7zXZ\x00') else data
+
+
+class ChunkStream(io.RawIOBase):
+    """Read-only file object over an iterator of byte chunks."""
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.buf = memoryview(b'')
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        while not self.buf:
+            chunk = next(self.chunks, None)
+            if chunk is None:
+                return 0
+            self.buf = memoryview(chunk)
+        n = min(len(b), len(self.buf))
+        b[:n] = self.buf[:n]
+        self.buf = self.buf[n:]
+        return n
+
+
+def copy(src, size, dst=None):
+    """Read size bytes from src, writing them to dst (if given)."""
+    while size:
+        data = src.read(min(size, 1 << 20))
+        if not data:
+            raise EOFError("truncated .xip archive")
+        if dst:
+            dst.write(data)
+        size -= len(data)
+
+
+def extract(xip, dest):
+    """Extract the WANTED parts of the Xcode.app in xip to dest.
+
+    The archive is an odc cpio stream. Only the first entry of a hardlinked file
+    carries its contents. Later entries for the same file carry a placeholder,
+    and must be linked to the first. As the first entry is often outside of the
+    macOS SDK, every hardlinked file is kept, under dest/hardlinks.
+    """
+    hardlinks = {}
+    with xip.open('rb') as fp:
+        stream = io.BufferedReader(ChunkStream(pbzx_chunks(fp)), 1 << 20)
+        while True:
+            header = stream.read(76)
+            assert header[:6] == b'070707', "unexpected cpio format"
+            key = header[6:18]  # dev + ino
+            mode = int(header[18:24], 8)
+            nlink = int(header[36:42], 8)
+            name = stream.read(int(header[59:65], 8)).rstrip(b'\0').decode()
+            size = int(header[65:76], 8)
+            if name == 'TRAILER!!!':
+                break
+
+            app, _, rel = name.removeprefix('./').partition('/')
+            path = None
+            if any(rel == w or rel.startswith(w + '/') for w in WANTED):
+                path = dest / app / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+
+            if stat.S_ISREG(mode) and nlink > 1:
+                if key in hardlinks:
+                    copy(stream, size)
+                    if path:
+                        os.link(hardlinks[key], path)
+                    continue
+                path = path or dest / 'hardlinks' / str(len(hardlinks))
+                path.parent.mkdir(exist_ok=True)
+                hardlinks[key] = path
+
+            if path is None:
+                copy(stream, size)
+            elif stat.S_ISDIR(mode):
+                path.mkdir(exist_ok=True)
+            elif stat.S_ISLNK(mode):
+                path.symlink_to(stream.read(size).decode())
+            else:
+                with path.open('wb') as f:
+                    copy(stream, size, f)
+                path.chmod(stat.S_IMODE(mode))
+
 
 def run():
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-
-    parser.add_argument('xcode_app', metavar='XCODEAPP', type=pathlib.Path)
-    parser.add_argument("-o", metavar='OUTSDKTAR', dest='out_sdkt', type=pathlib.Path, required=False)
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('xcode_xip', metavar='XCODEXIP', type=pathlib.Path)
+    parser.add_argument('-o', metavar='OUTSDKTAR', dest='out_sdkt', type=pathlib.Path)
     args = parser.parse_args()
 
-    xcode_app = args.xcode_app.resolve()
-    assert xcode_app.is_dir(), "The supplied Xcode.app path '{}' either does not exist or is not a directory".format(xcode_app)
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = pathlib.Path(tmp)
+        extract(args.xcode_xip, tmp)
+        xcode_app = next(tmp.glob('*.app'))
+        sdk_dir = xcode_app / SDK_DIR
 
-    xcode_app_plist = xcode_app.joinpath("Contents/version.plist")
-    with xcode_app_plist.open('rb') as fp:
-        pl = plistlib.load(fp)
-        xcode_version = pl['CFBundleShortVersionString']
-        xcode_build_id = pl['ProductBuildVersion']
-    print("Found Xcode (version: {xcode_version}, build id: {xcode_build_id})".format(xcode_version=xcode_version, xcode_build_id=xcode_build_id))
+        xcode = plistlib.loads((xcode_app / 'Contents/version.plist').read_bytes())
+        sdk = plistlib.loads((sdk_dir / 'System/Library/CoreServices/SystemVersion.plist').read_bytes())
+        print(f"Found Xcode {xcode['CFBundleShortVersionString']} ({xcode['ProductBuildVersion']}), "
+              f"MacOSX SDK {sdk['ProductVersion']} ({sdk['ProductBuildVersion']})")
 
-    sdk_dir = xcode_app.joinpath("Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")
-    sdk_plist = sdk_dir.joinpath("System/Library/CoreServices/SystemVersion.plist")
-    with sdk_plist.open('rb') as fp:
-        pl = plistlib.load(fp)
-        sdk_version = pl['ProductVersion']
-        sdk_build_id = pl['ProductBuildVersion']
-    print("Found MacOSX SDK (version: {sdk_version}, build id: {sdk_build_id})".format(sdk_version=sdk_version, sdk_build_id=sdk_build_id))
+        out_name = f"Xcode-{xcode['CFBundleShortVersionString']}-{xcode['ProductBuildVersion']}-extracted-SDK-with-libcxx-headers"
+        out_sdkt = args.out_sdkt or pathlib.Path(f'{out_name}.tar')
 
-    out_name = "Xcode-{xcode_version}-{xcode_build_id}-extracted-SDK-with-libcxx-headers".format(xcode_version=xcode_version, xcode_build_id=xcode_build_id)
-
-    out_sdkt_path = args.out_sdkt or pathlib.Path("./{}.tar".format(out_name))
-
-    def tarfp_add_with_base_change(tarfp, dir_to_add, alt_base_dir):
-        """Add all files in dir_to_add to tarfp, but prepend alt_base_dir to the files'
-        names
-
-        e.g. if the only file under /root/bazdir is /root/bazdir/qux, invoking:
-
-            tarfp_add_with_base_change(tarfp, "foo/bar", "/root/bazdir")
-
-        would result in the following members being added to tarfp:
-
-            foo/bar/             -> corresponding to /root/bazdir
-            foo/bar/qux          -> corresponding to /root/bazdir/qux
-
-        """
-        def change_tarinfo_base(tarinfo):
-            if tarinfo.name and tarinfo.name.endswith((".swiftmodule", ".modulemap")):
+        def normalize(tarinfo):
+            """Drop Swift/module files and make metadata deterministic."""
+            if tarinfo.name.endswith(('.swiftmodule', '.modulemap')):
                 return None
-            if tarinfo.name and tarinfo.name.startswith("./"):
-                tarinfo.name = str(pathlib.Path(alt_base_dir, tarinfo.name))
-            if tarinfo.linkname and tarinfo.linkname.startswith("./"):
-                tarinfo.linkname = str(pathlib.Path(alt_base_dir, tarinfo.linkname))
-            # make metadata deterministic
+            # Kept for compatibility with previously generated SDK tarballs.
+            if tarinfo.linkname.startswith('./'):
+                tarinfo.linkname = f'{out_name}/{tarinfo.linkname[2:]}'
             tarinfo.mtime = 0
-            tarinfo.uid, tarinfo.uname =  0, ''
-            tarinfo.gid, tarinfo.gname = 0, ''
-            # don't use isdir() as there are also executable files present
-            tarinfo.mode = 0o0755 if tarinfo.mode & 0o0100 else 0o0644
+            tarinfo.uid = tarinfo.gid = 0
+            tarinfo.uname = tarinfo.gname = ''
+            tarinfo.mode = 0o755 if tarinfo.mode & 0o100 else 0o644
             return tarinfo
-        with cd(dir_to_add):
-            # recursion already adds entries in sorted order
-            tarfp.add("./usr/include", recursive=True, filter=change_tarinfo_base)
-            tarfp.add("./usr/lib", recursive=True, filter=change_tarinfo_base)
-            tarfp.add("./System/Library/Frameworks", recursive=True, filter=change_tarinfo_base)
 
-    print("Creating output .tar file...")
-    with out_sdkt_path.open("wb") as fp:
-        with tarfile.open(mode="w", fileobj=fp, format=tarfile.PAX_FORMAT) as tarfp:
-            print("Adding MacOSX SDK {} files...".format(sdk_version))
-            tarfp_add_with_base_change(tarfp, sdk_dir, out_name)
-    print("Done! Find the resulting tarball at:")
-    print(out_sdkt_path.resolve())
+        with tarfile.open(out_sdkt, 'w', format=tarfile.PAX_FORMAT) as tar:
+            # recursion adds entries in sorted order
+            for d in SDK_SUBDIRS:
+                tar.add(sdk_dir / d, arcname=f'{out_name}/{d}', filter=normalize)
+    print(out_sdkt.resolve())
+
 
 if __name__ == '__main__':
     run()

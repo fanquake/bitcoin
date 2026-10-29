@@ -10,7 +10,7 @@ When complete, it will have produced `Bitcoin-Core.zip`.
 
 ## SDK Extraction
 
-### Step 1: Obtaining `Xcode.app`
+### Step 1: Obtaining the Xcode `.xip`
 
 A free Apple Developer Account is required to proceed.
 
@@ -24,31 +24,13 @@ An Apple ID and cookies enabled for the hostname are needed to download this.
 
 The `sha256sum` of the downloaded XIP archive should be `f4c65b01e2807372b61553c71036dbfef492d7c79d4c380a5afb61aa1018e555`.
 
-To extract the `.xip` on Linux:
-
-```bash
-# Install/clone tools needed for extracting Xcode.app
-apt install cpio
-git clone https://github.com/bitcoin-core/apple-sdk-tools.git
-
-# Unpack the .xip and place the resulting Xcode.app in your current
-# working directory
-python3 apple-sdk-tools/extract_xcode.py -f Xcode_26.1.1_Apple_silicon.xip | cpio -d -i
-```
-
-On macOS:
-
-```bash
-xip -x Xcode_26.1.1_Apple_silicon.xip
-```
-
-### Step 2: Generating the SDK tarball from `Xcode.app`
+### Step 2: Generating the SDK tarball from the `.xip`
 
 To generate the SDK, run the script [`gen-sdk.py`](./gen-sdk.py) with the
-path to `Xcode.app` (extracted in the previous stage) as the first argument.
+path to the `.xip` as the first argument.
 
 ```bash
-./contrib/macdeploy/gen-sdk.py '/path/to/Xcode.app'
+./contrib/macdeploy/gen-sdk.py '/path/to/Xcode_26.1.1_Apple_silicon.xip'
 ```
 
 The generated archive should be: `Xcode-26.1.1-17B100-extracted-SDK-with-libcxx-headers.tar`.

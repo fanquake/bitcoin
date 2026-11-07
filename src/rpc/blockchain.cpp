@@ -262,6 +262,7 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
         case TxVerbosity::SHOW_DETAILS:
         case TxVerbosity::SHOW_DETAILS_AND_PREVOUT:
             CBlockUndo blockUndo;
+            const_cast<node::BlockManager&>(blockman).SettleUndoWrites(); // a just-connected block's undo may be in flight
             const bool is_not_pruned{WITH_LOCK(::cs_main, return !blockman.IsBlockPruned(blockindex))};
             bool have_undo{is_not_pruned && WITH_LOCK(::cs_main, return blockindex.nStatus & BLOCK_HAVE_UNDO)};
             if (have_undo && !blockman.ReadBlockUndo(blockUndo, blockindex)) {
@@ -753,6 +754,7 @@ static CBlockUndo GetUndoChecked(BlockManager& blockman, const CBlockIndex& bloc
     // The Genesis block does not have undo data
     if (blockindex.nHeight == 0) return blockUndo;
 
+    blockman.SettleUndoWrites(); // a just-connected block's undo may be in flight
     {
         LOCK(cs_main);
         CheckBlockDataAvailability(blockman, blockindex, /*check_for_undo=*/true);

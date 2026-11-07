@@ -44,6 +44,9 @@ private:
     std::unordered_map<CValidationInterface*, std::list<ListEntry>::iterator> m_map GUARDED_BY(m_mutex);
 
 public:
+    Mutex m_pre_sync_mutex;
+    std::function<void()> m_pre_sync_hook GUARDED_BY(m_pre_sync_mutex);
+
     std::unique_ptr<util::TaskRunnerInterface> m_task_runner;
 
     explicit ValidationSignalsImpl(std::unique_ptr<util::TaskRunnerInterface> task_runner)
@@ -143,9 +146,16 @@ void ValidationSignals::CallFunctionInValidationInterfaceQueue(std::function<voi
     m_internals->m_task_runner->insert(std::move(func));
 }
 
+void ValidationSignals::SetPreSyncHook(std::function<void()> hook)
+{
+    LOCK(m_internals->m_pre_sync_mutex);
+    m_internals->m_pre_sync_hook = std::move(hook);
+}
+
 void ValidationSignals::SyncWithValidationInterfaceQueue()
 {
     AssertLockNotHeld(cs_main);
+    if (const auto hook{WITH_LOCK(m_internals->m_pre_sync_mutex, return m_internals->m_pre_sync_hook)}) hook();
     // Block until the validation queue drains
     std::promise<void> promise;
     CallFunctionInValidationInterfaceQueue([&promise] {

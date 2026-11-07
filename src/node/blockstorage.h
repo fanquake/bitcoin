@@ -10,6 +10,7 @@
 #include <dbwrapper.h>
 #include <flatfile.h>
 #include <kernel/blockmanager_opts.h>
+#include <kernel/effects.h>
 #include <kernel/chainparams.h>
 #include <kernel/cs_main.h>
 #include <kernel/messagestartchars.h>
@@ -318,6 +319,7 @@ public:
     using ReadRawBlockResult = util::Expected<std::vector<std::byte>, ReadRawError>;
 
     explicit BlockManager(const util::SignalInterrupt& interrupt, Options opts);
+    ~BlockManager();
 
     const util::SignalInterrupt& m_interrupt;
     std::atomic<bool> m_importing{false};
@@ -382,6 +384,39 @@ public:
 
     bool WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * WriteBlockUndo() in three parts, so the write can run on the effects
+     * executor: ClaimUndoPos() reserves the space under cs_main (the position
+     * returned is that of the storage header), WriteBlockUndoAt() writes the
+     * data there with no lock held, and OnUndoWritten() records the stored
+     * undo in the block index under cs_main. Callers that need the undo data
+     * of a block whose write may still be in flight call SettleUndoWrites()
+     * first; ReadBlockUndo() does so itself when the position is not set yet.
+     */
+    [[nodiscard]] std::optional<FlatFilePos> ClaimUndoPos(BlockValidationState& state, const CBlockIndex& block, uint32_t undo_size) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    [[nodiscard]] bool WriteBlockUndoAt(const CBlockUndo& blockundo, const uint256& prev_block_hash, FlatFilePos pos);
+    void OnUndoWritten(CBlockIndex& block, const FlatFilePos& data_pos) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * The executor that runs this manager's deferred I/O (undo writes) and
+     * carries the notifications that must follow it. Its completions are
+     * applied under cs_main: by the worker when it can take the lock without
+     * waiting, otherwise by the next SettleUndoWrites() or ApplyEffectCompletions().
+     */
+    kernel::EffectsExecutor m_effects{[this] {
+        // Apply completions if the lock is free; otherwise the next SettleUndoWrites() or
+        // ApplyEffectCompletions() does, and the worker retries shortly. Never block here: a thread
+        // holding cs_main may be waiting for this worker's I/O.
+        TRY_LOCK(::cs_main, locked);
+        if (locked) m_effects.ApplyCompletions();
+    }};
+    //! Wait for every queued effect's I/O and apply the completions. May be called with or without cs_main.
+    void SettleUndoWrites();
+    //! Apply completed effects without waiting for the rest.
+    void ApplyEffectCompletions() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Bytes of undo data queued but not yet written; the connect loop waits below MAX_UNDO_BACKLOG_BYTES.
+    static constexpr size_t MAX_UNDO_BACKLOG_BYTES{64 * 1024 * 1024};
 
     /** Store block on disk and update block file statistics.
      *

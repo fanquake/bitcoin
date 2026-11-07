@@ -2727,7 +2727,7 @@ const char* Chainstate::ScriptCheckReason(const CBlockIndex& pindex) const
     return nullptr;
 }
 
-bool Chainstate::FinishConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex, const char* script_check_reason, bool ok, const ConnectBlockResult& result, bool just_check)
+bool Chainstate::FinishConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex, const char* script_check_reason, bool ok, ConnectBlockResult& result, bool just_check)
 {
     AssertLockHeld(cs_main);
     const uint256& block_hash{pindex->GetBlockHash()};
@@ -2797,13 +2797,34 @@ bool Chainstate::FinishConnectBlock(const CBlock& block, BlockValidationState& s
         return true;
     }
 
-    if (!m_blockman.WriteBlockUndo(result.undo, state, *pindex)) {
-        return false;
+    // The undo data is written by the effects executor; here its place on
+    // disk is claimed and the write queued. The block index learns of the
+    // stored undo when the completion is applied (BlockManager::OnUndoWritten),
+    // and readers that need it earlier settle the executor first.
+    if (pindex->GetUndoPos().IsNull()) {
+        const auto undo_size{static_cast<uint32_t>(GetSerializeSize(result.undo))};
+        const auto pos{m_blockman.ClaimUndoPos(state, *pindex, undo_size)};
+        if (!pos) return false;
+        auto undo{std::make_shared<const CBlockUndo>(std::move(result.undo))};
+        const uint256 prev_hash{pindex->pprev->GetBlockHash()};
+        const FlatFilePos data_pos{pos->nFile, pos->nPos + node::STORAGE_HEADER_BYTES};
+        node::BlockManager& blockman{m_blockman};
+        const bool crash{m_blockman.m_opts.test_crash_before_undo_write};
+        m_blockman.m_effects.Enqueue(
+            [&blockman, undo, prev_hash, pos = *pos, crash]() -> bool {
+                if (crash) std::abort();
+                return blockman.WriteBlockUndoAt(*undo, prev_hash, pos);
+            },
+            [&blockman, pindex, data_pos](bool written) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+                AssertLockHeld(::cs_main);
+                if (written) blockman.OnUndoWritten(*pindex, data_pos);
+            },
+            undo_size);
     }
 
     const auto time_5{SteadyClock::now()};
     m_chainman.time_undo += time_5 - result.time_verified;
-    LogDebug(BCLog::BENCH, "    - Write undo data: %.2fms [%.2fs (%.2fms/blk)]\n",
+    LogDebug(BCLog::BENCH, "    - Queue undo data: %.2fms [%.2fs (%.2fms/blk)]\n",
              Ticks<MillisecondsDouble>(time_5 - result.time_verified),
              Ticks<SecondsDouble>(m_chainman.time_undo),
              Ticks<MillisecondsDouble>(m_chainman.time_undo) / m_chainman.num_blocks_total);
@@ -2954,6 +2975,11 @@ bool Chainstate::FlushStateToDisk(
             }
             {
                 LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
+
+                // Queued undo writes must have landed: the block index about to be written records them, and
+                // the coins DB must never be ahead of the undo data needed to roll it back.
+                m_blockman.SettleUndoWrites();
+                Assume(m_blockman.m_effects.PendingBytes() == 0);
 
                 // First make sure all block and undo data is flushed to disk.
                 if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
@@ -3174,11 +3200,6 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     return true;
 }
 
-struct ConnectedBlock {
-    const CBlockIndex* pindex;
-    std::shared_ptr<const CBlock> pblock;
-};
-
 /**
  * A block connection in flight: staged, validated and published by
  * Chainstate::StageConnectTip(), RunStagedConnect() and PublishConnectTip().
@@ -3238,15 +3259,18 @@ void Chainstate::RunStagedConnect(StagedConnect& staged)
 }
 
 /**
- * Make a staged block the tip of m_chain: write its undo data, flush the
+ * Make a staged block the tip of m_chain: queue its undo write, flush the
  * overlay into the shared cache, update the mempool and notify.
  *
- * The block is added to connected_blocks if connection succeeds.
+ * BlockConnected is signalled from the effects executor's completion queue,
+ * behind the block's undo write, so a subscriber that reads the undo data
+ * (the indexes) finds it stored. The queue is in order, so BlockConnected
+ * signals keep the connection order.
  */
 bool Chainstate::PublishConnectTip(
     BlockValidationState& state,
     StagedConnect& staged,
-    std::vector<ConnectedBlock>& connected_blocks,
+    const kernel::ChainstateRole& role,
     DisconnectedBlockTransactions& disconnectpool)
 {
     AssertLockHeld(cs_main);
@@ -3340,7 +3364,13 @@ bool Chainstate::PublishConnectTip(
     Chainstate& current_cs{m_chainman.CurrentChainstate()};
     m_chainman.MaybeValidateSnapshot(*this, current_cs);
 
-    connected_blocks.emplace_back(pindexNew, std::move(block_to_connect));
+    if (m_chainman.m_options.signals) {
+        m_blockman.m_effects.Enqueue(
+            /*effect=*/nullptr,
+            [signals = m_chainman.m_options.signals, role, block = std::move(block_to_connect), pindexNew](bool) {
+                signals->BlockConnected(role, block, pindexNew);
+            });
+    }
     return true;
 }
 
@@ -3445,7 +3475,9 @@ bool Chainstate::PlanConnectStep(BlockValidationState& state, ConnectStep& step)
     step.old_tip = m_chain.Tip();
     const CBlockIndex* pindexFork = m_chain.FindFork(*step.target);
 
-    // Disconnect active blocks which are no longer in the best chain.
+    // Disconnect active blocks which are no longer in the best chain. Their
+    // undo data may still be in the executor's queue.
+    if (m_chain.Tip() && m_chain.Tip() != pindexFork) m_blockman.SettleUndoWrites();
     while (m_chain.Tip() && m_chain.Tip() != pindexFork) {
         if (!DisconnectTip(state, &step.disconnectpool)) {
             // This is likely a fatal error, but keep the mempool consistent,
@@ -3679,11 +3711,17 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         }
 
                         // Notify external listeners about the new tip.
-                        // Enqueue while holding cs_main to ensure that UpdatedBlockTip is called in the order in which blocks are connected
+                        // UpdatedBlockTip goes through the effects executor's completion queue, behind the
+                        // BlockConnected signals of the blocks it covers (PublishConnectTip), so subscribers
+                        // see it in the order in which blocks are connected, as they always have.
                         if (this == &m_chainman.ActiveChainstate() && pindexFork != pindexNewTip) {
                             // Notify ValidationInterface subscribers
                             if (m_chainman.m_options.signals) {
-                                m_chainman.m_options.signals->UpdatedBlockTip(pindexNewTip, pindexFork, still_in_ibd);
+                                m_blockman.m_effects.Enqueue(
+                                    /*effect=*/nullptr,
+                                    [signals = m_chainman.m_options.signals, pindexNewTip, pindexFork, still_in_ibd](bool) {
+                                        signals->UpdatedBlockTip(pindexNewTip, pindexFork, still_in_ibd);
+                                    });
                             }
 
                             if (kernel::IsInterrupted(m_chainman.GetNotifications().blockTip(
@@ -3716,6 +3754,8 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             // extends the tip ends after the block that improved it, so the
             // locks are released after every such block, as before.
             for (const auto& [pindexConnect, block_pos] : step->batch) {
+                // Do not run ahead of the undo writes by more than the backlog limit.
+                m_blockman.m_effects.WaitForBacklogBelow(node::BlockManager::MAX_UNDO_BACKLOG_BYTES);
                 StagedConnect staged;
                 staged.time_start = SteadyClock::now();
                 // Read the block from disk, with no lock held unless the step is a reorg. The position was
@@ -3749,8 +3789,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         return false;
                     }
                     RunStagedConnect(staged);
-                    std::vector<ConnectedBlock> connected_blocks; // Destructed before cs_main is unlocked
-                    if (!PublishConnectTip(state, staged, connected_blocks, step->disconnectpool)) {
+                    if (!PublishConnectTip(state, staged, *step->role, step->disconnectpool)) {
                         if (state.IsInvalid()) {
                             // The block violates a consensus rule.
                             if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
@@ -3767,11 +3806,6 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         return false;
                     }
                     PruneBlockIndexCandidates();
-                    for (auto& [index, block] : std::move(connected_blocks)) {
-                        if (m_chainman.m_options.signals) {
-                            m_chainman.m_options.signals->BlockConnected(*step->role, std::move(Assert(block)), Assert(index));
-                        }
-                    }
                     if (!step->old_tip || m_chain.Tip()->nChainWork > step->old_tip->nChainWork) {
                         // We're in a better position than we were. Return temporarily to release the lock.
                         step->improved = true;
@@ -5030,6 +5064,7 @@ VerifyDBResult CVerifyDB::VerifyDB(
     int nCheckLevel, int nCheckDepth)
 {
     AssertLockHeld(cs_main);
+    chainstate.m_blockman.SettleUndoWrites();
 
     if (chainstate.m_chain.Tip() == nullptr || chainstate.m_chain.Tip()->pprev == nullptr) {
         return VerifyDBResult::SUCCESS;
@@ -6557,10 +6592,14 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
       m_all_consensus_script_flags{GetAllConsensusScriptFlags(m_options.chainparams.GetConsensus())},
       m_validation_cache{m_options.script_execution_cache_bytes, m_options.signature_cache_bytes}
 {
+    if (m_options.signals) {
+        m_options.signals->SetPreSyncHook([this] { m_blockman.SettleUndoWrites(); });
+    }
 }
 
 ChainstateManager::~ChainstateManager()
 {
+    if (m_options.signals) m_options.signals->SetPreSyncHook({});
     LOCK(::cs_main);
 
     m_versionbitscache.Clear();

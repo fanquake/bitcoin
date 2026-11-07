@@ -45,6 +45,7 @@ add_executable(test_bitcoin
   dbwrapper_tests.cpp
   denialofservice_tests.cpp
   descriptor_tests.cpp
+  effects_tests.cpp
   disconnected_transactions.cpp
   fees_util_tests.cpp
   feefrac_tests.cpp

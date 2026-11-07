@@ -35,6 +35,7 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, BlockManager::Op
     opts.prune_target = nPruneTarget;
 
     if (auto value{args.GetBoolArg("-fastprune")}) opts.fast_prune = *value;
+    opts.test_crash_before_undo_write = HasTestOption(args, "crash_before_undo_write");
 
     ReadDatabaseArgs(args, opts.block_tree_db_params.options);
 

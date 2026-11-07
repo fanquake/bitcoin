@@ -552,7 +552,6 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
                   ValidationCache& validation_cache, bool just_check,
                   BlockValidationState& state, ConnectBlockResult& result);
 
-struct ConnectedBlock;
 struct ConnectStep;
 struct StagedConnect;
 
@@ -984,9 +983,10 @@ protected:
      *  - RunStagedConnect(): the pure ConnectBlock() into the overlay. Reads
      *    only what staging captured and the overlay; ActivateBestChain holds
      *    cs_main across it for now.
-     *  - PublishConnectTip(): write undo data, flush the overlay into the
-     *    shared cache, update mempool and tip, notify. Under cs_main and the
-     *    mempool lock. The block is added to connected_blocks on success.
+     *  - PublishConnectTip(): queue the undo write, flush the overlay into
+     *    the shared cache, update mempool and tip, notify. Under cs_main and
+     *    the mempool lock. BlockConnected follows the undo write through the
+     *    effects executor.
      * All three return true unless a system error occurred, or, for
      * PublishConnectTip, unless the block was invalid (state says which).
      */
@@ -995,7 +995,7 @@ protected:
     bool PublishConnectTip(
         BlockValidationState& state,
         StagedConnect& staged,
-        std::vector<ConnectedBlock>& connected_blocks,
+        const kernel::ChainstateRole& role,
         DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
 
     /**
@@ -1005,10 +1005,11 @@ protected:
     const char* ScriptCheckReason(const CBlockIndex& pindex) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     /**
      * The node side of ConnectBlock() after the pure core ran: fatal error on a
-     * mutated block, counters and bench logging, the undo write and validity
-     * raise (unless just_check), the tracepoint. Returns the final verdict.
+     * mutated block, counters and bench logging, queueing the undo write and
+     * the validity raise (unless just_check), the tracepoint. Returns the
+     * final verdict. The undo data is moved out of result.
      */
-    bool FinishConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex, const char* script_check_reason, bool ok, const ConnectBlockResult& result, bool just_check) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    bool FinishConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex, const char* script_check_reason, bool ok, ConnectBlockResult& result, bool just_check) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex* FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);

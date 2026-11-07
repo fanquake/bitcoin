@@ -221,6 +221,13 @@ public:
      */
     void SyncWithValidationInterfaceQueue() LOCKS_EXCLUDED(cs_main);
 
+    /**
+     * Install a function that SyncWithValidationInterfaceQueue() runs first.
+     * Validation uses it to settle its effects executor, whose completion
+     * queue carries BlockConnected, so that a sync also waits for those.
+     */
+    void SetPreSyncHook(std::function<void()> hook);
+
     void UpdatedBlockTip(const CBlockIndex *, const CBlockIndex *, bool fInitialDownload);
     void ActiveTipChange(const CBlockIndex&, bool);
     void TransactionAddedToMempool(const NewMempoolTransactionInfo&, uint64_t mempool_sequence);

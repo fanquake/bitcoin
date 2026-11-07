@@ -132,6 +132,7 @@ BASE_SCRIPTS = [
     'p2p_blockfilters.py',
     'feature_assumevalid.py',
     'feature_connect_concurrency.py',
+    'feature_async_undo.py',
     'wallet_taproot.py',
     'feature_bip68_sequence.py',
     'rpc_packages.py',

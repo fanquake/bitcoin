@@ -2314,10 +2314,19 @@ script_verify_flags ChainstateManager::GetAllConsensusScriptFlags(const Consensu
     return flags;
 }
 
-script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const ChainstateManager& chainman)
+DeploymentFlags EvaluateDeploymentFlags(const CBlockIndex* prev, const ChainstateManager& chainman)
 {
-    const Consensus::Params& consensusparams = chainman.GetConsensus();
+    return DeploymentFlags{
+        .heightincb = DeploymentActiveAfter(prev, chainman, Consensus::DEPLOYMENT_HEIGHTINCB),
+        .dersig = DeploymentActiveAfter(prev, chainman, Consensus::DEPLOYMENT_DERSIG),
+        .cltv = DeploymentActiveAfter(prev, chainman, Consensus::DEPLOYMENT_CLTV),
+        .csv = DeploymentActiveAfter(prev, chainman, Consensus::DEPLOYMENT_CSV),
+        .segwit = DeploymentActiveAfter(prev, chainman, Consensus::DEPLOYMENT_SEGWIT),
+    };
+}
 
+script_verify_flags GetBlockScriptFlags(const uint256& block_hash, const DeploymentFlags& deployments, const Consensus::Params& consensusparams)
+{
     // BIP16 didn't become active until Apr 1 2012 (on mainnet, and
     // retroactively applied to testnet)
     // However, only one historical block violated the P2SH rules (on both
@@ -2327,7 +2336,7 @@ script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const Ch
     // For simplicity, always leave P2SH+WITNESS+TAPROOT on except for the two
     // violating blocks.
     ConsensusScriptVerifyFlags flags{SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS | SCRIPT_VERIFY_TAPROOT};
-    const auto it{consensusparams.script_flag_exceptions.find(*Assert(block_index.phashBlock))};
+    const auto it{consensusparams.script_flag_exceptions.find(block_hash)};
     if (it != consensusparams.script_flag_exceptions.end()) {
         // only trimming flags, not trying to enable new ones
         flags &= it->second;
@@ -2335,30 +2344,52 @@ script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const Ch
     }
 
     // Enforce the DERSIG (BIP66) rule
-    if (DeploymentActiveAt(block_index, chainman, Consensus::DEPLOYMENT_DERSIG)) {
+    if (deployments.dersig) {
         flags |= SCRIPT_VERIFY_DERSIG;
     }
 
     // Enforce CHECKLOCKTIMEVERIFY (BIP65)
-    if (DeploymentActiveAt(block_index, chainman, Consensus::DEPLOYMENT_CLTV)) {
+    if (deployments.cltv) {
         flags |= SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
     }
 
     // Enforce CHECKSEQUENCEVERIFY (BIP112)
-    if (DeploymentActiveAt(block_index, chainman, Consensus::DEPLOYMENT_CSV)) {
+    if (deployments.csv) {
         flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
     }
 
     // Enforce BIP147 NULLDUMMY (activated simultaneously with segwit)
-    if (DeploymentActiveAt(block_index, chainman, Consensus::DEPLOYMENT_SEGWIT)) {
+    if (deployments.segwit) {
         flags |= SCRIPT_VERIFY_NULLDUMMY;
     }
+
+    return flags;
+}
+
+script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const ChainstateManager& chainman)
+{
+    const script_verify_flags flags{GetBlockScriptFlags(*Assert(block_index.phashBlock), EvaluateDeploymentFlags(block_index.pprev, chainman), chainman.GetConsensus())};
 
     // Note: flags returned from this function must also be included in
     // GetAllConsensusScriptFlags() above.
     Assume((chainman.m_all_consensus_script_flags & flags) == flags);
 
     return flags;
+}
+
+BlockValidationContext ChainstateManager::MakeBlockValidationContext(const uint256& block_hash, const CBlockIndex* prev) const
+{
+    AssertLockHeld(::cs_main);
+    const DeploymentFlags deployments{EvaluateDeploymentFlags(prev, *this)};
+    const script_verify_flags script_flags{GetBlockScriptFlags(block_hash, deployments, GetConsensus())};
+    Assume((m_all_consensus_script_flags & script_flags) == script_flags);
+    return BlockValidationContext{
+        .params = GetConsensus(),
+        .now = NodeClock::now(),
+        .deployments = deployments,
+        .script_flags = script_flags,
+        .check_scripts = true,
+    };
 }
 
 

@@ -454,6 +454,38 @@ enum DisconnectResult
     DISCONNECT_FAILED   // Something else went wrong.
 };
 
+/**
+ * Which consensus deployments are active for a block. Evaluated by the node
+ * from the header chain (see ChainstateManager::MakeBlockValidationContext),
+ * and consumed by the validation functions, which thereby need neither the
+ * ChainstateManager nor the version bits cache.
+ */
+struct DeploymentFlags {
+    bool heightincb{false}; //!< BIP34
+    bool dersig{false};     //!< BIP66
+    bool cltv{false};       //!< BIP65
+    bool csv{false};        //!< BIP68, BIP112, BIP113
+    bool segwit{false};     //!< BIP141, BIP143, BIP147
+};
+
+/**
+ * Everything a block validation function needs from the node besides the
+ * block itself, the block index entries and the coins view. The node builds
+ * one of these under cs_main from configuration and the header chain; the
+ * validation functions read it and touch no other node state, so they can be
+ * called and tested without a ChainstateManager.
+ */
+struct BlockValidationContext {
+    const Consensus::Params& params;
+    //! Clock reading used for the future-timestamp check of the header.
+    NodeClock::time_point now;
+    DeploymentFlags deployments;
+    //! Script flags to enforce for this block, see GetBlockScriptFlags().
+    script_verify_flags script_flags;
+    //! Whether to verify input scripts at all. False only under -assumevalid.
+    bool check_scripts{true};
+};
+
 struct ConnectedBlock;
 
 /** @see Chainstate::FlushStateToDisk */
@@ -1022,6 +1054,15 @@ public:
     kernel::Notifications& GetNotifications() const { return m_options.notifications; };
 
     /**
+     * Build the context for validating the block `block_hash` whose parent is
+     * `prev` (nullptr for genesis): consensus parameters, the current time,
+     * the deployments active at that height and the script flags they imply.
+     * `check_scripts` is left at true; callers that skip script verification
+     * under -assumevalid clear it themselves.
+     */
+    BlockValidationContext MakeBlockValidationContext(const uint256& block_hash, const CBlockIndex* prev) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
      * Make various assertions about the state of the block index.
      *
      * By default this only executes fully when using the Regtest chain; see: m_options.check_block_index.
@@ -1441,8 +1482,18 @@ inline constexpr script_verify_flags CONSENSUS_SCRIPT_VERIFY_FLAGS{
     | SCRIPT_VERIFY_NULLDUMMY
 };
 
-// Returns the script flags which should be checked for a given block
-// (a subset of CONSENSUS_SCRIPT_VERIFY_FLAGS)
+/** Evaluate which deployments are active for the block following `prev` (nullptr for genesis). */
+DeploymentFlags EvaluateDeploymentFlags(const CBlockIndex* prev, const ChainstateManager& chainman);
+
+/**
+ * Returns the script flags which should be checked for a given block
+ * (a subset of CONSENSUS_SCRIPT_VERIFY_FLAGS). Pure function of the block
+ * hash (for the historical exceptions), the active deployments and the
+ * consensus parameters.
+ */
+script_verify_flags GetBlockScriptFlags(const uint256& block_hash, const DeploymentFlags& deployments, const Consensus::Params& params);
+
+// Convenience wrapper evaluating the deployments for `block_index` itself.
 script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const ChainstateManager& chainman);
 
 /** The context CheckInputScripts is called in, which decides how a

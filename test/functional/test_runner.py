@@ -131,6 +131,7 @@ BASE_SCRIPTS = [
     'wallet_groups.py',
     'p2p_blockfilters.py',
     'feature_assumevalid.py',
+    'feature_connect_concurrency.py',
     'wallet_taproot.py',
     'feature_bip68_sequence.py',
     'rpc_packages.py',

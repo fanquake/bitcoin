@@ -1013,6 +1013,14 @@ protected:
 
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex* FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /**
+     * Block-index transition: the candidate chain ending in `top` cannot be
+     * connected because `unusable` (an ancestor of `top` not on the active
+     * chain) is invalid or lacks data. Removes the chain from the candidates,
+     * records a new best invalid, and files the blocks that only lack data
+     * under m_blocks_unlinked so their arrival makes them candidates again.
+     */
+    void DropUnusableCandidateChain(CBlockIndex* top, CBlockIndex* unusable, bool failed, bool missing_data) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     bool RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& inputs) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
@@ -1492,6 +1500,10 @@ public:
     };
     bool PrepareAcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool FinishAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared, bool written) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    //! Block-index transition: the block's scripts were verified (or accepted
+    //! under assumevalid), so it is BLOCK_VALID_SCRIPTS from now on.
+    void MarkBlockScriptsValid(CBlockIndex& block) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void ReceivedBlockTransactions(const CBlock& block, CBlockIndex* pindexNew, const FlatFilePos& pos) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 

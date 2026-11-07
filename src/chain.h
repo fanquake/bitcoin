@@ -85,6 +85,27 @@ enum BlockStatus : uint32_t {
                                       //!< ancestors before they were validated, and unset when they were validated.
 };
 
+/**
+ * The state of a block index entry in the block-index machine, derived from
+ * CBlockIndex::nStatus, which remains the stored representation. The
+ * transitions are the functions that write nStatus: AddToBlockIndex
+ * (HEADER_KNOWN -> TREE_VALID), ReceivedBlockTransactions (-> TRANSACTIONS_VALID),
+ * ChainstateManager::MarkBlockScriptsValid (-> SCRIPTS_VALID, from ConnectBlock),
+ * InvalidBlockFound / InvalidateBlock / SetBlockFailureFlags (-> FAILED),
+ * ResetBlockFailureFlags (FAILED -> the validity level reached before),
+ * PruneOneBlockFile (-> PRUNED). Whether undo data is stored is orthogonal
+ * (CBlockIndex::HaveUndo, set by BlockManager::OnUndoWritten).
+ */
+enum class BlockIndexState {
+    HEADER_KNOWN,       //!< In the index, parents not yet all known or valid.
+    TREE_VALID,         //!< Header valid and connected to the tree; no block data.
+    TRANSACTIONS_VALID, //!< Block data stored and checked on its own.
+    CHAIN_VALID,        //!< Valid up to UTXO-independent chain checks.
+    SCRIPTS_VALID,      //!< Fully validated (or accepted under assumevalid).
+    PRUNED,             //!< Was TRANSACTIONS_VALID or better; the block data is gone.
+    FAILED,             //!< Invalid, or descends from an invalid block.
+};
+
 /** The block chain is a tree shaped structure starting with the
  * genesis block at the root, with each block potentially having multiple
  * candidates to be the next block. A blockindex may have multiple pprev pointing
@@ -255,6 +276,27 @@ public:
         if (nStatus & BLOCK_FAILED_VALID)
             return false;
         return ((nStatus & BLOCK_VALID_MASK) >= nUpTo);
+    }
+
+    //! The typed state this entry is in; see BlockIndexState.
+    BlockIndexState GetState() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        AssertLockHeld(::cs_main);
+        if (nStatus & BLOCK_FAILED_VALID) return BlockIndexState::FAILED;
+        const uint32_t validity{nStatus & BLOCK_VALID_MASK};
+        if (validity >= BLOCK_VALID_TRANSACTIONS && !(nStatus & BLOCK_HAVE_DATA)) return BlockIndexState::PRUNED;
+        if (validity >= BLOCK_VALID_SCRIPTS) return BlockIndexState::SCRIPTS_VALID;
+        if (validity >= BLOCK_VALID_CHAIN) return BlockIndexState::CHAIN_VALID;
+        if (validity >= BLOCK_VALID_TRANSACTIONS) return BlockIndexState::TRANSACTIONS_VALID;
+        if (validity >= BLOCK_VALID_TREE) return BlockIndexState::TREE_VALID;
+        return BlockIndexState::HEADER_KNOWN;
+    }
+
+    //! Whether the block's undo data is stored (orthogonal to GetState()).
+    bool HaveUndo() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        AssertLockHeld(::cs_main);
+        return nStatus & BLOCK_HAVE_UNDO;
     }
 
     //! Raise the validity level of this block index entry.

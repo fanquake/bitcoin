@@ -2067,8 +2067,7 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
     uint256 hashCacheEntry;
     CSHA256 hasher = validation_cache.ScriptExecutionCacheHasher();
     hasher.Write(UCharCast(tx.GetWitnessHash().begin()), 32).Write((unsigned char*)&flags, sizeof(flags)).Finalize(hashCacheEntry.begin());
-    AssertLockHeld(cs_main); //TODO: Remove this requirement by making CuckooCache not require external locks
-    if (validation_cache.m_script_execution_cache.contains(hashCacheEntry, !cacheFullScriptStore)) {
+    if (validation_cache.ScriptExecutionCached(hashCacheEntry, /*erase=*/!cacheFullScriptStore)) {
         return true;
     }
 
@@ -2118,7 +2117,7 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
     if (cacheFullScriptStore && !pvChecks) {
         // We executed all of the provided scripts, and were told to
         // cache the result. Do so now.
-        validation_cache.m_script_execution_cache.insert(hashCacheEntry);
+        validation_cache.CacheScriptExecution(hashCacheEntry);
     }
 
     return true;

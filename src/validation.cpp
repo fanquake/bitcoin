@@ -3277,6 +3277,9 @@ bool Chainstate::PublishConnectTip(
     // Nothing else moves this chain's tip while ActivateBestChain() runs
     // (m_chainstate_mutex), so what was staged still applies.
     assert(pindexNew->pprev == m_chain.Tip());
+    // Hand on the completions of earlier blocks (their notifications) now that the lock is held, so they
+    // trail the blocks they belong to by at most one block even when the lock is otherwise busy.
+    m_blockman.ApplyEffectCompletions();
     CoinsViewOverlay& view{*staged.view};
 
     const auto time_1{staged.time_start};
@@ -3725,6 +3728,15 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                                     [signals = m_chainman.m_options.signals, pindexNewTip, pindexFork, still_in_ibd](bool) {
                                         signals->UpdatedBlockTip(pindexNewTip, pindexFork, still_in_ibd);
                                     });
+                                if (!still_in_ibd) {
+                                    // Outside initial block download the notifications leave with the pass, as
+                                    // they always did: wait for the pass's undo writes (what the synchronous
+                                    // write used to cost here) and hand the completions on before the lock
+                                    // goes. Peers are announced new blocks one at a time this way, not in
+                                    // a batch that net_processing would turn into inv announcements.
+                                    m_blockman.m_effects.WaitForIO();
+                                    m_blockman.ApplyEffectCompletions();
+                                }
                             }
 
                             if (kernel::IsInterrupted(m_chainman.GetNotifications().blockTip(

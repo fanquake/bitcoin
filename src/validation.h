@@ -553,6 +553,8 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
                   BlockValidationState& state, ConnectBlockResult& result);
 
 struct ConnectedBlock;
+struct ConnectStep;
+struct StagedConnect;
 
 /** @see Chainstate::FlushStateToDisk */
 inline constexpr std::array FlushStateModeNames{"NONE", "IF_NEEDED", "PERIODIC", "FORCE_FLUSH", "FORCE_SYNC"};
@@ -860,9 +862,11 @@ public:
      * nullptr or a pointer to a block that is already loaded (to avoid loading
      * it again from disk).
      *
-     * ActivateBestChain is split into steps (see ActivateBestChainStep) so that
-     * we avoid holding cs_main for an extended period of time; the length of this
-     * call may be quite long during reindexing or a substantial reorg.
+     * ActivateBestChain is split into steps (see PlanConnectStep), each block
+     * of a step passing through StageConnectTip, RunStagedConnect and
+     * PublishConnectTip, so that cs_main is held per block rather than for
+     * an extended period; the length of this call may be quite long during
+     * reindexing or a substantial reorg.
      *
      * May not be called with cs_main held. May not be called in a
      * validationinterface callback.
@@ -958,13 +962,52 @@ public:
     std::pair<int, int> GetPruneRange(int last_height_can_prune) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 protected:
-    bool ActivateBestChainStep(BlockValidationState& state, CBlockIndex& index_most_work, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
-    bool ConnectTip(
+    /**
+     * Begin a step towards step.target: disconnect the active blocks that are
+     * not on its chain. The blocks to connect are then handed out in batches
+     * by PlanNextBatch() and the step is closed by FinishConnectStep().
+     * @returns true unless a system error occurred
+     */
+    bool PlanConnectStep(BlockValidationState& state, ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    //! Place the next at most 32 blocks towards the target in step.batch. False when the target has been reached.
+    bool PlanNextBatch(ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Re-add disconnected transactions to the mempool and run the end-of-step checks.
+    void FinishConnectStep(ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+
+    /**
+     * Connecting a block to the tip happens in three parts, which together
+     * are what ConnectTip used to be:
+     *  - StageConnectTip(): read the block, start the prefetch of the coins
+     *    it spends into the overlay, decide the node policy
+     *    (BlockValidationContext). Under cs_main.
+     *  - RunStagedConnect(): the pure ConnectBlock() into the overlay. Reads
+     *    only what staging captured and the overlay; ActivateBestChain holds
+     *    cs_main across it for now.
+     *  - PublishConnectTip(): write undo data, flush the overlay into the
+     *    shared cache, update mempool and tip, notify. Under cs_main and the
+     *    mempool lock. The block is added to connected_blocks on success.
+     * All three return true unless a system error occurred, or, for
+     * PublishConnectTip, unless the block was invalid (state says which).
+     */
+    bool StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, std::shared_ptr<const CBlock> block_to_connect, StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void RunStagedConnect(StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    bool PublishConnectTip(
         BlockValidationState& state,
-        CBlockIndex* pindexNew,
-        std::shared_ptr<const CBlock> block_to_connect,
+        StagedConnect& staged,
         std::vector<ConnectedBlock>& connected_blocks,
         DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+
+    /**
+     * The assumevalid decision for a block: nullptr when its scripts are not
+     * to be verified, otherwise the reason they are (logged once per change).
+     */
+    const char* ScriptCheckReason(const CBlockIndex& pindex) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /**
+     * The node side of ConnectBlock() after the pure core ran: fatal error on a
+     * mutated block, counters and bench logging, the undo write and validity
+     * raise (unless just_check), the tracepoint. Returns the final verdict.
+     */
+    bool FinishConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex, const char* script_check_reason, bool ok, const ConnectBlockResult& result, bool just_check) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex* FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);

@@ -2402,17 +2402,17 @@ BlockValidationContext ChainstateManager::MakeBlockValidationContext(const uint2
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
  *  can fail if those validity checks fail (among other reasons). */
-bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex,
-                               CCoinsViewCache& view, bool fJustCheck)
+bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const CBlockIndex* pindex,
+                  CCoinsViewCache& view, CCheckQueue<CScriptCheck>* check_queue,
+                  ValidationCache& validation_cache, bool just_check,
+                  BlockValidationState& state, ConnectBlockResult& result)
 {
-    AssertLockHeld(cs_main);
     assert(pindex);
 
-    uint256 block_hash{block.GetHash()};
+    const uint256 block_hash{block.GetHash()};
     assert(*pindex->phashBlock == block_hash);
 
-    const auto time_start{SteadyClock::now()};
-    const CChainParams& params{m_chainman.GetParams()};
+    result.time_start = SteadyClock::now();
 
     // Check it again in case a previous version let a bad block in
     // NOTE: We don't currently (re-)invoke ContextualCheckBlock() or
@@ -2427,77 +2427,25 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // is enforced in ContextualCheckBlockHeader(); we wouldn't want to
     // re-enforce that rule here (at least until we make it impossible for
     // the clock to go backward).
-    if (!CheckBlock(block, state, params.GetConsensus(), !fJustCheck, !fJustCheck)) {
-        if (state.GetResult() == BlockValidationResult::BLOCK_MUTATED) {
-            // We don't write down blocks to disk if they may have been
-            // corrupted, so this should be impossible unless we're having hardware
-            // problems.
-            return FatalError(m_chainman.GetNotifications(), state, _("Corrupt block found indicating potential hardware failure."));
-        }
-        LogError("%s: Consensus::CheckBlock: %s\n", __func__, state.ToString());
+    if (!CheckBlock(block, state, ctx.params, !just_check, !just_check)) {
+        result.failed_in_check_block = true;
         return false;
     }
 
     // verify that the view's current state corresponds to the previous block
-    uint256 hashPrevBlock = pindex->pprev == nullptr ? uint256() : pindex->pprev->GetBlockHash();
+    const uint256 hashPrevBlock{pindex->pprev == nullptr ? uint256() : pindex->pprev->GetBlockHash()};
     assert(hashPrevBlock == view.GetBestBlock());
-
-    m_chainman.num_blocks_total++;
 
     // Special case for the genesis block, skipping connection of its transactions
     // (its coinbase is unspendable)
-    if (block_hash == params.GetConsensus().hashGenesisBlock) {
-        if (!fJustCheck)
+    if (block_hash == ctx.params.hashGenesisBlock) {
+        if (!just_check)
             view.SetBestBlock(pindex->GetBlockHash());
+        result.time_checked = result.time_forks = result.time_connected = result.time_verified = SteadyClock::now();
         return true;
     }
 
-    const char* script_check_reason;
-    if (m_chainman.AssumedValidBlock().IsNull()) {
-        script_check_reason = "assumevalid=0 (always verify)";
-    } else {
-        constexpr int64_t TWO_WEEKS_IN_SECONDS{60 * 60 * 24 * 7 * 2};
-        // We've been configured with the hash of a block which has been externally verified to have a valid history.
-        // A suitable default value is included with the software and updated from time to time.  Because validity
-        //  relative to a piece of software is an objective fact these defaults can be easily reviewed.
-        // This setting doesn't force the selection of any particular chain but makes validating some faster by
-        //  effectively caching the result of part of the verification.
-        BlockMap::const_iterator it{m_blockman.m_block_index.find(m_chainman.AssumedValidBlock())};
-        if (it == m_blockman.m_block_index.end()) {
-            script_check_reason = "assumevalid hash not in headers";
-        } else if (it->second.GetAncestor(pindex->nHeight) != pindex) {
-            script_check_reason = (pindex->nHeight > it->second.nHeight) ? "block height above assumevalid height" : "block not in assumevalid chain";
-        } else if (m_chainman.m_best_header->GetAncestor(pindex->nHeight) != pindex) {
-            script_check_reason = "block not in best header chain";
-        } else if (m_chainman.m_best_header->nChainWork < m_chainman.MinimumChainWork()) {
-            script_check_reason = "best header chainwork below minimumchainwork";
-        } else if (GetBlockProofEquivalentTime(*m_chainman.m_best_header, *pindex, *m_chainman.m_best_header, params.GetConsensus()) <= TWO_WEEKS_IN_SECONDS) {
-            script_check_reason = "block too recent relative to best header";
-        } else {
-            // This block is a member of the assumed verified chain and an ancestor of the best header.
-            // Script verification is skipped when connecting blocks under the
-            //  assumevalid block. Assuming the assumevalid block is valid this
-            //  is safe because block merkle hashes are still computed and checked,
-            // Of course, if an assumed valid block is invalid due to false scriptSigs
-            //  this optimization would allow an invalid chain to be accepted.
-            // The equivalent time check discourages hash power from extorting the network via DOS attack
-            //  into accepting an invalid block through telling users they must manually set assumevalid.
-            //  Requiring a software change or burying the invalid block, regardless of the setting, makes
-            //  it hard to hide the implication of the demand. This also avoids having release candidates
-            //  that are hardly doing any signature verification at all in testing without having to
-            //  artificially set the default assumed verified block further back.
-            // The test against the minimum chain work prevents the skipping when denied access to any chain at
-            //  least as good as the expected chain.
-            script_check_reason = nullptr;
-        }
-    }
-
-    const auto time_1{SteadyClock::now()};
-    m_chainman.time_check += time_1 - time_start;
-    LogDebug(BCLog::BENCH, "    - Sanity checks: %.2fms [%.2fs (%.2fms/blk)]\n",
-             Ticks<MillisecondsDouble>(time_1 - time_start),
-             Ticks<SecondsDouble>(m_chainman.time_check),
-             Ticks<MillisecondsDouble>(m_chainman.time_check) / m_chainman.num_blocks_total);
+    result.time_checked = SteadyClock::now();
 
     // Do not allow blocks that contain transactions which 'overwrite' older transactions,
     // unless those are already completely spent.
@@ -2567,9 +2515,9 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // post BIP34 before approximately height 486,000,000. After block
     // 1,983,702 testnet3 starts doing unnecessary BIP30 checking again.
     assert(pindex->pprev);
-    CBlockIndex* pindexBIP34height = pindex->pprev->GetAncestor(params.GetConsensus().BIP34Height);
+    const CBlockIndex* pindexBIP34height = pindex->pprev->GetAncestor(ctx.params.BIP34Height);
     //Only continue to enforce if we're below BIP34 activation height or the block hash at that height doesn't correspond.
-    fEnforceBIP30 = fEnforceBIP30 && (!pindexBIP34height || !(pindexBIP34height->GetBlockHash() == params.GetConsensus().BIP34Hash));
+    fEnforceBIP30 = fEnforceBIP30 && (!pindexBIP34height || !(pindexBIP34height->GetBlockHash() == ctx.params.BIP34Hash));
 
     // TODO: Remove BIP30 checking from block height 1,983,702 on, once we have a
     // consensus change that ensures coinbases at those heights cannot
@@ -2587,34 +2535,18 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
 
     // Enforce BIP68 (sequence locks)
     int nLockTimeFlags = 0;
-    if (DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_CSV)) {
+    if (ctx.deployments.csv) {
         nLockTimeFlags |= LOCKTIME_VERIFY_SEQUENCE;
     }
 
     // Get the script flags for this block
-    script_verify_flags flags{GetBlockScriptFlags(*pindex, m_chainman)};
+    const script_verify_flags flags{ctx.script_flags};
 
-    const auto time_2{SteadyClock::now()};
-    m_chainman.time_forks += time_2 - time_1;
-    LogDebug(BCLog::BENCH, "    - Fork checks: %.2fms [%.2fs (%.2fms/blk)]\n",
-             Ticks<MillisecondsDouble>(time_2 - time_1),
-             Ticks<SecondsDouble>(m_chainman.time_forks),
-             Ticks<MillisecondsDouble>(m_chainman.time_forks) / m_chainman.num_blocks_total);
+    result.time_forks = SteadyClock::now();
 
-    const bool fScriptChecks{!!script_check_reason};
-    const kernel::ChainstateRole role{GetRole()};
-    if (script_check_reason != m_last_script_check_reason_logged && role.validated && !role.historical) {
-        if (fScriptChecks) {
-            LogInfo("Enabling script verification at block #%d (%s): %s.",
-                    pindex->nHeight, block_hash.ToString(), script_check_reason);
-        } else {
-            LogInfo("Disabling script verification at block #%d (%s).",
-                    pindex->nHeight, block_hash.ToString());
-        }
-        m_last_script_check_reason_logged = script_check_reason;
-    }
+    const bool fScriptChecks{ctx.check_scripts};
 
-    CBlockUndo blockundo;
+    CBlockUndo& blockundo{result.undo};
 
     // Precomputed transaction data pointers must not be invalidated
     // until after `control` has run the script checks (potentially
@@ -2623,12 +2555,12 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // for as long as `control`.
     std::vector<PrecomputedTransactionData> txsdata(block.vtx.size());
     std::optional<CCheckQueueControl<CScriptCheck>> control;
-    if (auto& queue = m_chainman.GetCheckQueue(); queue.HasThreads() && fScriptChecks) control.emplace(queue);
+    if (check_queue && check_queue->HasThreads() && fScriptChecks) control.emplace(*check_queue);
 
     std::vector<int> prevheights;
     CAmount nFees = 0;
-    int nInputs = 0;
-    int64_t nSigOpsCost = 0;
+    int& nInputs{result.num_inputs};
+    int64_t& nSigOpsCost{result.sigops_cost};
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
@@ -2682,17 +2614,17 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
 
         if (!tx.IsCoinBase() && fScriptChecks)
         {
-            bool fCacheResults = fJustCheck; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
+            bool fCacheResults = just_check; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
             bool tx_ok;
             TxValidationState tx_state;
             // If CheckInputScripts is called with a pointer to a checks vector, the resulting checks are appended to it. In that case
             // they need to be added to control which runs them asynchronously. Otherwise, CheckInputScripts runs the checks before returning.
             if (control) {
                 std::vector<CScriptCheck> vChecks;
-                tx_ok = CheckInputScripts(tx, tx_state, view, flags, CheckInputScriptsFor::Block, fCacheResults, fCacheResults, txsdata[i], m_chainman.m_validation_cache, &vChecks);
+                tx_ok = CheckInputScripts(tx, tx_state, view, flags, CheckInputScriptsFor::Block, fCacheResults, fCacheResults, txsdata[i], validation_cache, &vChecks);
                 if (tx_ok) control->Add(std::move(vChecks));
             } else {
-                tx_ok = CheckInputScripts(tx, tx_state, view, flags, CheckInputScriptsFor::Block, fCacheResults, fCacheResults, txsdata[i], m_chainman.m_validation_cache);
+                tx_ok = CheckInputScripts(tx, tx_state, view, flags, CheckInputScriptsFor::Block, fCacheResults, fCacheResults, txsdata[i], validation_cache);
             }
             if (!tx_ok) {
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
@@ -2708,15 +2640,9 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         }
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
     }
-    const auto time_3{SteadyClock::now()};
-    m_chainman.time_connect += time_3 - time_2;
-    LogDebug(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(),
-             Ticks<MillisecondsDouble>(time_3 - time_2), Ticks<MillisecondsDouble>(time_3 - time_2) / block.vtx.size(),
-             nInputs <= 1 ? 0 : Ticks<MillisecondsDouble>(time_3 - time_2) / (nInputs - 1),
-             Ticks<SecondsDouble>(m_chainman.time_connect),
-             Ticks<MillisecondsDouble>(m_chainman.time_connect) / m_chainman.num_blocks_total);
+    result.time_connected = SteadyClock::now();
 
-    CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, params.GetConsensus());
+    CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, ctx.params);
     if (block.vtx[0]->GetValueOut() > blockReward && state.IsValid()) {
         state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount",
                       strprintf("coinbase pays too much (actual=%d vs limit=%d)", block.vtx[0]->GetValueOut(), blockReward));
@@ -2728,14 +2654,139 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         }
     }
     if (!state.IsValid()) {
+        return false;
+    }
+    result.time_verified = SteadyClock::now();
+
+    // add this block to the view's block chain
+    if (!just_check) {
+        view.SetBestBlock(pindex->GetBlockHash());
+    }
+
+    return true;
+}
+
+bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex,
+                               CCoinsViewCache& view, bool fJustCheck)
+{
+    AssertLockHeld(cs_main);
+    assert(pindex);
+
+    const uint256 block_hash{block.GetHash()};
+    const CChainParams& params{m_chainman.GetParams()};
+
+    // Node policy: decide whether this block's scripts are verified at all.
+    // Everything below is a property of the node (its -assumevalid setting,
+    // its header chain, its minimum chain work), not of the block, which is
+    // why it lives in the wrapper and reaches the pure function only as
+    // ctx.check_scripts.
+    const char* script_check_reason;
+    if (block_hash == params.GetConsensus().hashGenesisBlock) {
+        // Genesis never has its transactions connected; the reason is irrelevant.
+        script_check_reason = "genesis";
+    } else if (m_chainman.AssumedValidBlock().IsNull()) {
+        script_check_reason = "assumevalid=0 (always verify)";
+    } else {
+        constexpr int64_t TWO_WEEKS_IN_SECONDS{60 * 60 * 24 * 7 * 2};
+        // We've been configured with the hash of a block which has been externally verified to have a valid history.
+        // A suitable default value is included with the software and updated from time to time.  Because validity
+        //  relative to a piece of software is an objective fact these defaults can be easily reviewed.
+        // This setting doesn't force the selection of any particular chain but makes validating some faster by
+        //  effectively caching the result of part of the verification.
+        BlockMap::const_iterator it{m_blockman.m_block_index.find(m_chainman.AssumedValidBlock())};
+        if (it == m_blockman.m_block_index.end()) {
+            script_check_reason = "assumevalid hash not in headers";
+        } else if (it->second.GetAncestor(pindex->nHeight) != pindex) {
+            script_check_reason = (pindex->nHeight > it->second.nHeight) ? "block height above assumevalid height" : "block not in assumevalid chain";
+        } else if (m_chainman.m_best_header->GetAncestor(pindex->nHeight) != pindex) {
+            script_check_reason = "block not in best header chain";
+        } else if (m_chainman.m_best_header->nChainWork < m_chainman.MinimumChainWork()) {
+            script_check_reason = "best header chainwork below minimumchainwork";
+        } else if (GetBlockProofEquivalentTime(*m_chainman.m_best_header, *pindex, *m_chainman.m_best_header, params.GetConsensus()) <= TWO_WEEKS_IN_SECONDS) {
+            script_check_reason = "block too recent relative to best header";
+        } else {
+            // This block is a member of the assumed verified chain and an ancestor of the best header.
+            // Script verification is skipped when connecting blocks under the
+            //  assumevalid block. Assuming the assumevalid block is valid this
+            //  is safe because block merkle hashes are still computed and checked,
+            // Of course, if an assumed valid block is invalid due to false scriptSigs
+            //  this optimization would allow an invalid chain to be accepted.
+            // The equivalent time check discourages hash power from extorting the network via DOS attack
+            //  into accepting an invalid block through telling users they must manually set assumevalid.
+            //  Requiring a software change or burying the invalid block, regardless of the setting, makes
+            //  it hard to hide the implication of the demand. This also avoids having release candidates
+            //  that are hardly doing any signature verification at all in testing without having to
+            //  artificially set the default assumed verified block further back.
+            // The test against the minimum chain work prevents the skipping when denied access to any chain at
+            //  least as good as the expected chain.
+            script_check_reason = nullptr;
+        }
+    }
+
+    BlockValidationContext ctx{m_chainman.MakeBlockValidationContext(block_hash, pindex->pprev)};
+    ctx.check_scripts = !!script_check_reason;
+
+    ConnectBlockResult result;
+    const bool ok{::ConnectBlock(block, ctx, pindex, view, &m_chainman.GetCheckQueue(), m_chainman.m_validation_cache, fJustCheck, state, result)};
+
+    if (result.failed_in_check_block) {
+        if (state.GetResult() == BlockValidationResult::BLOCK_MUTATED) {
+            // We don't write down blocks to disk if they may have been
+            // corrupted, so this should be impossible unless we're having hardware
+            // problems.
+            return FatalError(m_chainman.GetNotifications(), state, _("Corrupt block found indicating potential hardware failure."));
+        }
+        LogError("%s: Consensus::CheckBlock: %s\n", __func__, state.ToString());
+        return false;
+    }
+
+    m_chainman.num_blocks_total++;
+
+    if (block_hash == params.GetConsensus().hashGenesisBlock) {
+        return ok;
+    }
+
+    m_chainman.time_check += result.time_checked - result.time_start;
+    LogDebug(BCLog::BENCH, "    - Sanity checks: %.2fms [%.2fs (%.2fms/blk)]\n",
+             Ticks<MillisecondsDouble>(result.time_checked - result.time_start),
+             Ticks<SecondsDouble>(m_chainman.time_check),
+             Ticks<MillisecondsDouble>(m_chainman.time_check) / m_chainman.num_blocks_total);
+
+    m_chainman.time_forks += result.time_forks - result.time_checked;
+    LogDebug(BCLog::BENCH, "    - Fork checks: %.2fms [%.2fs (%.2fms/blk)]\n",
+             Ticks<MillisecondsDouble>(result.time_forks - result.time_checked),
+             Ticks<SecondsDouble>(m_chainman.time_forks),
+             Ticks<MillisecondsDouble>(m_chainman.time_forks) / m_chainman.num_blocks_total);
+
+    const kernel::ChainstateRole role{GetRole()};
+    if (script_check_reason != m_last_script_check_reason_logged && role.validated && !role.historical) {
+        if (ctx.check_scripts) {
+            LogInfo("Enabling script verification at block #%d (%s): %s.",
+                    pindex->nHeight, block_hash.ToString(), script_check_reason);
+        } else {
+            LogInfo("Disabling script verification at block #%d (%s).",
+                    pindex->nHeight, block_hash.ToString());
+        }
+        m_last_script_check_reason_logged = script_check_reason;
+    }
+
+    const int nInputs{result.num_inputs};
+    m_chainman.time_connect += result.time_connected - result.time_forks;
+    LogDebug(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(),
+             Ticks<MillisecondsDouble>(result.time_connected - result.time_forks), Ticks<MillisecondsDouble>(result.time_connected - result.time_forks) / block.vtx.size(),
+             nInputs <= 1 ? 0 : Ticks<MillisecondsDouble>(result.time_connected - result.time_forks) / (nInputs - 1),
+             Ticks<SecondsDouble>(m_chainman.time_connect),
+             Ticks<MillisecondsDouble>(m_chainman.time_connect) / m_chainman.num_blocks_total);
+
+    if (!ok) {
         LogWarning("Block validation error: %s", state.ToString());
         return false;
     }
-    const auto time_4{SteadyClock::now()};
-    m_chainman.time_verify += time_4 - time_2;
+
+    m_chainman.time_verify += result.time_verified - result.time_forks;
     LogDebug(BCLog::BENCH, "    - Verify %u txins: %.2fms (%.3fms/txin) [%.2fs (%.2fms/blk)]\n", nInputs - 1,
-             Ticks<MillisecondsDouble>(time_4 - time_2),
-             nInputs <= 1 ? 0 : Ticks<MillisecondsDouble>(time_4 - time_2) / (nInputs - 1),
+             Ticks<MillisecondsDouble>(result.time_verified - result.time_forks),
+             nInputs <= 1 ? 0 : Ticks<MillisecondsDouble>(result.time_verified - result.time_forks) / (nInputs - 1),
              Ticks<SecondsDouble>(m_chainman.time_verify),
              Ticks<MillisecondsDouble>(m_chainman.time_verify) / m_chainman.num_blocks_total);
 
@@ -2743,14 +2794,14 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         return true;
     }
 
-    if (!m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
+    if (!m_blockman.WriteBlockUndo(result.undo, state, *pindex)) {
         return false;
     }
 
     const auto time_5{SteadyClock::now()};
-    m_chainman.time_undo += time_5 - time_4;
+    m_chainman.time_undo += time_5 - result.time_verified;
     LogDebug(BCLog::BENCH, "    - Write undo data: %.2fms [%.2fs (%.2fms/blk)]\n",
-             Ticks<MillisecondsDouble>(time_5 - time_4),
+             Ticks<MillisecondsDouble>(time_5 - result.time_verified),
              Ticks<SecondsDouble>(m_chainman.time_undo),
              Ticks<MillisecondsDouble>(m_chainman.time_undo) / m_chainman.num_blocks_total);
 
@@ -2758,9 +2809,6 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         pindex->RaiseValidity(BLOCK_VALID_SCRIPTS);
         m_blockman.m_dirty_blockindex.insert(pindex);
     }
-
-    // add this block to the view's block chain
-    view.SetBestBlock(pindex->GetBlockHash());
 
     const auto time_6{SteadyClock::now()};
     m_chainman.time_index += time_6 - time_5;
@@ -2774,8 +2822,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         pindex->nHeight,
         block.vtx.size(),
         nInputs,
-        nSigOpsCost,
-        Ticks<std::chrono::nanoseconds>(time_5 - time_start)
+        result.sigops_cost,
+        Ticks<std::chrono::nanoseconds>(time_5 - result.time_start)
     );
 
     return true;

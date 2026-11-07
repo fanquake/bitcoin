@@ -29,6 +29,7 @@
 #include <txdb.h>
 #include <txmempool.h>
 #include <uint256.h>
+#include <undo.h>
 #include <util/byte_units.h>
 #include <util/check.h>
 #include <util/fs.h>
@@ -52,7 +53,6 @@
 #include <vector>
 
 class Chainstate;
-class CBlockUndo;
 class CTxMemPool;
 class ChainstateManager;
 struct ChainTxData;
@@ -486,6 +486,38 @@ struct BlockValidationContext {
     //! Whether to verify input scripts at all. False only under -assumevalid.
     bool check_scripts{true};
 };
+
+/** Outputs of the pure ConnectBlock() besides the mutated coins view. */
+struct ConnectBlockResult {
+    //! Undo data for the connected block; empty when connection failed.
+    CBlockUndo undo;
+    int num_inputs{0};
+    int64_t sigops_cost{0};
+    //! True when the block failed CheckBlock() before any UTXO work was done.
+    bool failed_in_check_block{false};
+    //! Phase boundaries, for the caller's bench logging.
+    SteadyClock::time_point time_start{};
+    SteadyClock::time_point time_checked{};
+    SteadyClock::time_point time_forks{};
+    SteadyClock::time_point time_connected{};
+    SteadyClock::time_point time_verified{};
+};
+
+/**
+ * Apply `block` to `view`, checking every consensus rule that needs the UTXO
+ * set. Pure apart from the view: it reads no node state, writes nothing to
+ * disk and does no logging. Script checks run on `check_queue` when it is
+ * non-null and has worker threads, otherwise inline; they are skipped
+ * entirely when `ctx.check_scripts` is false. With `just_check` the block's
+ * PoW and merkle root are not rechecked, script cache entries are written,
+ * and the view's best block is left untouched.
+ *
+ * On failure `state` holds the reason and the view may be partially updated.
+ */
+bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const CBlockIndex* pindex,
+                  CCoinsViewCache& view, CCheckQueue<CScriptCheck>* check_queue,
+                  ValidationCache& validation_cache, bool just_check,
+                  BlockValidationState& state, ConnectBlockResult& result);
 
 struct ConnectedBlock;
 

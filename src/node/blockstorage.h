@@ -393,6 +393,17 @@ public:
      */
     FlatFilePos WriteBlock(const CBlock& block, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    /**
+     * The two halves of WriteBlock(), for callers that want the file write
+     * outside cs_main: AllocateBlockPos() claims the space (and does the
+     * file bookkeeping) under the lock, WriteBlockAt() writes the block
+     * there without it. On success pos is advanced past the storage header
+     * to the block's data position, as WriteBlock() returns it. The
+     * allocated space is lost if the write fails, which is a fatal error.
+     */
+    FlatFilePos AllocateBlockPos(const CBlock& block, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    [[nodiscard]] bool WriteBlockAt(const CBlock& block, FlatFilePos& pos);
+
     /** Update blockfile info while processing a block during reindex. The block must be available on disk.
      *
      * @param[in]  block        the block being processed

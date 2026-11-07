@@ -3208,27 +3208,12 @@ struct StagedConnect {
     SteadyClock::time_point time_connected{};
 };
 
-bool Chainstate::StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, std::shared_ptr<const CBlock> block_to_connect, StagedConnect& staged)
+bool Chainstate::StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, StagedConnect& staged)
 {
     AssertLockHeld(cs_main);
     assert(pindexNew->pprev == m_chain.Tip());
+    assert(staged.block);
     staged.pindex = pindexNew;
-    staged.time_start = SteadyClock::now();
-
-    // Read block from disk.
-    if (!block_to_connect) {
-        std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
-        if (!m_blockman.ReadBlock(*pblockNew, *pindexNew)) {
-            return FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
-        }
-        block_to_connect = std::move(pblockNew);
-    } else {
-        LogDebug(BCLog::BENCH, "  - Using cached block\n");
-    }
-    staged.block = std::move(block_to_connect);
-    staged.time_read = SteadyClock::now();
-    LogDebug(BCLog::BENCH, "  - Load block from disk: %.2fms\n",
-             Ticks<MillisecondsDouble>(staged.time_read - staged.time_start));
 
     // Everything the validation of this block reads from the node is gathered
     // here: the prefetch of the coins it spends is started into the overlay,
@@ -3443,8 +3428,9 @@ struct ConnectStep {
     bool blocks_disconnected{false};
     //! Height up to which blocks towards the target have been placed in a batch.
     int planned_height{-1};
-    //! The batch being connected, in ascending height order.
-    std::vector<CBlockIndex*> batch;
+    //! The batch being connected, in ascending height order, with each block's position on disk, captured
+    //! under the lock so the block can be read without it.
+    std::vector<std::pair<CBlockIndex*, FlatFilePos>> batch;
     //! The tip gained work over old_tip: the step ends after the current block.
     bool improved{false};
     //! A block of the batch was invalid: the step ends and the target is recomputed.
@@ -3488,7 +3474,7 @@ bool Chainstate::PlanNextBatch(ConnectStep& step)
     const int target_height{std::min(step.planned_height + 32, step.target->nHeight)};
     step.batch.reserve(target_height - step.planned_height);
     for (CBlockIndex* pindexIter{step.target->GetAncestor(target_height)}; pindexIter && pindexIter->nHeight != step.planned_height; pindexIter = pindexIter->pprev) {
-        step.batch.push_back(pindexIter);
+        step.batch.emplace_back(pindexIter, pindexIter->GetBlockPos());
     }
     std::ranges::reverse(step.batch);
     step.planned_height = target_height;
@@ -3723,18 +3709,39 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             } // release cs_main
             if (pass_done) break;
 
-            // Connect the batch, one block at a time. Each block is staged,
+            // Connect the batch, one block at a time. Each block is read with
+            // no lock held (unless the step is a reorg), then staged,
             // validated and published under one hold of both locks, which is
             // what a step used to hold for its whole batch; a step that
             // extends the tip ends after the block that improved it, so the
             // locks are released after every such block, as before.
-            for (CBlockIndex* pindexConnect : step->batch) {
+            for (const auto& [pindexConnect, block_pos] : step->batch) {
                 StagedConnect staged;
+                staged.time_start = SteadyClock::now();
+                // Read the block from disk, with no lock held unless the step is a reorg. The position was
+                // captured when the batch was planned; a block above the tip is never pruned meanwhile.
+                if (pblock && pindexConnect == step->target && pblock->GetHash() == pindexConnect->GetBlockHash()) {
+                    staged.block = pblock;
+                    LogDebug(BCLog::BENCH, "  - Using cached block\n");
+                } else {
+                    if (!step->blocks_disconnected) AssertLockNotHeld(::cs_main);
+                    std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
+                    if (!m_blockman.ReadBlock(*pblockNew, block_pos, pindexConnect->GetBlockHash())) {
+                        LOCK(cs_main);
+                        LOCK(MempoolMutex());
+                        FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
+                        MaybeUpdateMempoolForReorg(step->disconnectpool, false);
+                        return false;
+                    }
+                    staged.block = std::move(pblockNew);
+                }
+                staged.time_read = SteadyClock::now();
+                LogDebug(BCLog::BENCH, "  - Load block from disk: %.2fms\n",
+                         Ticks<MillisecondsDouble>(staged.time_read - staged.time_start));
                 {
                     LOCK(cs_main);
                     LOCK(MempoolMutex());
-                    const bool have_block{pblock && pindexConnect == step->target && pblock->GetHash() == pindexConnect->GetBlockHash()};
-                    if (!StageConnectTip(state, pindexConnect, have_block ? pblock : std::shared_ptr<const CBlock>(), staged)) {
+                    if (!StageConnectTip(state, pindexConnect, staged)) {
                         // A system error occurred (disk space, database error, ...).
                         // Make the mempool consistent with the current tip, just in case
                         // any observers try to use it before shutdown.
@@ -3747,7 +3754,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         if (state.IsInvalid()) {
                             // The block violates a consensus rule.
                             if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
-                                InvalidChainFound(step->batch.back());
+                                InvalidChainFound(step->batch.back().first);
                             }
                             state = BlockValidationState();
                             step->invalid_found = true;
@@ -4627,12 +4634,13 @@ void ChainstateManager::ReportHeadersPresync(int64_t height, int64_t timestamp)
 }
 
 /** Store block on disk. If dbp is non-nullptr, the file is known to already reside on disk */
-bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked)
+bool ChainstateManager::PrepareAcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared)
 {
     const CBlock& block = *pblock;
 
     if (fNewBlock) *fNewBlock = false;
     AssertLockHeld(cs_main);
+    prepared = PreparedBlock{};
 
     CBlockIndex *pindexDummy = nullptr;
     CBlockIndex *&pindex = ppindex ? *ppindex : pindexDummy;
@@ -4647,7 +4655,8 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     // save them to disk. Skip processing of unrequested blocks as an anti-DoS
     // measure, unless the blocks have more work than the active chain tip, and
     // aren't too far ahead of it, so are likely to be attached soon.
-    bool fAlreadyHave = pindex->nStatus & BLOCK_HAVE_DATA;
+    // A block another thread is writing right now counts as stored: it will be indexed when that write finishes.
+    bool fAlreadyHave = (pindex->nStatus & BLOCK_HAVE_DATA) || m_blocks_being_stored.contains(pindex);
     bool fHasMoreOrSameWork = (ActiveTip() ? pindex->nChainWork >= ActiveTip()->nChainWork : true);
     // Blocks that are too out-of-order needlessly limit the effectiveness of
     // pruning, because pruning will not delete block files that contain any
@@ -4694,21 +4703,44 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
         m_options.signals->NewPoWValidBlock(pindex, pblock);
     }
 
-    // Write block to history file
+    // Claim the block's place in the history file; the write itself may happen without the lock.
     if (fNewBlock) *fNewBlock = true;
+    prepared.pindex = pindex;
+    prepared.store = true;
     try {
-        FlatFilePos blockPos{};
         if (dbp) {
-            blockPos = *dbp;
-            m_blockman.UpdateBlockInfo(block, pindex->nHeight, blockPos);
+            prepared.pos = *dbp;
+            m_blockman.UpdateBlockInfo(block, pindex->nHeight, prepared.pos);
         } else {
-            blockPos = m_blockman.WriteBlock(block, pindex->nHeight);
-            if (blockPos.IsNull()) {
+            prepared.pos = m_blockman.AllocateBlockPos(block, pindex->nHeight);
+            if (prepared.pos.IsNull()) {
+                prepared.store = false;
                 state.Error(strprintf("%s: Failed to find position to write new block to disk", __func__));
                 return false;
             }
+            prepared.write = true;
+            m_blocks_being_stored.insert(pindex);
         }
-        ReceivedBlockTransactions(block, pindex, blockPos);
+    } catch (const std::runtime_error& e) {
+        prepared.store = false;
+        return FatalError(GetNotifications(), state, strprintf(_("System error while saving block to disk: %s"), e.what()));
+    }
+    return true;
+}
+
+bool ChainstateManager::FinishAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared, bool written)
+{
+    AssertLockHeld(cs_main);
+    Assert(prepared.store);
+    prepared.store = false;
+    CBlockIndex* pindex{Assert(prepared.pindex)};
+    if (prepared.write) m_blocks_being_stored.erase(pindex);
+    if (!written) {
+        // WriteBlockAt() reported the fatal error already; the claimed space stays unused.
+        return state.Error(strprintf("%s: Failed to write block to disk", __func__));
+    }
+    try {
+        ReceivedBlockTransactions(block, pindex, prepared.pos);
     } catch (const std::runtime_error& e) {
         return FatalError(GetNotifications(), state, strprintf(_("System error while saving block to disk: %s"), e.what()));
     }
@@ -4734,6 +4766,24 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
     return true;
 }
 
+bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked)
+{
+    AssertLockHeld(cs_main);
+    PreparedBlock prepared;
+    if (!PrepareAcceptBlock(pblock, state, ppindex, fRequested, dbp, fNewBlock, min_pow_checked, prepared)) return false;
+    if (!prepared.store) return true;
+    bool written{true};
+    if (prepared.write) {
+        try {
+            written = m_blockman.WriteBlockAt(*pblock, prepared.pos);
+        } catch (const std::runtime_error& e) {
+            m_blocks_being_stored.erase(prepared.pindex);
+            return FatalError(GetNotifications(), state, strprintf(_("System error while saving block to disk: %s"), e.what()));
+        }
+    }
+    return FinishAcceptBlock(*pblock, state, prepared, written);
+}
+
 bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block)
 {
     AssertLockNotHeld(cs_main);
@@ -4742,27 +4792,51 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
         CBlockIndex *pindex = nullptr;
         if (new_block) *new_block = false;
         BlockValidationState state;
+        PreparedBlock prepared;
 
-        // CheckBlock() does not support multi-threaded block validation because CBlock::fChecked can cause data race.
-        // Therefore, the following critical section must include the CheckBlock() call as well.
-        LOCK(cs_main);
-
-        // Skipping AcceptBlock() for CheckBlock() failures means that we will never mark a block as invalid if
-        // CheckBlock() fails.  This is protective against consensus failure if there are any unknown forms of block
-        // malleability that cause CheckBlock() to fail; see e.g. CVE-2012-2459 and
-        // https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2019-February/016697.html.  Because CheckBlock() is
-        // not very expensive, the anti-DoS benefits of caching failure (of a definitely-invalid block) are not substantial.
-        bool ret = CheckBlock(*block, state, GetConsensus());
-        if (ret) {
-            // Store to disk
-            ret = AcceptBlock(block, state, &pindex, force_processing, nullptr, new_block, min_pow_checked);
-        }
-        if (!ret) {
+        const auto failed{[&]() EXCLUSIVE_LOCKS_REQUIRED(cs_main) {
             if (m_options.signals) {
                 m_options.signals->BlockChecked(block, state);
             }
             LogError("%s: AcceptBlock FAILED (%s)\n", __func__, state.ToString());
             return false;
+        }};
+
+        {
+            // CheckBlock() does not support multi-threaded block validation because CBlock::fChecked can cause data race.
+            // Therefore, the following critical section must include the CheckBlock() call as well.
+            LOCK(cs_main);
+
+            // Skipping AcceptBlock() for CheckBlock() failures means that we will never mark a block as invalid if
+            // CheckBlock() fails.  This is protective against consensus failure if there are any unknown forms of block
+            // malleability that cause CheckBlock() to fail; see e.g. CVE-2012-2459 and
+            // https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2019-February/016697.html.  Because CheckBlock() is
+            // not very expensive, the anti-DoS benefits of caching failure (of a definitely-invalid block) are not substantial.
+            bool ret = CheckBlock(*block, state, GetConsensus());
+            if (ret) {
+                // Validate and claim a place on disk; the write happens below, without the lock.
+                ret = PrepareAcceptBlock(block, state, &pindex, force_processing, nullptr, new_block, min_pow_checked, prepared);
+            }
+            if (!ret) return failed();
+        }
+        if (prepared.store) {
+            bool written{true};
+            std::optional<std::string> write_error;
+            if (prepared.write) {
+                try {
+                    written = m_blockman.WriteBlockAt(*block, prepared.pos);
+                } catch (const std::runtime_error& e) {
+                    written = false;
+                    write_error = e.what();
+                }
+            }
+            LOCK(cs_main);
+            if (write_error) {
+                m_blocks_being_stored.erase(prepared.pindex);
+                FatalError(GetNotifications(), state, strprintf(_("System error while saving block to disk: %s"), *write_error));
+                return failed();
+            }
+            if (!FinishAcceptBlock(*block, state, prepared, written)) return failed();
         }
     }
 

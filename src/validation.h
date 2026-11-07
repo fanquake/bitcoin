@@ -977,8 +977,9 @@ protected:
     /**
      * Connecting a block to the tip happens in three parts, which together
      * are what ConnectTip used to be:
-     *  - StageConnectTip(): read the block, start the prefetch of the coins
-     *    it spends into the overlay, decide the node policy
+     *  - StageConnectTip(): with the block already read (by the caller, with
+     *    no lock held unless the step is a reorg), start the prefetch of the
+     *    coins it spends into the overlay, decide the node policy
      *    (BlockValidationContext). Under cs_main.
      *  - RunStagedConnect(): the pure ConnectBlock() into the overlay. Reads
      *    only what staging captured and the overlay; ActivateBestChain holds
@@ -989,7 +990,7 @@ protected:
      * All three return true unless a system error occurred, or, for
      * PublishConnectTip, unless the block was invalid (state says which).
      */
-    bool StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, std::shared_ptr<const CBlock> block_to_connect, StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    bool StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void RunStagedConnect(StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool PublishConnectTip(
         BlockValidationState& state,
@@ -1127,6 +1128,11 @@ private:
 
     //! A queue for script verifications that have to be performed by worker threads.
     CCheckQueue<CScriptCheck> m_script_check_queue;
+
+    //! Blocks whose data is being written to disk with cs_main released
+    //! (see PrepareAcceptBlock). A second arrival of such a block is treated
+    //! as already stored, so it is written once.
+    std::set<const CBlockIndex*> m_blocks_being_stored GUARDED_BY(::cs_main);
 
     //! Timers and counters used for benchmarking validation in both background
     //! and active chainstates.
@@ -1463,6 +1469,28 @@ public:
      * @returns   False if the block or header is invalid, or if saving to disk fails (likely a fatal error); true otherwise.
      */
     bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    /**
+     * AcceptBlock() in two halves around the file write, so ProcessNewBlock()
+     * can write the block with cs_main released. PrepareAcceptBlock() does
+     * everything up to and including claiming the block's position on disk;
+     * if it returns true with prepared.store set, the caller writes the
+     * block at prepared.pos (BlockManager::WriteBlockAt, no lock needed)
+     * and then calls FinishAcceptBlock(), which updates the block index and
+     * runs the post-acceptance bookkeeping. With a dbp the block is already
+     * on disk and prepared.write is false. The parameters are those of
+     * AcceptBlock().
+     */
+    struct PreparedBlock {
+        CBlockIndex* pindex{nullptr};
+        FlatFilePos pos;
+        //! Storage is pending: FinishAcceptBlock() must be called.
+        bool store{false};
+        //! The block must be written at pos before FinishAcceptBlock().
+        bool write{false};
+    };
+    bool PrepareAcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    bool FinishAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared, bool written) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void ReceivedBlockTransactions(const CBlock& block, CBlockIndex* pindexNew, const FlatFilePos& pos) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 

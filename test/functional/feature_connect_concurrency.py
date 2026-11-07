@@ -2,7 +2,7 @@
 # Copyright (c) 2026-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Read the chainstate and feed the mempool while blocks are being connected.
+"""Read the chainstate, feed the mempool and reorg while blocks are being connected.
 
 Block validation runs with cs_main released; readers that take the lock see
 either the previous or the new tip and a coins view consistent with it. This
@@ -12,6 +12,7 @@ ends up with the same chain and UTXO set as its source. It is most useful
 under a thread sanitizer or lock-order checking build.
 """
 
+import time
 from threading import Event, Thread
 
 from test_framework.authproxy import JSONRPCException
@@ -53,6 +54,7 @@ class ConnectConcurrencyTest(BitcoinTestFramework):
         i = 0
         while not stop.is_set():
             i += 1
+            counts["rounds"] += 1
             try:
                 rpc.getbestblockhash()
                 rpc.getblockchaininfo()
@@ -76,26 +78,53 @@ class ConnectConcurrencyTest(BitcoinTestFramework):
                 errors.append(repr(e))
                 return
 
+    def reorger(self, node, hashes, errors, counts):
+        """Invalidate and reconsider low blocks as soon as the node has connected them, so a reorg interleaves with
+        the sync. Finishes on its own with every block reconsidered."""
+        rpc = node.create_new_rpc_connection()
+        try:
+            for h in hashes[1:4]:
+                deadline = time.time() + 60
+                while True:
+                    try:
+                        rpc.invalidateblock(h)
+                        break
+                    except JSONRPCException as e:
+                        if e.error["code"] != -5 or time.time() > deadline:  # -5: block not found yet
+                            errors.append(e.error)
+                            return
+                        time.sleep(0.005)
+                counts["invalidated"] += 1
+                rpc.reconsiderblock(h)
+        except Exception as e:  # noqa: BLE001
+            errors.append(repr(e))
+
     def sync_with_readers(self, node, hashes, outpoints, late_txs):
         stop = Event()
         errors = []
-        counts = {"calls": 0, "expected_errors": 0, "accepted": 0}
+        counts = {"rounds": 0, "calls": 0, "expected_errors": 0, "accepted": 0, "invalidated": 0}
         threads = [
             Thread(target=self.reader, args=(node, stop, hashes, outpoints, late_txs if n == 0 else [], errors, counts))
             for n in range(3)
         ]
-        for t in threads:
+        reorger = Thread(target=self.reorger, args=(node, hashes, errors, counts))
+        for t in threads + [reorger]:
             t.start()
         self.connect_nodes(node.index, 0)
         try:
+            # The reorger finishes on its own and leaves every block reconsidered; only then can the sync complete.
+            reorger.join()
             self.sync_blocks([self.nodes[0], node], timeout=240)
         finally:
             stop.set()
             for t in threads:
                 t.join()
+            if reorger.is_alive():
+                reorger.join()
         self.log.info(f"readers: {counts}")
         assert_equal(errors, [])
-        assert counts["calls"] > 0
+        assert counts["rounds"] > 0
+        assert_equal(counts["invalidated"], 3)
 
         # Everything the readers were refused is accepted once the node has caught up.
         for tx in late_txs:

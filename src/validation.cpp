@@ -2170,13 +2170,19 @@ int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out)
 DisconnectResult Chainstate::DisconnectBlock(const CBlock& block, const CBlockIndex* pindex, CCoinsViewCache& view)
 {
     AssertLockHeld(::cs_main);
-    bool fClean = true;
 
     CBlockUndo blockUndo;
     if (!m_blockman.ReadBlockUndo(blockUndo, *pindex)) {
         LogError("DisconnectBlock(): failure reading undo data\n");
         return DISCONNECT_FAILED;
     }
+
+    return ::DisconnectBlock(block, std::move(blockUndo), pindex, view);
+}
+
+DisconnectResult DisconnectBlock(const CBlock& block, CBlockUndo&& blockUndo, const CBlockIndex* pindex, CCoinsViewCache& view)
+{
+    bool fClean = true;
 
     if (blockUndo.vtxundo.size() + 1 != block.vtx.size()) {
         LogError("DisconnectBlock(): block and undo data inconsistent\n");

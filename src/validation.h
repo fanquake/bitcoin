@@ -52,6 +52,7 @@
 #include <vector>
 
 class Chainstate;
+class CBlockUndo;
 class CTxMemPool;
 class ChainstateManager;
 struct ChainTxData;
@@ -1484,6 +1485,15 @@ inline constexpr script_verify_flags CONSENSUS_SCRIPT_VERIFY_FLAGS{
 
 /** Evaluate which deployments are active for the block following `prev` (nullptr for genesis). */
 DeploymentFlags EvaluateDeploymentFlags(const CBlockIndex* prev, const ChainstateManager& chainman);
+
+/**
+ * Undo the effects of `block` on `view`, using its undo data. Pure apart from
+ * the view it mutates: no disk access, no node state. The undo data is
+ * consumed. On DISCONNECT_UNCLEAN the view has been rolled back but was
+ * inconsistent with the block; on DISCONNECT_FAILED the undo data did not
+ * match the block and the view may be partially modified.
+ */
+DisconnectResult DisconnectBlock(const CBlock& block, CBlockUndo&& block_undo, const CBlockIndex* pindex, CCoinsViewCache& view);
 
 /**
  * Returns the script flags which should be checked for a given block

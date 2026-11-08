@@ -60,6 +60,13 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
     // Subtract 1 because the main thread counts towards the par threads.
     opts.worker_threads_num = script_threads - 1;
 
+    if (auto value{args.GetArg<int64_t>("-blockcache")}) {
+        if (*value < 0) {
+            return util::Error{Untranslated(strprintf("-blockcache must be non-negative (got %d). Use 0 to disable the block cache.", *value))};
+        }
+        opts.block_cache_bytes = static_cast<size_t>(*value) * 1_MiB;
+    }
+
     if (auto value{args.GetArg<int32_t>("-prevoutfetchthreads")}) {
         if (*value < 0) {
             return util::Error{Untranslated(strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 to disable parallel input fetching.", *value))};

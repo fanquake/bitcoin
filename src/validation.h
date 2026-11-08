@@ -18,6 +18,7 @@
 #include <kernel/chainparams.h>
 #include <kernel/chainstatemanager_opts.h>
 #include <kernel/cs_main.h> // IWYU pragma: export
+#include <node/blockcache.h>
 #include <node/blockstorage.h>
 #include <policy/feerate.h>
 #include <policy/packages.h>
@@ -1142,6 +1143,14 @@ private:
     //! (see PrepareAcceptBlock). A second arrival of such a block is treated
     //! as already stored, so it is written once.
     std::set<const CBlockIndex*> m_blocks_being_stored GUARDED_BY(::cs_main);
+
+public:
+    //! Accepted blocks kept for the connect loop, so that one that arrived before its parent is connected from
+    //! the object received and checked rather than read from disk and deserialized again. Filled by
+    //! ProcessNewBlock() and the external block file loader, emptied by ActivateBestChain().
+    node::BlockCache m_block_cache;
+
+private:
 
     //! Timers and counters used for benchmarking validation in both background
     //! and active chainstates.

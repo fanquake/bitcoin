@@ -133,6 +133,7 @@ BASE_SCRIPTS = [
     'feature_assumevalid.py',
     'feature_connect_concurrency.py',
     'feature_async_undo.py',
+    'feature_block_cache.py',
     'wallet_taproot.py',
     'feature_bip68_sequence.py',
     'rpc_packages.py',

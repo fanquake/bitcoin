@@ -12,6 +12,7 @@
 #include <script/sigcache.h>
 #include <txdb.h>
 #include <uint256.h>
+#include <util/byte_units.h>
 #include <util/time.h>
 
 #include <cstdint>
@@ -23,6 +24,7 @@ class ValidationSignals;
 
 inline constexpr auto DEFAULT_MAX_TIP_AGE{24h};
 inline constexpr int32_t DEFAULT_PREVOUTFETCH_THREADS{8};
+inline constexpr size_t DEFAULT_BLOCK_CACHE_BYTES{128_MiB};
 
 namespace kernel {
 
@@ -49,6 +51,8 @@ struct ChainstateManagerOpts {
     int worker_threads_num{0};
     //! Number of worker threads used for prefetching block input prevouts. Zero means no parallel fetching.
     int32_t prevoutfetch_threads_num{DEFAULT_PREVOUTFETCH_THREADS};
+    //! Budget of the connect-side block cache (node::BlockCache). Zero disables it.
+    size_t block_cache_bytes{DEFAULT_BLOCK_CACHE_BYTES};
     size_t script_execution_cache_bytes{DEFAULT_SCRIPT_EXECUTION_CACHE_BYTES};
     size_t signature_cache_bytes{DEFAULT_SIGNATURE_CACHE_BYTES};
 };

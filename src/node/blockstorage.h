@@ -24,6 +24,7 @@
 #include <util/fs.h>
 #include <util/hasher.h>
 #include <util/obfuscation.h>
+#include <util/threadpool.h>
 
 #include <algorithm>
 #include <array>
@@ -321,6 +322,10 @@ public:
     explicit BlockManager(const util::SignalInterrupt& interrupt, Options opts);
     ~BlockManager();
 
+    //! Hashes the transactions of blocks read from disk, received from the network or loaded from external files
+    //! (txhashing.h). ChainstateManager starts it with the script verification worker count; while it has no
+    //! workers the reading thread hashes.
+    mutable ThreadPool m_hash_pool{"blockhash"};
     const util::SignalInterrupt& m_interrupt;
     std::atomic<bool> m_importing{false};
 

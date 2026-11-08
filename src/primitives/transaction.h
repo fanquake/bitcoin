@@ -198,6 +198,27 @@ inline constexpr TransactionSerParams TX_NO_WITNESS{.allow_witness = false};
  *   - CScriptWitness scriptWitness; (deserialized into CTxIn)
  * - uint32_t nLockTime
  */
+/**
+ * A stream that computes the txid of the transaction being deserialised from the bytes it hands out. The
+ * deserialiser tells it which bytes belong to the txid preimage (the serialisation without witness) through these
+ * five calls; a stream without them, which is every ordinary stream, pays nothing. txhashing.h has the one
+ * implementation, which records byte ranges for a whole block.
+ *
+ *   TxidHold()     the bytes that follow may or may not belong to the preimage: keep them aside
+ *   TxidCommit()   they do (a real input count, or the counts of an input-less, output-less transaction)
+ *   TxidDiscard()  they do not (the segwit marker and flag)
+ *   TxidPause()    the bytes that follow are not part of the preimage (the witness)
+ *   TxidResume()   the preimage continues
+ */
+template <typename Stream>
+concept TxidHashingStream = requires(Stream& s) {
+    s.TxidHold();
+    s.TxidCommit();
+    s.TxidDiscard();
+    s.TxidPause();
+    s.TxidResume();
+};
+
 template<typename Stream, typename TxType>
 void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& params)
 {
@@ -207,25 +228,36 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     unsigned char flags = 0;
     tx.vin.clear();
     tx.vout.clear();
-    /* Try to read the vin. In case the dummy is there, this will be read as an empty vector. */
-    s >> tx.vin;
-    if (tx.vin.size() == 0 && fAllowWitness) {
+    /* Read the vin count. A zero may be the real count or the segwit dummy; which it is decides whether the byte
+     * belongs to the txid preimage, so a hashing stream holds it (and a flag byte read after it) until known. */
+    if constexpr (TxidHashingStream<Stream>) s.TxidHold();
+    const uint64_t vin_size{ReadCompactSize(s)};
+    if (vin_size == 0 && fAllowWitness) {
         /* We read a dummy or an empty vin. */
         s >> flags;
         if (flags != 0) {
+            /* The dummy and the flag are witness framing, not part of the txid. */
+            if constexpr (TxidHashingStream<Stream>) s.TxidDiscard();
             s >> tx.vin;
             s >> tx.vout;
+        } else {
+            /* An input-less, output-less transaction: the two zero bytes are its vin and vout counts. */
+            if constexpr (TxidHashingStream<Stream>) s.TxidCommit();
         }
     } else {
-        /* We read a non-empty vin. Assume a normal vout follows. */
+        /* A real vin count. Assume a normal vout follows. */
+        if constexpr (TxidHashingStream<Stream>) s.TxidCommit();
+        VectorFormatter<DefaultFormatter>{}.UnserElements(s, tx.vin, vin_size);
         s >> tx.vout;
     }
     if ((flags & 1) && fAllowWitness) {
         /* The witness flag is present, and we support witnesses. */
         flags ^= 1;
+        if constexpr (TxidHashingStream<Stream>) s.TxidPause();
         for (size_t i = 0; i < tx.vin.size(); i++) {
             s >> tx.vin[i].scriptWitness.stack;
         }
+        if constexpr (TxidHashingStream<Stream>) s.TxidResume();
         if (!tx.HasWitness()) {
             /* It's illegal to encode witnesses when all witness stacks are empty. */
             throw std::ios_base::failure("Superfluous witness record");
@@ -237,6 +269,7 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     }
     s >> tx.nLockTime;
 }
+
 
 template<typename Stream, typename TxType>
 void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParams& params)
@@ -310,10 +343,16 @@ private:
 
     bool ComputeHasWitness() const;
 
+
 public:
     /** Convert a CMutableTransaction into a CTransaction. */
     explicit CTransaction(const CMutableTransaction& tx);
     explicit CTransaction(CMutableTransaction&& tx);
+
+    /** The hashes were computed from the bytes the transaction was deserialised from (txhashing.h); they are what
+     *  ComputeHash() and ComputeWitnessHash() would return. */
+    struct PrecomputedHashes {};
+    CTransaction(PrecomputedHashes, CMutableTransaction&& tx, const Txid& txid, const Wtxid& wtxid);
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {

@@ -54,6 +54,7 @@
 #include <streams.h>
 #include <sync.h>
 #include <tinyformat.h>
+#include <txhashing.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
@@ -5109,7 +5110,13 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         }
 
         std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
-        vRecv >> TX_WITH_WITNESS(*pblock);
+        {
+            // Hash the transactions from the wire bytes, on the hashing pool's workers for a large block.
+            const auto time_start{SteadyClock::now()};
+            vRecv.ignore(DeserializeBlock(std::span<const std::byte>{vRecv.data(), vRecv.size()}, *pblock, &m_chainman.m_blockman.m_hash_pool));
+            LogDebug(BCLog::BENCH, "- Deserialize block %s (%u txs): %.2fms\n", pblock->GetHash().ToString(), pblock->vtx.size(),
+                     Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
+        }
 
         LogDebug(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), pfrom.GetId());
 

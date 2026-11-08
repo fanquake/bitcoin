@@ -45,6 +45,7 @@
 #include <signet.h>
 #include <tinyformat.h>
 #include <txdb.h>
+#include <txhashing.h>
 #include <txmempool.h>
 #include <uint256.h>
 #include <undo.h>
@@ -5570,7 +5571,14 @@ void ChainstateManager::LoadExternalBlockFile(
                         // This block can be processed immediately; rewind to its start, read and deserialize it.
                         blkdat.SetPos(nBlockPos);
                         pblock = std::make_shared<CBlock>();
-                        blkdat >> TX_WITH_WITNESS(*pblock);
+                        {
+                            // Read the block's bytes and hash its transactions from them, on the pool's workers.
+                            std::vector<std::byte> block_bytes(nSize);
+                            blkdat.read(block_bytes);
+                            const size_t consumed{DeserializeBlock(block_bytes, *pblock, &m_blockman.m_hash_pool)};
+                            // The size field is what WriteBlock wrote; if a file disagrees, continue after the block as read.
+                            if (consumed != nSize) blkdat.SetPos(nBlockPos + consumed);
+                        }
                         nRewind = blkdat.GetPos();
 
                         BlockValidationState state;
@@ -6692,6 +6700,10 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
       m_all_consensus_script_flags{GetAllConsensusScriptFlags(m_options.chainparams.GetConsensus())},
       m_validation_cache{m_options.script_execution_cache_bytes, m_options.signature_cache_bytes}
 {
+    if (const int hash_threads{std::clamp(m_options.worker_threads_num, 0, MAX_SCRIPTCHECK_THREADS)}; hash_threads > 0) {
+        m_blockman.m_hash_pool.Start(hash_threads);
+        LogInfo("Block transaction hashing uses %d additional threads", hash_threads);
+    }
     if (m_options.signals) {
         m_options.signals->SetPreSyncHook([this] { m_blockman.SettleUndoWrites(); });
     }

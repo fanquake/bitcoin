@@ -12,6 +12,7 @@
 #include <pubkey.h>
 #include <streams.h>
 #include <test/fuzz/fuzz.h>
+#include <txhashing.h>
 #include <util/chaintype.h>
 #include <util/check.h>
 #include <validation.h>
@@ -26,11 +27,39 @@ void initialize_block()
 FUZZ_TARGET(block, .init = initialize_block)
 {
     CBlock block;
+    bool deserialized{true};
+    size_t consumed{0};
     try {
-        SpanReader{buffer} >> TX_WITH_WITNESS(block);
+        SpanReader reader{buffer};
+        reader >> TX_WITH_WITNESS(block);
+        consumed = buffer.size() - reader.size();
     } catch (const std::ios_base::failure&) {
-        return;
+        deserialized = false;
     }
+    // The byte-hashing block deserialiser (txhashing.h) must agree with the generic one on the same bytes: the same
+    // outcome, the same bytes consumed, and the same transaction hashes, which it computes without serialising again.
+    {
+        CBlock hashed;
+        bool hashed_deserialized{true};
+        size_t hashed_consumed{0};
+        try {
+            hashed_consumed = DeserializeBlock(std::as_bytes(buffer), hashed, nullptr);
+        } catch (const std::ios_base::failure&) {
+            hashed_deserialized = false;
+        }
+        assert(hashed_deserialized == deserialized);
+        if (deserialized) {
+            assert(hashed_consumed == consumed);
+            assert(hashed.GetHash() == block.GetHash());
+            assert(hashed.vtx.size() == block.vtx.size());
+            for (size_t i{0}; i < block.vtx.size(); ++i) {
+                assert(hashed.vtx[i]->GetHash() == block.vtx[i]->GetHash());
+                assert(hashed.vtx[i]->GetWitnessHash() == block.vtx[i]->GetWitnessHash());
+                assert(hashed.vtx[i]->GetHash() == CMutableTransaction{*block.vtx[i]}.GetHash());
+            }
+        }
+    }
+    if (!deserialized) return;
     const Consensus::Params& consensus_params = Params().GetConsensus();
     BlockValidationState validation_state_pow_and_merkle;
     const bool valid_incl_pow_and_merkle = CheckBlock(block, validation_state_pow_and_merkle, consensus_params, /* fCheckPOW= */ true, /* fCheckMerkleRoot= */ true);

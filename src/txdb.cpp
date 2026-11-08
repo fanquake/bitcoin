@@ -204,6 +204,15 @@ void CCoinsViewDB::WriteRun(const std::vector<CoinWrite>& writes, const uint256&
 {
     assert(!new_head.IsNull());
     CDBBatch batch(*m_db);
+    const auto simulate_crash{[&] {
+        if (!m_options.simulate_crash_ratio) return;
+        // Two threads may be writing runs at once.
+        thread_local FastRandomContext rng;
+        if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
+            LogError("Simulating a crash. Goodbye.");
+            _Exit(0);
+        }
+    }};
     // The first batch marks the database as being between old_head and new_head. A run that follows an
     // earlier run replaces that run's marker: its old head is the bound the earlier run reached, which is
     // what the caller passes.
@@ -243,13 +252,7 @@ void CCoinsViewDB::WriteRun(const std::vector<CoinWrite>& writes, const uint256&
             m_db->WriteBatch(batch);
             batch.Clear();
             marker_landed();
-            if (m_options.simulate_crash_ratio) {
-                static FastRandomContext rng;
-                if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
-                    LogError("Simulating a crash. Goodbye.");
-                    _Exit(0);
-                }
-            }
+            simulate_crash();
         }
     }
     if (final) {
@@ -257,11 +260,16 @@ void CCoinsViewDB::WriteRun(const std::vector<CoinWrite>& writes, const uint256&
         batch.Erase(DB_HEAD_BLOCKS);
         batch.Write(DB_BEST_BLOCK, new_head);
     }
+    // A caller that streams a run hands it over a batch at a time, each about the batch size and seldom
+    // above it. With the marker left open, the end of such a batch is as much a place to be interrupted as
+    // the batches split off above.
+    const bool nearly_full{!final && batch.ApproximateSize() > m_options.batch_write_bytes / 2};
     LogDebug(BCLog::COINDB, "Writing %s run batch of %.2f MiB\n", final ? "final" : "last", batch.ApproximateSize() / double(1_MiB));
     m_db->WriteBatch(batch);
     marker_landed();
     LogDebug(BCLog::COINDB, "Committed a run of %u changed transaction outputs (%u erased) to coin database, heads %s -> %s%s",
              (unsigned int)writes.size(), (unsigned int)erased, old_head.ToString(), new_head.ToString(), final ? ", final" : "");
+    if (nearly_full) simulate_crash();
 }
 
 size_t CCoinsViewDB::EstimateSize() const

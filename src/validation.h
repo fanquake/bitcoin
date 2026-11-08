@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -50,6 +51,7 @@
 #include <shared_mutex>
 #include <span>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -1151,6 +1153,21 @@ public:
     node::BlockCache m_block_cache;
 
 private:
+    //! The connector thread (see SignalConnector()). Signals are counted; the thread records the count it
+    //! has attempted, and a waiter waits for its count to be reached.
+    //! Counters for the bench log's shutdown summary: how many blocks the accepting threads stored for the
+    //! connector during initial block download and what that cost them. Written by the accepting threads,
+    //! read at shutdown.
+    std::atomic<uint64_t> m_blocks_accepted{0};
+    std::atomic<int64_t> m_accept_time_us{0};
+
+    std::thread m_connector_thread;
+    mutable Mutex m_connector_mutex;
+    std::condition_variable m_connector_cv;
+    uint64_t m_connector_signals GUARDED_BY(m_connector_mutex){0};
+    uint64_t m_connector_done GUARDED_BY(m_connector_mutex){0};
+    bool m_connector_stop GUARDED_BY(m_connector_mutex){false};
+    void ConnectorLoop() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
     //! Timers and counters used for benchmarking validation in both background
     //! and active chainstates.
@@ -1451,7 +1468,28 @@ public:
      * @param[out]  new_block A boolean which is set to indicate if the block was first received via this call
      * @returns     If the block was processed, independently of block validity
      */
-    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block) LOCKS_EXCLUDED(cs_main);
+    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_async = false) LOCKS_EXCLUDED(cs_main) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+
+    /**
+     * The connector thread runs ActivateBestChain() for the chainstates whenever it is signalled, so that the
+     * thread that accepted a block need not also connect it: during initial block download the message handler
+     * accepts and stores blocks (ProcessNewBlock() with `activate_async`) while the connector connects them. It
+     * is started on the first signal and stopped with this object.
+     */
+    void SignalConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    /**
+     * Wait until every activation signalled so far has been attempted. The message handler waits here before
+     * answering a ping, so that a peer never sees a view older than the blocks it has already sent, which is also
+     * what the functional tests rely on.
+     */
+    void WaitForConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    //! Whether the connector thread has signalled activations it has not attempted yet. Blocks accepted but not
+    //! yet connected move the active tip once it runs; callers that measure from the tip may wait for that.
+    bool ConnectorBusy() const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    //! Stop the connector thread and wait for it: its current pass ends at the next publication once the
+    //! node is interrupted, the window drained. Called at shutdown before the chainstate is flushed and
+    //! its views are reset, and again, idempotently, by the destructor.
+    void StopConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
     /**
      * Process incoming block headers.
@@ -1612,7 +1650,7 @@ public:
 
     CCheckQueue<CScriptCheck>& GetCheckQueue() { return m_script_check_queue; }
 
-    ~ChainstateManager();
+    ~ChainstateManager() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
     //! List of chainstates. Note: in general, it is not safe to delete
     //! Chainstate objects once they are added to this list because there is no

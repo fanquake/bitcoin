@@ -3681,7 +3681,11 @@ void PeerManagerImpl::ProcessGetCFCheckPt(CNode& node, Peer& peer, DataStream& v
 void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked)
 {
     bool new_block{false};
-    m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block);
+    // During initial block download the connector thread connects the blocks this thread accepts, so the next
+    // block's deserialisation and checks overlap the connection of this one. (Not under the deterministic
+    // configuration the fuzz tests use.)
+    const bool activate_async{m_chainman.IsInitialBlockDownload() && !m_opts.deterministic_rng};
+    m_chainman.ProcessNewBlock(block, force_processing, min_pow_checked, &new_block, activate_async);
     if (new_block) {
         node.m_last_block_time = GetTime<std::chrono::seconds>();
         // In case this block came from a different peer than we requested
@@ -5221,6 +5225,9 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
     }
 
     if (msg_type == NetMsgType::PING) {
+        // Blocks this thread accepted earlier are connected before the peer gets its answer, so that it never
+        // sees a view older than what it sent (see ChainstateManager::SignalConnector).
+        m_chainman.WaitForConnector();
         if (pfrom.GetCommonVersion() > BIP0031_VERSION) {
             uint64_t nonce = 0;
             vRecv >> nonce;
@@ -6556,7 +6563,14 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                     pindex->nHeight, node.GetId());
             }
             if (state.vBlocksInFlight.empty() && staller != -1) {
-                if (State(staller)->m_stalling_since == 0us) {
+                // The download window is measured from the connected tip. During initial block download the
+                // connector thread connects accepted blocks after this thread has moved on, so the window may
+                // only look exhausted because the tip has not caught up with the blocks already stored; the
+                // verdict waits until the connector has nothing left to attempt, when the window is what it
+                // would be had the blocks been connected on this thread.
+                if (m_chainman.ConnectorBusy()) {
+                    // Decided on a later pass.
+                } else if (State(staller)->m_stalling_since == 0us) {
                     State(staller)->m_stalling_since = current_time;
                     LogDebug(BCLog::NET, "Stall started peer=%d\n", staller);
                 }

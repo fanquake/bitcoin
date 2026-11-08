@@ -347,6 +347,12 @@ void Shutdown(NodeContext& node)
     }
 
     if (node.background_init_thread.joinable()) node.background_init_thread.join();
+
+    // The connector thread may still be connecting blocks it was signalled, several at a time in the
+    // window; it ends its pass now that the node is interrupted. It goes before the scheduler, whose
+    // queue a pass waits on, and before anything that flushes or resets the chainstate.
+    if (node.chainman) node.chainman->StopConnector();
+
     // After everything has been shut down, but before things get flushed, stop the
     // the scheduler. After this point, SyncWithValidationInterfaceQueue() should not be called anymore
     // as this would prevent the shutdown from completing.

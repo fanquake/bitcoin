@@ -138,6 +138,68 @@ static void ConnectBlockAllEcdsa(benchmark::Bench& bench)
     BenchmarkConnectBlock(bench, keys, outputs, *test_setup);
 }
 
+/*
+ * The tip's common case: a block whose transactions the mempool has already
+ * validated. The transactions are unchained (each spends its own outputs of
+ * one fan-out transaction, so the mempool's ancestor limit is not hit),
+ * accepted into the mempool first, and the block is then connected over and
+ * over into a fresh child of the tip cache. Mempool acceptance leaves the
+ * inputs warm in the tip cache and the transactions' wtxids in the script
+ * execution cache, so this measures the connect path with both caches hot,
+ * the state a block reconstructed from the mempool finds.
+ */
+static void ConnectBlockMempoolWarm(benchmark::Bench& bench)
+{
+    const auto test_setup{MakeNoLogFileContext<TestChain100Setup>()};
+    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_schnorr=*/1, /*num_ecdsa=*/4)};
+    Chainstate& chainstate{test_setup->m_node.chainman->ActiveChainstate()};
+    constexpr int NUM_TXS{1000};
+    const size_t io_count{outputs.size()};
+
+    // One fan-out transaction creating io_count outputs per benchmark transaction, mined in its own block.
+    auto& coinbase_to_spend{test_setup->m_coinbase_txns[0]};
+    const CAmount fan_out_value{coinbase_to_spend->vout[0].nValue / static_cast<CAmount>(NUM_TXS * io_count) - 100};
+    std::vector<CTxOut> fan_out_outputs;
+    fan_out_outputs.reserve(NUM_TXS * io_count);
+    for (int i{0}; i < NUM_TXS; ++i) {
+        for (const CTxOut& templ : outputs) fan_out_outputs.emplace_back(fan_out_value, templ.scriptPubKey);
+    }
+    const auto [fan_out, _]{test_setup->CreateValidTransaction(
+        {coinbase_to_spend}, {COutPoint(coinbase_to_spend->GetHash(), 0)},
+        chainstate.m_chain.Height() + 1, keys, fan_out_outputs, {}, {})};
+    const CScript coinbase_spk{GetScriptForDestination(WitnessV1Taproot{XOnlyPubKey(test_setup->coinbaseKey.GetPubKey())})};
+    test_setup->CreateAndProcessBlock({fan_out}, coinbase_spk);
+    const CTransactionRef fan_out_ref{MakeTransactionRef(fan_out)};
+
+    // The block's transactions, each spending its slice of the fan-out, paying a fee, accepted into the mempool.
+    std::vector<CMutableTransaction> txs;
+    txs.reserve(NUM_TXS);
+    for (int i{0}; i < NUM_TXS; ++i) {
+        std::vector<COutPoint> inputs;
+        std::vector<CTxOut> tx_outputs;
+        for (size_t j{0}; j < io_count; ++j) {
+            inputs.emplace_back(fan_out_ref->GetHash(), static_cast<uint32_t>(i * io_count + j));
+            tx_outputs.emplace_back(fan_out_value - 1000, outputs[j].scriptPubKey);
+        }
+        const auto [tx, fee]{test_setup->CreateValidTransaction(
+            {fan_out_ref}, inputs, chainstate.m_chain.Height(), keys, tx_outputs, {}, {})};
+        const auto accepted{WITH_LOCK(cs_main, return test_setup->m_node.chainman->ProcessTransaction(MakeTransactionRef(tx)))};
+        assert(accepted.m_result_type == MempoolAcceptResult::ResultType::VALID);
+        txs.emplace_back(tx);
+    }
+    const CBlock test_block{test_setup->CreateBlock(txs, coinbase_spk)};
+
+    bench.unit("block").run([&] {
+        LOCK(cs_main);
+        auto& chainman{test_setup->m_node.chainman};
+        BlockValidationState test_block_state;
+        auto* pindex{chainman->m_blockman.AddToBlockIndex(test_block, chainman->m_best_header)}; // Doing this here doesn't impact the benchmark
+        CCoinsViewCache viewNew{&chainstate.CoinsTip()};
+        assert(chainstate.ConnectBlock(test_block, test_block_state, pindex, viewNew));
+    });
+}
+
 BENCHMARK(ConnectBlockAllSchnorr);
 BENCHMARK(ConnectBlockMixedEcdsaSchnorr);
 BENCHMARK(ConnectBlockAllEcdsa);
+BENCHMARK(ConnectBlockMempoolWarm);

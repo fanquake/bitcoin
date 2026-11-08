@@ -138,6 +138,8 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block
     size_t count = 0;
     const size_t dirty_count{cursor.GetDirtyCount()};
     assert(!block_hash.IsNull());
+    // This write replaces whatever marker a run left open.
+    WITH_LOCK(m_marker_mutex, m_open_marker.reset());
 
     uint256 old_tip = GetBestBlock();
     if (old_tip.IsNull()) {
@@ -196,6 +198,70 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block
     LogDebug(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.ApproximateSize() / double(1_MiB));
     m_db->WriteBatch(batch);
     LogDebug(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...", (unsigned int)dirty_count, (unsigned int)count);
+}
+
+void CCoinsViewDB::WriteRun(const std::vector<CoinWrite>& writes, const uint256& new_head, const uint256& old_head, bool final)
+{
+    assert(!new_head.IsNull());
+    CDBBatch batch(*m_db);
+    // The first batch marks the database as being between old_head and new_head. A run that follows an
+    // earlier run replaces that run's marker: its old head is the bound the earlier run reached, which is
+    // what the caller passes.
+    //
+    // A marker this object left open needs no second write: with the same pair of heads the batch holds
+    // the changes alone, and with another pair the best block is known to be erased already. The marker's
+    // two keys sort around every coin's, so only a batch without them covers no more than its coins' range.
+    const std::pair<uint256, uint256> heads{new_head, old_head};
+    bool marker_written{false};
+    {
+        LOCK(m_marker_mutex);
+        if (m_open_marker != heads) {
+            if (!m_open_marker) batch.Erase(DB_BEST_BLOCK);
+            batch.Write(DB_HEAD_BLOCKS, Vector(new_head, old_head));
+            marker_written = true;
+        }
+        // A call that changes the marker: not known again until the batch that does has landed.
+        if (marker_written || final) m_open_marker.reset();
+    }
+    // The marker is in the first batch of the call. A final call closes it with its last.
+    const auto marker_landed{[&] {
+        if (final || !marker_written) return;
+        marker_written = false;
+        WITH_LOCK(m_marker_mutex, m_open_marker = heads);
+    }};
+    size_t erased{0};
+    for (const CoinWrite& write : writes) {
+        CoinEntry entry(&write.outpoint);
+        if (write.coin) {
+            batch.Write(entry, *write.coin);
+        } else {
+            batch.Erase(entry);
+            ++erased;
+        }
+        if (batch.ApproximateSize() > m_options.batch_write_bytes) {
+            LogDebug(BCLog::COINDB, "Writing partial run batch of %.2f MiB\n", batch.ApproximateSize() / double(1_MiB));
+            m_db->WriteBatch(batch);
+            batch.Clear();
+            marker_landed();
+            if (m_options.simulate_crash_ratio) {
+                static FastRandomContext rng;
+                if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
+                    LogError("Simulating a crash. Goodbye.");
+                    _Exit(0);
+                }
+            }
+        }
+    }
+    if (final) {
+        // Consistent with new_head again.
+        batch.Erase(DB_HEAD_BLOCKS);
+        batch.Write(DB_BEST_BLOCK, new_head);
+    }
+    LogDebug(BCLog::COINDB, "Writing %s run batch of %.2f MiB\n", final ? "final" : "last", batch.ApproximateSize() / double(1_MiB));
+    m_db->WriteBatch(batch);
+    marker_landed();
+    LogDebug(BCLog::COINDB, "Committed a run of %u changed transaction outputs (%u erased) to coin database, heads %s -> %s%s",
+             (unsigned int)writes.size(), (unsigned int)erased, old_head.ToString(), new_head.ToString(), final ? ", final" : "");
 }
 
 size_t CCoinsViewDB::EstimateSize() const

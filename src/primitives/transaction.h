@@ -358,10 +358,11 @@ public:
     explicit CTransaction(const CMutableTransaction& tx);
     explicit CTransaction(CMutableTransaction&& tx);
 
-    /** The hashes were computed from the bytes the transaction was deserialised from (txhashing.h); they are what
-     *  ComputeHash() and ComputeWitnessHash() would return. */
+    /** The hashes were computed from the bytes the transaction was deserialised from (txhashing.h,
+     *  TxSegmentRecorder), and whether it has a witness was seen in the serialisation; they are what
+     *  ComputeHash(), ComputeWitnessHash() and ComputeHasWitness() would return. */
     struct PrecomputedHashes {};
-    CTransaction(PrecomputedHashes, CMutableTransaction&& tx, const Txid& txid, const Wtxid& wtxid);
+    CTransaction(PrecomputedHashes, CMutableTransaction&& tx, const Txid& txid, const Wtxid& wtxid, bool has_witness);
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
@@ -477,6 +478,7 @@ struct CTransaction::Deserialized {
     CMutableTransaction tx;
     Txid txid;
     Wtxid wtxid;
+    bool has_witness{false};
 };
 
 template <typename Stream>
@@ -498,10 +500,12 @@ CTransaction::Deserialized CTransaction::DeserializeHashed(const TransactionSerP
         UnserializeTransaction(d.tx, recorder, params);
         recorder.End();
         std::tie(d.txid, d.wtxid) = HashTransactionSegments(data, segments);
+        d.has_witness = segments.has_witness;
         input.ignore(recorder.Pos());
     } else {
         UnserializeTransaction(d.tx, s, params);
         std::tie(d.txid, d.wtxid) = HashBySerialising(d.tx);
+        d.has_witness = d.tx.HasWitness();
     }
     return d;
 }

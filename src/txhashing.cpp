@@ -24,40 +24,55 @@
 
 namespace {
 
-//! Transactions are hashed in chunks of this many, each chunk handed to a worker as soon as it is parsed, so the
-//! hashing overlaps the parsing of the next chunk. A worker reads only the block bytes and the chunk's segment
-//! records, never the parsed transactions, which keeps it off the cache lines the parsing thread is writing.
-constexpr size_t TXS_PER_CHUNK{128};
-//! A chunk with fewer transactions than this (the last one) is hashed by the parsing thread.
-constexpr size_t MIN_TXS_PER_TASK{32};
+//! Transactions are parsed into chunks; a chunk is handed to a worker as soon as it is full, so the hashing of
+//! one chunk overlaps the parsing of the next. The worker hashes from the block bytes and the chunk's byte
+//! ranges, then builds the chunk's transaction objects from the parsed transactions it owns: it moves them,
+//! which touches their headers, not the input and output records the parsing thread wrote. The chunk size
+//! adapts to the block so that a mid-sized block is still split across the workers.
+constexpr size_t MAX_TXS_PER_CHUNK{128};
+//! Fewer than this per chunk is not worth a hop to another thread.
+constexpr size_t MIN_TXS_PER_CHUNK{32};
 
 struct Chunk {
-    std::array<TxSegments, TXS_PER_CHUNK> segments;
-    std::array<std::pair<Txid, Wtxid>, TXS_PER_CHUNK> hashes;
+    std::array<CMutableTransaction, MAX_TXS_PER_CHUNK> txs;
+    std::array<TxSegments, MAX_TXS_PER_CHUNK> segments;
+    std::array<CTransactionRef, MAX_TXS_PER_CHUNK> refs;
     size_t count{0};
     std::optional<std::future<void>> future;
 };
 
-void HashChunk(std::span<const std::byte> data, Chunk& chunk)
+void FinishChunk(std::span<const std::byte> data, Chunk& chunk)
 {
-    for (size_t i{0}; i < chunk.count; ++i) chunk.hashes[i] = HashTransactionSegments(data, chunk.segments[i]);
+    for (size_t i{0}; i < chunk.count; ++i) {
+        const TxSegments& segments{chunk.segments[i]};
+        const auto [txid, wtxid]{HashTransactionSegments(data, segments)};
+        chunk.refs[i] = std::make_shared<const CTransaction>(CTransaction::PrecomputedHashes{}, std::move(chunk.txs[i]), txid, wtxid, segments.has_witness);
+    }
 }
 
-//! Waits for every chunk a worker is hashing, also when the parse throws, since the workers reference the chunks.
+//! Owns the chunks and waits for every one a worker is finishing, also when the parse throws, since the workers
+//! reference the chunks.
 class ChunkHasher
 {
     std::span<const std::byte> m_data;
     ThreadPool* m_pool;
+    size_t m_chunk_size;
     std::vector<std::unique_ptr<Chunk>> m_chunks;
 
 public:
-    ChunkHasher(std::span<const std::byte> data, ThreadPool* pool) : m_data{data}, m_pool{pool && pool->WorkersCount() > 0 ? pool : nullptr} {}
+    ChunkHasher(std::span<const std::byte> data, ThreadPool* pool, size_t tx_count)
+        : m_data{data}, m_pool{pool && pool->WorkersCount() > 0 ? pool : nullptr}
+    {
+        // Enough chunks to give every worker and this thread about two each, within the bounds.
+        const size_t sharers{m_pool ? m_pool->WorkersCount() + 1 : 1};
+        m_chunk_size = std::clamp(tx_count / (2 * sharers), MIN_TXS_PER_CHUNK, MAX_TXS_PER_CHUNK);
+    }
     ~ChunkHasher() { Wait(); }
 
-    //! The chunk the next transaction's segments go into; dispatches a full chunk first.
+    //! The chunk the next transaction goes into; dispatches a full chunk first.
     Chunk& Next()
     {
-        if (m_chunks.empty() || m_chunks.back()->count == TXS_PER_CHUNK) {
+        if (m_chunks.empty() || m_chunks.back()->count == m_chunk_size) {
             if (!m_chunks.empty()) Dispatch(*m_chunks.back());
             m_chunks.push_back(std::make_unique<Chunk>());
         }
@@ -65,20 +80,26 @@ public:
     }
     void Dispatch(Chunk& chunk)
     {
-        if (m_pool && chunk.count >= MIN_TXS_PER_TASK) {
-            if (auto future{m_pool->Submit([data = m_data, &chunk] { HashChunk(data, chunk); })}) {
+        if (m_pool && chunk.count >= MIN_TXS_PER_CHUNK) {
+            if (auto future{m_pool->Submit([data = m_data, &chunk] { FinishChunk(data, chunk); })}) {
                 chunk.future = std::move(*future);
                 return;
             }
-            // The pool stopped meanwhile: this thread hashes.
+            // The pool stopped meanwhile: this thread finishes it.
         }
-        HashChunk(m_data, chunk);
+        FinishChunk(m_data, chunk);
     }
-    //! Dispatch the last chunk and wait for all of them.
-    void Finish()
+    //! Dispatch the last chunk, wait for all of them, and hand the transactions over in order.
+    void Finish(std::vector<CTransactionRef>& vtx)
     {
         if (!m_chunks.empty() && !m_chunks.back()->future) Dispatch(*m_chunks.back());
         Wait();
+        size_t total{0};
+        for (const auto& chunk : m_chunks) total += chunk->count;
+        vtx.reserve(total);
+        for (auto& chunk : m_chunks) {
+            for (size_t i{0}; i < chunk->count; ++i) vtx.push_back(std::move(chunk->refs[i]));
+        }
     }
     void Wait() noexcept
     {
@@ -89,7 +110,6 @@ public:
             }
         }
     }
-    const std::pair<Txid, Wtxid>& Hashes(size_t index) const { return m_chunks[index / TXS_PER_CHUNK]->hashes[index % TXS_PER_CHUNK]; }
 };
 
 } // namespace
@@ -100,30 +120,16 @@ size_t DeserializeBlock(std::span<const std::byte> data, CBlock& block, ThreadPo
     TxSegmentRecorder reader{data};
     reader >> static_cast<CBlockHeader&>(block);
 
-    // Allocate as the transactions arrive, in the same batches as the generic vector deserialiser, so a claimed
-    // count costs the sender the bytes.
+    // The chunks are allocated as the transactions arrive, so a claimed count costs the sender the bytes.
     const size_t count{ReadCompactSize(reader)};
-    std::vector<CMutableTransaction> txs;
-    ChunkHasher hasher{data, pool};
-    size_t allocated{0};
-    while (allocated < count) {
-        allocated = std::min(count, allocated + MAX_VECTOR_ALLOCATE / sizeof(CMutableTransaction));
-        txs.reserve(allocated);
-        while (txs.size() < allocated) {
-            Chunk& chunk{hasher.Next()};
-            txs.emplace_back();
-            reader.Begin(chunk.segments[chunk.count]);
-            UnserializeTransaction(txs.back(), reader, TX_WITH_WITNESS);
-            reader.End();
-            ++chunk.count;
-        }
+    ChunkHasher hasher{data, pool, count};
+    for (size_t parsed{0}; parsed < count; ++parsed) {
+        Chunk& chunk{hasher.Next()};
+        reader.Begin(chunk.segments[chunk.count]);
+        UnserializeTransaction(chunk.txs[chunk.count], reader, TX_WITH_WITNESS);
+        reader.End();
+        ++chunk.count;
     }
-    hasher.Finish();
-
-    block.vtx.reserve(txs.size());
-    for (size_t i{0}; i < txs.size(); ++i) {
-        const auto& [txid, wtxid]{hasher.Hashes(i)};
-        block.vtx.push_back(std::make_shared<const CTransaction>(CTransaction::PrecomputedHashes{}, std::move(txs[i]), txid, wtxid));
-    }
+    hasher.Finish(block.vtx);
     return data.size() - reader.size();
 }

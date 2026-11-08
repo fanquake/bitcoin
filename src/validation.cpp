@@ -4861,6 +4861,9 @@ bool ChainstateManager::FinishAcceptBlock(const CBlock& block, BlockValidationSt
     // The block is on disk; its index entry records nothing of it, as after a write the node never
     // finished, which is what master leaves behind when the same block is refused at its header.
     if (FailedMeanwhile(*pindex, state)) return false;
+    // Written with the lock released: if the cursor left this block's file meanwhile, the file was finalized
+    // before the bytes were there, and they are synced here before the index records them.
+    if (prepared.write) m_blockman.SyncBlockFileIfLeft(prepared.pos, pindex->nHeight);
     try {
         ReceivedBlockTransactions(block, pindex, prepared.pos);
     } catch (const std::runtime_error& e) {

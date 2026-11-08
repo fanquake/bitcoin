@@ -90,17 +90,28 @@ bool BlockTreeDB::ReadLastBlockFile(int& nFile)
     return Read(DB_LAST_BLOCK, nFile);
 }
 
+std::unique_ptr<CDBBatch> BlockTreeDB::PrepareBatch(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo)
+{
+    auto batch{std::make_unique<CDBBatch>(*this)};
+    for (const auto& [file, info] : fileInfo) {
+        batch->Write(std::make_pair(DB_BLOCK_FILES, file), *info);
+    }
+    batch->Write(DB_LAST_BLOCK, nLastFile);
+    for (const CBlockIndex* bi : blockinfo) {
+        batch->Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
+    }
+    return batch;
+}
+
+void BlockTreeDB::CommitBatch(CDBBatch& batch)
+{
+    WriteBatch(batch, true);
+}
+
 void BlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo)
 {
-    CDBBatch batch(*this);
-    for (const auto& [file, info] : fileInfo) {
-        batch.Write(std::make_pair(DB_BLOCK_FILES, file), *info);
-    }
-    batch.Write(DB_LAST_BLOCK, nLastFile);
-    for (const CBlockIndex* bi : blockinfo) {
-        batch.Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
-    }
-    WriteBatch(batch, true);
+    auto batch{PrepareBatch(fileInfo, nLastFile, blockinfo)};
+    CommitBatch(*batch);
 }
 
 void BlockTreeDB::WriteFlag(const std::string& name, bool fValue)
@@ -530,6 +541,13 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
 void BlockManager::WriteBlockIndexDB()
 {
     AssertLockHeld(::cs_main);
+    auto batch{PrepareBlockIndexBatch()};
+    m_block_tree_db->CommitBatch(*batch);
+}
+
+std::unique_ptr<CDBBatch> BlockManager::PrepareBlockIndexBatch()
+{
+    AssertLockHeld(::cs_main);
     std::vector<std::pair<int, const CBlockFileInfo*>> vFiles;
     vFiles.reserve(m_dirty_fileinfo.size());
     for (std::set<int>::iterator it = m_dirty_fileinfo.begin(); it != m_dirty_fileinfo.end();) {
@@ -543,7 +561,42 @@ void BlockManager::WriteBlockIndexDB()
         m_dirty_blockindex.erase(it++);
     }
     int max_blockfile{this->MaxBlockfileNum()};
-    m_block_tree_db->WriteBatchSync(vFiles, max_blockfile, vBlocks);
+    return m_block_tree_db->PrepareBatch(vFiles, max_blockfile, vBlocks);
+}
+
+std::optional<std::pair<FlatFilePos, FlatFilePos>> BlockManager::ChainstateBlockFileFlushPositions(int tip_height)
+{
+    AssertLockHeld(::cs_main);
+    const auto& cursor = m_blockfile_cursors[BlockfileTypeForHeight(tip_height)];
+    // No cursor: an assumeutxo snapshot is loaded but no block past its height was written yet.
+    if (!cursor || m_blockfile_info.size() < 1) return std::nullopt;
+    const int file{cursor->file_num};
+    assert(static_cast<int>(m_blockfile_info.size()) > file);
+    return std::pair{FlatFilePos{file, m_blockfile_info[file].nSize}, FlatFilePos{file, m_blockfile_info[file].nUndoSize}};
+}
+
+void BlockManager::SyncBlockFileIfLeft(const FlatFilePos& pos, int height)
+{
+    AssertLockHeld(::cs_main);
+    const auto& cursor{m_blockfile_cursors[BlockfileTypeForHeight(height)]};
+    if (cursor && cursor->file_num == pos.nFile) return; // the cursor's file: the next sync covers it
+    if (!m_block_file_seq.Flush(FlatFilePos{pos.nFile, m_blockfile_info[pos.nFile].nSize}, /*finalize=*/false)) {
+        m_opts.notifications.flushError(_("Flushing block file to disk failed. This is likely the result of an I/O error."));
+    }
+}
+
+bool BlockManager::FlushBlockFileAt(const FlatFilePos& block_pos, const FlatFilePos& undo_pos)
+{
+    bool success{true};
+    if (!m_block_file_seq.Flush(block_pos, /*finalize=*/false)) {
+        m_opts.notifications.flushError(_("Flushing block file to disk failed. This is likely the result of an I/O error."));
+        success = false;
+    }
+    if (!m_undo_file_seq.Flush(undo_pos, /*finalize=*/false)) {
+        m_opts.notifications.flushError(_("Flushing undo file to disk failed. This is likely the result of an I/O error."));
+        success = false;
+    }
+    return success;
 }
 
 bool BlockManager::LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)

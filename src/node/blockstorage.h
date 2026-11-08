@@ -103,6 +103,9 @@ class BlockTreeDB : public CDBWrapper
 public:
     using CDBWrapper::CDBWrapper;
     void WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
+    //! WriteBatchSync() in two halves: serialise under the lock, commit (synced) without it.
+    std::unique_ptr<CDBBatch> PrepareBatch(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
+    void CommitBatch(CDBBatch& batch);
     bool ReadBlockFileInfo(int nFile, CBlockFileInfo& info);
     bool ReadLastBlockFile(int& nFile);
     void WriteReindexing(bool fReindexing);
@@ -225,6 +228,20 @@ private:
      */
     [[nodiscard]] FlatFilePos FindNextBlockPos(uint64_t nAddSize, unsigned int nHeight, uint64_t nTime) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     [[nodiscard]] bool FlushChainstateBlockFile(int tip_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    /**
+     * FlushChainstateBlockFile() in two halves: the positions up to which the tip's block and undo files
+     * must be synced, read under the lock, and the sync itself (FlushBlockFileAt), which needs no lock.
+     * Nullopt when there is nothing to flush.
+     */
+    std::optional<std::pair<FlatFilePos, FlatFilePos>> ChainstateBlockFileFlushPositions(int tip_height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    [[nodiscard]] bool FlushBlockFileAt(const FlatFilePos& block_pos, const FlatFilePos& undo_pos);
+    /**
+     * A block written at `pos` with cs_main released may land in a file the cursor has left meanwhile:
+     * that file was finalized (synced and trimmed) when the cursor moved, before this block's bytes were
+     * there, and no later sync covers it (the run's sync covers the cursor's file). Sync it now, so that a
+     * block the index records as stored is durable before the index is.
+     */
+    void SyncBlockFileIfLeft(const FlatFilePos& pos, int height) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     [[nodiscard]] bool FindUndoPos(BlockValidationState& state, int nFile, FlatFilePos& pos, uint64_t nAddSize) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     AutoFile OpenUndoFile(const FlatFilePos& pos, bool fReadOnly = false) const;
@@ -364,6 +381,12 @@ public:
     std::unique_ptr<BlockTreeDB> m_block_tree_db GUARDED_BY(::cs_main);
 
     void WriteBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    /**
+     * WriteBlockIndexDB() in two halves: the dirty file info and block index entries are serialised under
+     * the lock (and are no longer dirty afterwards), the batch is committed off the lock
+     * (BlockTreeDB::CommitBatch).
+     */
+    std::unique_ptr<CDBBatch> PrepareBlockIndexBatch() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 

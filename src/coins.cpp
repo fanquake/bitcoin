@@ -392,9 +392,12 @@ CCoinsViewCache::ResetGuard CoinsViewOverlay::StartFetching(const CBlock& block 
             }
             earlier_txids.emplace(tx->GetHash());
         }
-        // Only submit tasks if we have something to fetch.
-        if (m_inputs.size()) {
-            std::vector<std::function<void()>> tasks(workers_count, [this] {
+        // Only submit tasks if we have something to fetch. One task per worker, but no more tasks than there are
+        // lookups to share out in batches of a few: every task wakes a worker, and a block with a handful of
+        // inputs should not wake the whole pool.
+        constexpr size_t LOOKUPS_PER_TASK{8};
+        if (const auto task_count{std::min<size_t>(workers_count, (m_inputs.size() + LOOKUPS_PER_TASK - 1) / LOOKUPS_PER_TASK)}; task_count > 0) {
+            std::vector<std::function<void()>> tasks(task_count, [this] {
                 while (ProcessInput()) {}
             });
             if (auto futures{m_thread_pool->Submit(std::move(tasks))}) {

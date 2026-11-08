@@ -27,11 +27,14 @@ namespace {
 //! Transactions are parsed into chunks; a chunk is handed to a worker as soon as it is full, so the hashing of
 //! one chunk overlaps the parsing of the next. The worker hashes from the block bytes and the chunk's byte
 //! ranges, then builds the chunk's transaction objects from the parsed transactions it owns: it moves them,
-//! which touches their headers, not the input and output records the parsing thread wrote. The chunk size
-//! adapts to the block so that a mid-sized block is still split across the workers.
-constexpr size_t MAX_TXS_PER_CHUNK{128};
+//! which touches their headers, not the input and output records the parsing thread wrote. Chunks are sized by
+//! bytes: every task wakes a worker, which costs a system call on each side, so a block should wake as many
+//! workers as its size justifies and no more, whatever the pool's size.
+constexpr size_t MAX_TXS_PER_CHUNK{256};
 //! Fewer than this per chunk is not worth a hop to another thread.
 constexpr size_t MIN_TXS_PER_CHUNK{32};
+//! About this many bytes of block per task.
+constexpr size_t BYTES_PER_CHUNK{128 * 1024};
 
 struct Chunk {
     std::array<CMutableTransaction, MAX_TXS_PER_CHUNK> txs;
@@ -63,9 +66,9 @@ public:
     ChunkHasher(std::span<const std::byte> data, ThreadPool* pool, size_t tx_count)
         : m_data{data}, m_pool{pool && pool->WorkersCount() > 0 ? pool : nullptr}
     {
-        // Enough chunks to give every worker and this thread about two each, within the bounds.
-        const size_t sharers{m_pool ? m_pool->WorkersCount() + 1 : 1};
-        m_chunk_size = std::clamp(tx_count / (2 * sharers), MIN_TXS_PER_CHUNK, MAX_TXS_PER_CHUNK);
+        // As many transactions per chunk as make up about BYTES_PER_CHUNK of this block, within the bounds.
+        const size_t bytes_per_tx{std::max<size_t>(1, data.size() / std::max<size_t>(1, tx_count))};
+        m_chunk_size = std::clamp(BYTES_PER_CHUNK / bytes_per_tx, MIN_TXS_PER_CHUNK, MAX_TXS_PER_CHUNK);
     }
     ~ChunkHasher() { Wait(); }
 

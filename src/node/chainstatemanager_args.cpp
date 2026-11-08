@@ -60,6 +60,8 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
     // Subtract 1 because the main thread counts towards the par threads.
     opts.worker_threads_num = script_threads - 1;
 
+    opts.test_write_out_every_block = HasTestOption(args, "write_out_every_block");
+
     if (auto value{args.GetArg<int64_t>("-blockcache")}) {
         if (*value < 0) {
             return util::Error{Untranslated(strprintf("-blockcache must be non-negative (got %d). Use 0 to disable the block cache.", *value))};

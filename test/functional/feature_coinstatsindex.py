@@ -319,10 +319,11 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         self.log.info("Test index with an unclean restart after a reorg")
         self.restart_node(1, extra_args=self.extra_args[1])
-        committed_height = index_node.getblockcount()
         self.generate(index_node, 2, sync_fun=self.no_op)
         self.sync_index_node()
         block2 = index_node.getbestblockhash()
+        # The chainstate is written before the first block of a reorg is disconnected, and the index commits with it.
+        committed_height = index_node.getblockcount()
         index_node.invalidateblock(block2)
         self.generatetoaddress(index_node, 1, getnewdestination()[2], sync_fun=self.no_op)
         self.sync_index_node()

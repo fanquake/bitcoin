@@ -831,6 +831,7 @@ const std::vector<std::string> TEST_OPTIONS_DOC{
     "reindex_after_failure_noninteractive_yes (When asked for a reindex after failure interactively, simulate as-if answered with 'yes')",
     "bip94 (enforce BIP94 consensus rules)",
     "crash_before_undo_write (abort when the first block undo write runs; the undo write happens after the block was connected)",
+    "write_out_every_block (start a coins write-out run after every connected block, two blocks behind the tip, so the coins database carries its head marker for the whole run)",
 };
 
 bool HasTestOption(const ArgsManager& args, const std::string& test_option)

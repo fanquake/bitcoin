@@ -53,6 +53,9 @@ struct ChainstateManagerOpts {
     int32_t prevoutfetch_threads_num{DEFAULT_PREVOUTFETCH_THREADS};
     //! Budget of the connect-side block cache (node::BlockCache). Zero disables it.
     size_t block_cache_bytes{DEFAULT_BLOCK_CACHE_BYTES};
+    //! Test only (-test=write_out_every_block): start a coins write-out run after every connected block,
+    //! two blocks behind the tip, so that the database carries its head marker for the whole run.
+    bool test_write_out_every_block{false};
     size_t script_execution_cache_bytes{DEFAULT_SCRIPT_EXECUTION_CACHE_BYTES};
     size_t signature_cache_bytes{DEFAULT_SIGNATURE_CACHE_BYTES};
 };

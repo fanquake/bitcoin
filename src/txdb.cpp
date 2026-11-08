@@ -213,9 +213,11 @@ void CCoinsViewDB::WriteRun(const std::vector<CoinWrite>& writes, const uint256&
             _Exit(0);
         }
     }};
-    // The first batch marks the database as being between old_head and new_head. A run that follows an
-    // earlier run replaces that run's marker: its old head is the bound the earlier run reached, which is
-    // what the caller passes.
+    // The first batch marks the database as being between old_head and new_head: it held old_head's state,
+    // and every write sets an outpoint to its value at new_head. A run that follows an earlier run replaces
+    // that run's marker; its old head is the block the earlier run settled the database at, which is what
+    // the caller passes. Equal heads with writes (a block disconnected and reconnected between runs) claim
+    // nothing false: every write is then the value the database already holds.
     //
     // A marker this object left open needs no second write: with the same pair of heads the batch holds
     // the changes alone, and with another pair the best block is known to be erased already. The marker's

@@ -380,13 +380,23 @@ public:
 
     std::unique_ptr<BlockTreeDB> m_block_tree_db GUARDED_BY(::cs_main);
 
-    void WriteBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void WriteBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main, !m_index_commit_mutex);
     /**
      * WriteBlockIndexDB() in two halves: the dirty file info and block index entries are serialised under
      * the lock (and are no longer dirty afterwards), the batch is committed off the lock
-     * (BlockTreeDB::CommitBatch).
+     * (CommitBlockIndexBatch). Batches are numbered in preparation order, and a batch is only committed
+     * if no later batch has been, so that a batch committed late (on the executor) never overwrites
+     * newer entries written synchronously meanwhile.
      */
-    std::unique_ptr<CDBBatch> PrepareBlockIndexBatch() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    struct IndexBatch {
+        std::unique_ptr<CDBBatch> batch;
+        uint64_t generation{0};
+        //! The database the batch is for, read under cs_main when the batch was prepared; the commit may
+        //! run on the executor without the lock (the pointer never changes after start-up).
+        BlockTreeDB* db{nullptr};
+    };
+    IndexBatch PrepareBlockIndexBatch() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void CommitBlockIndexBatch(const IndexBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(!m_index_commit_mutex);
     bool LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
@@ -432,6 +442,10 @@ public:
      * applied under cs_main: by the worker when it can take the lock without
      * waiting, otherwise by the next SettleUndoWrites() or ApplyEffectCompletions().
      */
+    uint64_t m_index_batch_generation GUARDED_BY(::cs_main){0};
+    Mutex m_index_commit_mutex;
+    uint64_t m_index_batch_committed GUARDED_BY(m_index_commit_mutex){0};
+
     kernel::EffectsExecutor m_effects{[this] {
         // Apply completions if the lock is free; otherwise the next SettleUndoWrites() or
         // ApplyEffectCompletions() does, and the worker retries shortly. Never block here: a thread

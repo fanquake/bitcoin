@@ -173,4 +173,21 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
     BOOST_CHECK_EQUAL(curr_tip, get_notify_tip());
 }
 
+//! The coins database lags the tip. Before the first block of a reorganisation is disconnected it is brought
+//! to the tip, so that what a crash replay has to undo is on disk as the block's undo data describes it.
+BOOST_FIXTURE_TEST_CASE(disconnect_writes_the_database_to_the_tip_first, TestChain100Setup)
+{
+    Chainstate& chainstate{Assert(m_node.chainman)->ActiveChainstate()};
+    CBlockIndex* const tip{WITH_LOCK(::cs_main, return chainstate.m_chain.Tip())};
+    BOOST_REQUIRE(WITH_LOCK(::cs_main, return chainstate.CoinsDB().GetBestBlock()) != tip->GetBlockHash());
+
+    BlockValidationState state;
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, tip));
+
+    LOCK(::cs_main);
+    BOOST_CHECK(chainstate.m_chain.Tip() == tip->pprev);
+    BOOST_CHECK(chainstate.CoinsDB().GetBestBlock() == tip->GetBlockHash());
+    BOOST_CHECK(chainstate.CoinsDB().GetHeadBlocks().empty());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

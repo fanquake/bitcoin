@@ -541,11 +541,18 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
 void BlockManager::WriteBlockIndexDB()
 {
     AssertLockHeld(::cs_main);
-    auto batch{PrepareBlockIndexBatch()};
-    m_block_tree_db->CommitBatch(*batch);
+    CommitBlockIndexBatch(PrepareBlockIndexBatch());
 }
 
-std::unique_ptr<CDBBatch> BlockManager::PrepareBlockIndexBatch()
+void BlockManager::CommitBlockIndexBatch(const IndexBatch& batch)
+{
+    LOCK(m_index_commit_mutex);
+    if (batch.generation <= m_index_batch_committed) return; // a newer batch already holds these entries
+    Assert(batch.db)->CommitBatch(*batch.batch);
+    m_index_batch_committed = batch.generation;
+}
+
+BlockManager::IndexBatch BlockManager::PrepareBlockIndexBatch()
 {
     AssertLockHeld(::cs_main);
     std::vector<std::pair<int, const CBlockFileInfo*>> vFiles;
@@ -561,7 +568,7 @@ std::unique_ptr<CDBBatch> BlockManager::PrepareBlockIndexBatch()
         m_dirty_blockindex.erase(it++);
     }
     int max_blockfile{this->MaxBlockfileNum()};
-    return m_block_tree_db->PrepareBatch(vFiles, max_blockfile, vBlocks);
+    return IndexBatch{m_block_tree_db->PrepareBatch(vFiles, max_blockfile, vBlocks), ++m_index_batch_generation, m_block_tree_db.get()};
 }
 
 std::optional<std::pair<FlatFilePos, FlatFilePos>> BlockManager::ChainstateBlockFileFlushPositions(int tip_height)

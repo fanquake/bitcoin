@@ -72,7 +72,6 @@
 #include <cassert>
 #include <chrono>
 #include <deque>
-#include <numeric>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -1846,13 +1845,13 @@ CoinsViews::CoinsViews(DBParams db_params, CoinsViewOptions options)
 void CoinsViews::InitCache(int32_t prevoutfetch_threads)
 {
     AssertLockHeld(::cs_main);
-    m_cacheview = std::make_unique<CCoinsViewCache>(&m_catcherview);
+    m_store = std::make_unique<CoinsStore>(&m_catcherview);
     util::NotNull thread_pool{std::make_shared<ThreadPool>("prevout")};
     if (prevoutfetch_threads > 0) {
         thread_pool->Start(prevoutfetch_threads);
         LogInfo("Block input prevout fetching uses %d additional threads", prevoutfetch_threads);
     }
-    m_connect_block_view = std::make_unique<CoinsViewOverlay>(&*m_cacheview, std::move(thread_pool));
+    m_connect_block_view = std::make_unique<CoinsViewOverlay>(&*m_store, std::move(thread_pool));
 }
 
 Chainstate::Chainstate(
@@ -1929,6 +1928,122 @@ void Chainstate::InitCoinsCache(size_t cache_size_bytes)
     assert(m_coins_views != nullptr);
     m_coinstip_cache_size_bytes = cache_size_bytes;
     m_coins_views->InitCache(m_chainman.m_options.prevoutfetch_threads_num);
+    m_coins_views->m_store->SetBaseWrites(m_chainman.m_options.coins_view.batch_write_bytes, /*concurrent=*/true);
+}
+
+void Chainstate::ResetCoinsViews()
+{
+    AssertLockHeld(::cs_main);
+    if (m_coins_views && m_coins_views->m_store && m_coins_views->m_store->RunInFlight()) SettleWriteOut();
+    m_coins_views.reset();
+}
+
+void Chainstate::SettleWriteOut()
+{
+    AssertLockHeld(::cs_main);
+    m_blockman.m_effects.WaitForIO();
+    m_blockman.m_effects.ApplyCompletions();
+}
+
+std::optional<int> Chainstate::LagCeiling() const
+{
+    AssertLockHeld(::cs_main);
+    if (!m_blockman.IsPruneMode()) return std::nullopt;
+    // A replay after a crash reads every block above the written head; pruning keeps MIN_BLOCKS_TO_KEEP
+    // below the tip, so the lag stays well inside that, with room for the blocks a window connects ahead.
+    return static_cast<int>(MIN_BLOCKS_TO_KEEP) - 32;
+}
+
+bool Chainstate::StartWriteOutRun(BlockValidationState& state, int bound_height, bool final, std::optional<size_t> evict_to)
+{
+    AssertLockHeld(::cs_main);
+    CoinsStore& store{CoinsStoreTip()};
+    Assert(!store.RunInFlight());
+    // The run's new head is the block the tier's state corresponds to. During a disconnect that is already
+    // the parent while m_chain still ends at the block being disconnected, so the tier's best block, not
+    // the chain's tip, is what the marker must name; the bound and the settled head are its ancestors.
+    if (store.GetBestBlock().IsNull()) return true;
+    const CBlockIndex* head{m_blockman.LookupBlockIndex(store.GetBestBlock())};
+    if (!head) return true;
+    bound_height = std::clamp(bound_height, 0, head->nHeight);
+    // A run that stops at a bound leaves the database at a block below the head and counts on every change
+    // between the written head and that block being tagged at or below it. That holds while the written
+    // head is an ancestor of the head. After a disconnect it is not (the database is at a block above the
+    // head or on the branch left behind) and the changes that take it back are tagged with the fork heights
+    // of the reorganisations that made them, which a bound may lie between: such a run writes everything,
+    // and the database is at the head again.
+    if (const CBlockIndex* written{store.WrittenHead().IsNull() ? nullptr : m_blockman.LookupBlockIndex(store.WrittenHead())};
+        written && head->GetAncestor(written->nHeight) != written) {
+        final = true;
+    }
+
+    // Typical Coin structures on disk are around 48 bytes in size. Pushing a new one to the database can
+    // cause it to be written twice (once in the log, and once in the tables). This is already an
+    // overestimation, as most will delete an existing entry or overwrite one. Still, use a conservative
+    // safety factor of 2.
+    if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * store.GetDirtyCount())) {
+        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+    }
+
+    // The block index entries about to be written record the undo positions of the blocks whose undo
+    // writes have completed; settle those first, as the synchronous flush does, so that a replay finds
+    // the undo data of every block the marker names.
+    m_blockman.SettleUndoWrites();
+    std::shared_ptr<CoinsStore::WriteOutRun> run{store.BeginWriteOut(bound_height, head->nHeight, head->GetBlockHash(), final)};
+    if (!run) return true;
+    LogDebug(BCLog::COINDB, "Starting a coins write-out run: changes at or below height %d, head %d%s",
+             bound_height, head->nHeight, final ? ", final" : "");
+
+    // Durability order inside the effect: block and undo files synced, block index committed, then the
+    // coins with their marker. The executor runs effects in order, so the undo writes queued before this
+    // run have landed by the time it runs. The coins are streamed from the tier a chunk at a time, each
+    // collected under its shard's lock, written and settled; nothing is confirmed into the tier meanwhile
+    // (the thread that started the run waits for it before it publishes another block), so the run sees
+    // one state of it. The head and its ancestors do not change in the block index, so the effect looks the
+    // settled head up there.
+    const auto positions{m_blockman.ChainstateBlockFileFlushPositions(head->nHeight)};
+    auto index_batch{std::make_shared<node::BlockManager::IndexBatch>(m_blockman.PrepareBlockIndexBatch())};
+    node::BlockManager& blockman{m_blockman};
+    m_blockman.m_effects.Enqueue(
+        [run, positions, index_batch, &store, head, &blockman, batch_bytes{m_chainman.m_options.coins_view.batch_write_bytes}]() -> bool {
+            try {
+                if (positions && !blockman.FlushBlockFileAt(positions->first, positions->second)) return false;
+                blockman.CommitBlockIndexBatch(*index_batch);
+                store.StreamWriteOut(*run, [head](int height) { return Assert(head->GetAncestor(height))->GetBlockHash(); }, batch_bytes);
+                return true;
+            } catch (const std::runtime_error& e) {
+                LogError("Coins write-out run failed: %s", e.what());
+                return false;
+            }
+        },
+        [this, run, evict_to](bool ok) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+            AssertLockHeld(::cs_main);
+            if (!m_coins_views || !m_coins_views->m_store) return;
+            CoinsStore& store{CoinsStoreTip()};
+            if (!ok) {
+                store.AbandonWriteOut();
+                m_chainman.GetNotifications().fatalError(_("System error while writing the chainstate to disk."));
+                return;
+            }
+            store.CommitWriteOut(*run);
+            LogDebug(BCLog::COINDB, "Coins write-out run landed: %u changes (%.1f MiB), settled at height %d%s",
+                     (unsigned int)run->count, run->bytes / double(1_MiB), run->settled_height, run->final ? ", final" : "");
+            // What the run wrote is clean now: a run started for memory frees it here, not at the next crossing.
+            if (evict_to) store.EvictClean(*evict_to);
+            m_last_flushed_block = m_blockman.LookupBlockIndex(run->new_head);
+            if (m_chainman.m_options.signals) {
+                m_chainman.m_options.signals->ChainStateFlushed(this->GetRole(), GetLocator(m_last_flushed_block));
+            }
+            if (!m_chainman.m_interrupt && ShouldCompactChainstate(m_chainman.IsInitialBlockDownload())) {
+                try {
+                    CoinsDB().CompactFullAsync();
+                } catch (const std::exception& e) {
+                    LogWarning("Failed to start chainstate compaction (%s)", e.what());
+                }
+            }
+        },
+        0);
+    return true;
 }
 
 // Lock-free: depends on `m_cached_is_ibd`, which is latched by `UpdateIBDStatus()`.
@@ -2960,38 +3075,135 @@ bool Chainstate::FlushStateToDisk(
         bool fCacheCritical = mode == FlushStateMode::IF_NEEDED && cache_state >= CoinsCacheSizeState::CRITICAL;
         // It's been a while since we wrote the block index and chain state to disk. Do this frequently, so we don't need to redownload or reindex after a crash.
         bool fPeriodicWrite = mode == FlushStateMode::PERIODIC && nNow >= m_next_write;
-        const auto empty_cache{(mode == FlushStateMode::FORCE_FLUSH) || fCacheLarge || fCacheCritical};
-        // Combine all conditions that result in a write to disk.
-        bool should_write = (mode == FlushStateMode::FORCE_SYNC) || empty_cache || fPeriodicWrite || fFlushForPrune;
+        CoinsStore& store{CoinsStoreTip()};
+        // The written head may not lag the tip by more than the ceiling (pruned nodes).
+        const std::optional<int> lag_ceiling{LagCeiling()};
+        const bool lag_over_ceiling{lag_ceiling && store.WrittenHeight() >= 0 && m_chain.Height() - store.WrittenHeight() > *lag_ceiling};
+        // A forced flush writes everything and waits, as it always did. Everything else is a write-out run
+        // of the young tier's oldest changes on the executor: the flush became a lag.
+        const bool synchronous{mode == FlushStateMode::FORCE_FLUSH || mode == FlushStateMode::FORCE_SYNC};
+        const bool test_every_block{m_chainman.m_options.test_write_out_every_block && mode == FlushStateMode::IF_NEEDED && m_chain.Height() >= 2 && !store.RunInFlight()};
+        const bool lag_run{!synchronous && (fCacheLarge || fCacheCritical || fPeriodicWrite || lag_over_ceiling || fFlushForPrune || test_every_block)};
+        bool should_write = synchronous || lag_run;
+        // Whether anything went to disk: a lag run that found nothing to write does not count.
+        bool wrote{synchronous};
         // Write blocks, block index and best chain related state to disk.
         if (should_write) {
-            LogDebug(BCLog::COINDB, "Writing chainstate to disk: flush mode=%s, prune=%d, large=%d, critical=%d, periodic=%d",
-                     FlushStateModeNames[size_t(mode)], fFlushForPrune, fCacheLarge, fCacheCritical, fPeriodicWrite);
+            LogDebug(BCLog::COINDB, "Writing chainstate to disk: flush mode=%s, prune=%d, large=%d, critical=%d, periodic=%d, over_ceiling=%d",
+                     FlushStateModeNames[size_t(mode)], fFlushForPrune, fCacheLarge, fCacheCritical, fPeriodicWrite, lag_over_ceiling);
 
             // Ensure we can write block index
             if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
                 return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
             }
-            {
-                LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
+            if (synchronous) {
+                {
+                    LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
 
-                // Queued undo writes must have landed: the block index about to be written records them, and
-                // the coins DB must never be ahead of the undo data needed to roll it back.
-                m_blockman.SettleUndoWrites();
-                Assume(m_blockman.m_effects.PendingBytes() == 0);
+                    // Queued undo writes and a write-out run in flight must have landed: the block index about to
+                    // be written records them, and the coins DB must never be ahead of the undo data needed to
+                    // roll it back.
+                    SettleWriteOut();
+                    Assume(m_blockman.m_effects.PendingBytes() == 0);
 
-                // First make sure all block and undo data is flushed to disk.
-                if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
-                    // FlushChainstateBlockFile() already reported the specific error through flushError()
-                    return state.Error("Failed to flush block or undo file");
+                    // First make sure all block and undo data is flushed to disk.
+                    if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
+                        // FlushChainstateBlockFile() already reported the specific error through flushError()
+                        return state.Error("Failed to flush block or undo file");
+                    }
                 }
-            }
 
-            // Then update all block file information (which may refer to block and undo files).
-            {
-                LOG_TIME_MILLIS_WITH_CATEGORY("write block index to disk", BCLog::BENCH);
+                // Then update all block file information (which may refer to block and undo files).
+                {
+                    LOG_TIME_MILLIS_WITH_CATEGORY("write block index to disk", BCLog::BENCH);
 
-                m_blockman.WriteBlockIndexDB();
+                    m_blockman.WriteBlockIndexDB();
+                }
+
+                if (!store.GetBestBlock().IsNull()) {
+                    // Typical Coin structures on disk are around 48 bytes in size.
+                    // Pushing a new one to the database can cause it to be written
+                    // twice (once in the log, and once in the tables). This is already
+                    // an overestimation, as most will delete an existing entry or
+                    // overwrite one. Still, use a conservative safety factor of 2.
+                    if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * store.GetDirtyCount())) {
+                        return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
+                    }
+                    // Flush the chainstate (which may refer to block index entries).
+                    mode == FlushStateMode::FORCE_FLUSH ? store.Flush() : store.Sync();
+                    m_last_flushed_block = m_blockman.LookupBlockIndex(store.GetBestBlock());
+                    full_flush_completed = true;
+                    TRACEPOINT(utxocache, flush,
+                        int64_t{Ticks<std::chrono::microseconds>(NodeClock::now() - nNow)},
+                        (uint32_t)mode,
+                        (uint64_t)coins_count,
+                        (uint64_t)coins_mem_usage,
+                        (bool)fFlushForPrune);
+                }
+            } else {
+                // A run is in flight: a critical cache waits for it (where the synchronous flush used to
+                // block everyone, and no worse), anything else simply tries again later. The run carries
+                // its own block index batch, prepared when it started; the index is written here only
+                // once that batch has landed, since a batch holds the entries that were dirty when it was
+                // prepared and nothing else, so a newer batch committed first would make the run's batch
+                // stale (CommitBlockIndexBatch skips it) and its entries would never reach the database.
+                if (store.RunInFlight() && fCacheCritical) {
+                    SettleWriteOut();
+                    m_blockman.WriteBlockIndexDB();
+                }
+                const CBlockIndex* head{store.GetBestBlock().IsNull() ? nullptr : m_blockman.LookupBlockIndex(store.GetBestBlock())};
+                if (!store.RunInFlight() && head) {
+                    const int tip_height{head->nHeight};
+                    // Before any dirty entry is written, drop the clean copies of old coins the budget can
+                    // no longer afford. The budget is the total the trigger measured the tier against
+                    // (GetCoinsCacheSizeState()), the mempool's unused allowance included: a target taken
+                    // from the cache size alone would have a run write far below what set it off.
+                    const int64_t mempool_spare{m_mempool ? std::max<int64_t>(int64_t(m_mempool->m_opts.max_size_bytes) - int64_t(m_mempool->DynamicMemoryUsage()), 0) : 0};
+                    const size_t budget{m_coinstip_cache_size_bytes + static_cast<size_t>(mempool_spare)};
+                    const size_t target{budget - budget / 4};
+                    const bool pressure{fCacheLarge || fCacheCritical};
+                    if (pressure) store.EvictClean(target);
+                    const size_t usage{store.DynamicMemoryUsage()};
+                    std::optional<int> bound;
+                    bool final{false};
+                    if (fPeriodicWrite) {
+                        // The periodic write persists everything, as it always did.
+                        bound = tip_height;
+                        final = true;
+                    } else if (pressure && usage > target) {
+                        bound = store.BoundForBytes(usage - target, tip_height);
+                    } else if (lag_over_ceiling) {
+                        bound = tip_height - *lag_ceiling / 2;
+                    } else if (test_every_block) {
+                        bound = tip_height - 2;
+                    }
+                    if (fFlushForPrune) {
+                        // Pruned files must lie below the written head, so that a replay never needs them.
+                        const auto [unused_min, last_block_can_prune]{GetPruneRange(m_chain.Height())};
+                        if (store.WrittenHeight() < last_block_can_prune) bound = std::max(bound.value_or(0), last_block_can_prune);
+                    }
+                    if (bound) {
+                        // What a run for memory wrote is evicted down to the target when it lands.
+                        if (!StartWriteOutRun(state, *bound, final, pressure ? std::optional<size_t>{target} : std::nullopt)) return false;
+                    }
+                    if (store.RunInFlight()) {
+                        wrote = true;
+                        // The run is waited for here, inside the connection of the block that triggered it, as
+                        // the synchronous flush was. What the lag changes is what is written (the oldest
+                        // changes, not everything) and what remains (the young tier, not an emptied cache);
+                        // a write that outlived the connection would leave a crash between two blocks with
+                        // the later block accepted but not durable, which is not how a node behaves today
+                        // (feature_dbcrash pins that). The write-out runs on the executor behind the undo
+                        // writes all the same; letting it overlap the next blocks is the window stage's, where
+                        // the appliers are not the thread that waits.
+                        SettleWriteOut();
+                    } else if (fFlushForPrune) {
+                        // Nothing to write for the coins; the block index still records the pruned files.
+                        m_blockman.SettleUndoWrites();
+                        m_blockman.WriteBlockIndexDB();
+                        wrote = true;
+                    }
+                }
             }
             // Finally remove any pruned files
             if (fFlushForPrune) {
@@ -2999,30 +3211,11 @@ bool Chainstate::FlushStateToDisk(
 
                 m_blockman.UnlinkPrunedFiles(setFilesToPrune);
             }
-
-            if (!CoinsTip().GetBestBlock().IsNull()) {
-                // Typical Coin structures on disk are around 48 bytes in size.
-                // Pushing a new one to the database can cause it to be written
-                // twice (once in the log, and once in the tables). This is already
-                // an overestimation, as most will delete an existing entry or
-                // overwrite one. Still, use a conservative safety factor of 2.
-                if (!CheckDiskSpace(m_chainman.m_options.datadir, 48 * 2 * 2 * CoinsTip().GetDirtyCount())) {
-                    return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
-                }
-                // Flush the chainstate (which may refer to block index entries).
-                empty_cache ? CoinsTip().Flush() : CoinsTip().Sync();
-                m_last_flushed_block = m_blockman.LookupBlockIndex(CoinsTip().GetBestBlock());
-                full_flush_completed = true;
-                TRACEPOINT(utxocache, flush,
-                    int64_t{Ticks<std::chrono::microseconds>(NodeClock::now() - nNow)},
-                    (uint32_t)mode,
-                    (uint64_t)coins_count,
-                    (uint64_t)coins_mem_usage,
-                    (bool)fFlushForPrune);
-            }
         }
 
-        if (should_write || m_next_write == NodeClock::time_point::max()) {
+        // Only a write moves the timer: an event that evicted clean entries and wrote nothing, or found a run
+        // in flight, leaves the periodic write due when it was.
+        if (wrote || m_next_write == NodeClock::time_point::max()) {
             constexpr auto range{DATABASE_WRITE_INTERVAL_MAX - DATABASE_WRITE_INTERVAL_MIN};
             m_next_write = FastRandomContext().rand_uniform_delay(NodeClock::now() + DATABASE_WRITE_INTERVAL_MIN, range);
         }
@@ -3142,6 +3335,16 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     CBlockIndex *pindexDelete = m_chain.Tip();
     assert(pindexDelete);
     assert(pindexDelete->pprev);
+    // The coins database is brought to the tip before the first block of a reorganisation is disconnected.
+    // A coin created and spent above the written head never reached the database (the pair cancels in the
+    // young tier). Disconnecting the spend restores the coin as a change of the fork height, and a later
+    // run that crashed between its batches would be replayed from a written head above the coin's creation,
+    // which never writes it again. With the database at the tip, the replay disconnects these blocks from
+    // their undo data and restores the coin itself. The blocks disconnected after the first find the
+    // written head at or above them.
+    if (CoinsStoreTip().WrittenHeight() < pindexDelete->nHeight) {
+        if (!FlushStateToDisk(state, FlushStateMode::FORCE_SYNC)) return false;
+    }
     // Read block from disk.
     std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
     CBlock& block = *pblock;
@@ -3159,6 +3362,7 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
             return false;
         }
         view.Flush(/*reallocate_cache=*/false); // local CCoinsViewCache goes out of scope
+        CoinsStoreTip().SetTierHeight(pindexDelete->nHeight - 1);
     }
     LogDebug(BCLog::BENCH, "- Disconnect block: %.2fms\n",
              Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
@@ -3309,6 +3513,7 @@ bool Chainstate::PublishConnectTip(
                  Ticks<MillisecondsDouble>(time_3 - time_2),
                  Ticks<SecondsDouble>(m_chainman.time_connect_total),
                  Ticks<MillisecondsDouble>(m_chainman.time_connect_total) / m_chainman.num_blocks_total);
+        CoinsStoreTip().SetChangeHeight(pindexNew->nHeight);
         view.Flush(/*reallocate_cache=*/false); // No need to reallocate since it only has capacity for 1 block
     }
     const auto time_4{SteadyClock::now()};
@@ -3484,8 +3689,13 @@ bool Chainstate::PlanConnectStep(BlockValidationState& state, ConnectStep& step)
     const CBlockIndex* pindexFork = m_chain.FindFork(*step.target);
 
     // Disconnect active blocks which are no longer in the best chain. Their
-    // undo data may still be in the executor's queue.
-    if (m_chain.Tip() && m_chain.Tip() != pindexFork) m_blockman.SettleUndoWrites();
+    // undo data may still be in the executor's queue. Their inverse changes
+    // are tagged with the fork height, so that they are the oldest changes in
+    // the young tier and the next write-out run carries them all.
+    if (m_chain.Tip() && m_chain.Tip() != pindexFork) {
+        m_blockman.SettleUndoWrites();
+        CoinsStoreTip().SetChangeHeight(pindexFork ? pindexFork->nHeight : 0);
+    }
     while (m_chain.Tip() && m_chain.Tip() != pindexFork) {
         if (!DisconnectTip(state, &step.disconnectpool)) {
             // This is likely a fatal error, but keep the mempool consistent,
@@ -3975,7 +4185,9 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const
 
         // ActivateBestChain considers blocks already in m_chain
         // unconditionally valid already, so force disconnect away from it.
+        // The inverse changes are tagged with the height the chain ends up at.
         DisconnectedBlockTransactions disconnectpool{MAX_DISCONNECTED_TX_POOL_BYTES};
+        CoinsStoreTip().SetChangeHeight(pindex->pprev ? pindex->pprev->nHeight : 0);
         bool ret = DisconnectTip(state, &disconnectpool);
         // DisconnectTip will add transactions to disconnectpool.
         // Adjust the mempool to be consistent with the new tip, adding
@@ -5189,6 +5401,8 @@ bool Chainstate::LoadChainTip()
     m_chain.SetTip(*pindex);
     m_chainman.UpdateIBDStatus();
     m_last_flushed_block = pindex;
+    // The database is consistent with the tip (ReplayBlocks ran first): nothing is dirty, the written head is the tip.
+    CoinsStoreTip().InitWrittenHead(pindex->GetBlockHash(), pindex->nHeight);
     tip = m_chain.Tip();
 
     // nSequenceId is one of the keys used to sort setBlockIndexCandidates. Ensure all
@@ -6119,6 +6333,8 @@ bool Chainstate::ResizeCoinsCaches(size_t coinstip_size, size_t coinsdb_size)
     size_t old_coinstip_size = m_coinstip_cache_size_bytes;
     m_coinstip_cache_size_bytes = coinstip_size;
     m_coinsdb_cache_size_bytes = coinsdb_size;
+    // Resizing re-opens the database; a run in flight on the executor is writing to it.
+    if (m_coins_views && m_coins_views->m_store) SettleWriteOut();
     CoinsDB().ResizeCache(coinsdb_size);
 
     LogInfo("[%s] resized coinsdb cache to %.1f MiB",

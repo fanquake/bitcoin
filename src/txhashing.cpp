@@ -4,9 +4,9 @@
 
 #include <txhashing.h>
 
-#include <crypto/sha256.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
+#include <primitives/txsegments.h>
 #include <serialize.h>
 #include <span.h>
 #include <streams.h>
@@ -24,99 +24,6 @@
 
 namespace {
 
-//! Where one transaction lies in the block buffer: the whole transaction (the wtxid preimage) and the segments of
-//! it that form the txid preimage, which leave out the segwit marker, flag and witness.
-struct TxSegments {
-    size_t begin{0};
-    size_t end{0};
-    //! At most three: up to the marker, from the flag to the witness, after the witness.
-    std::array<std::pair<size_t, size_t>, 3> txid{};
-    size_t txid_count{0};
-    //! The segwit framing was present. After a successful parse that is the same as CTransaction::HasWitness(),
-    //! since a framing with only empty witness stacks is rejected.
-    bool has_witness{false};
-};
-
-//! A reader over the block buffer that records, through the TxidHashingStream calls UnserializeTransaction makes,
-//! which bytes of each transaction form its txid preimage. Nothing is hashed here; see HashChunk().
-class TxSegmentRecorder
-{
-    SpanReader m_reader;
-    const size_t m_total;
-    TxSegments* m_segments{nullptr};
-    size_t m_segment_start{0};
-    size_t m_hold_start{0};
-
-    size_t Pos() const { return m_total - m_reader.size(); }
-    void Close(size_t end)
-    {
-        Assert(m_segments->txid_count < m_segments->txid.size());
-        m_segments->txid[m_segments->txid_count++] = {m_segment_start, end};
-    }
-
-public:
-    explicit TxSegmentRecorder(std::span<const std::byte> data) : m_reader{data}, m_total{data.size()} {}
-
-    void read(std::span<std::byte> dst) { m_reader.read(dst); }
-    void ignore(size_t num_bytes) { m_reader.ignore(num_bytes); }
-    size_t size() const { return m_reader.size(); }
-    bool empty() const { return m_reader.empty(); }
-
-    template <typename T>
-    TxSegmentRecorder& operator>>(T&& obj)
-    {
-        ::Unserialize(*this, obj);
-        return *this;
-    }
-
-    void Begin(TxSegments& segments)
-    {
-        segments = TxSegments{};
-        m_segments = &segments;
-        segments.begin = m_segment_start = Pos();
-    }
-    void End()
-    {
-        Close(Pos());
-        m_segments->end = Pos();
-        m_segments = nullptr;
-    }
-
-    void TxidHold() { m_hold_start = Pos(); }
-    void TxidCommit() {}
-    void TxidDiscard()
-    {
-        m_segments->has_witness = true;
-        Close(m_hold_start);
-        m_segment_start = Pos();
-    }
-    void TxidPause() { Close(Pos()); }
-    void TxidResume() { m_segment_start = Pos(); }
-};
-
-uint256 Finish(CSHA256& hasher)
-{
-    unsigned char out[CSHA256::OUTPUT_SIZE];
-    hasher.Finalize(out);
-    CSHA256{}.Write(out, sizeof(out)).Finalize(out);
-    return uint256{out};
-}
-
-std::pair<Txid, Wtxid> HashTransaction(std::span<const std::byte> data, const TxSegments& segments)
-{
-    const auto* bytes{reinterpret_cast<const unsigned char*>(data.data())};
-    CSHA256 txid_hasher;
-    for (size_t i{0}; i < segments.txid_count; ++i) {
-        const auto [begin, end]{segments.txid[i]};
-        txid_hasher.Write(bytes + begin, end - begin);
-    }
-    const Txid txid{Txid::FromUint256(Finish(txid_hasher))};
-    if (!segments.has_witness) return {txid, Wtxid::FromUint256(txid.ToUint256())};
-    CSHA256 wtxid_hasher;
-    wtxid_hasher.Write(bytes + segments.begin, segments.end - segments.begin);
-    return {txid, Wtxid::FromUint256(Finish(wtxid_hasher))};
-}
-
 //! Transactions are hashed in chunks of this many, each chunk handed to a worker as soon as it is parsed, so the
 //! hashing overlaps the parsing of the next chunk. A worker reads only the block bytes and the chunk's segment
 //! records, never the parsed transactions, which keeps it off the cache lines the parsing thread is writing.
@@ -133,7 +40,7 @@ struct Chunk {
 
 void HashChunk(std::span<const std::byte> data, Chunk& chunk)
 {
-    for (size_t i{0}; i < chunk.count; ++i) chunk.hashes[i] = HashTransaction(data, chunk.segments[i]);
+    for (size_t i{0}; i < chunk.count; ++i) chunk.hashes[i] = HashTransactionSegments(data, chunk.segments[i]);
 }
 
 //! Waits for every chunk a worker is hashing, also when the parse throws, since the workers reference the chunks.

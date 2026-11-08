@@ -11,6 +11,7 @@
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <core_memusage.h>
+#include <hash.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <streams.h>
@@ -52,6 +53,9 @@ FUZZ_TARGET(transaction, .init = initialize_transaction)
     if (!valid_tx) {
         return;
     }
+    // The hashes computed from the bytes equal the ones computed by serialising again.
+    assert(tx.GetHash() == mutable_tx.GetHash());
+    assert(tx.GetWitnessHash() == (mutable_tx.HasWitness() ? Wtxid::FromUint256((HashWriter{} << TX_WITH_WITNESS(mutable_tx)).GetHash()) : Wtxid::FromUint256(mutable_tx.GetHash().ToUint256())));
 
     {
         TxValidationState state_with_dupe_check;

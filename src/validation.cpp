@@ -4692,13 +4692,14 @@ void ChainstateManager::ReportHeadersPresync(int64_t height, int64_t timestamp)
 }
 
 /** Store block on disk. If dbp is non-nullptr, the file is known to already reside on disk */
-bool ChainstateManager::PrepareAcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared)
+bool ChainstateManager::PrepareAcceptBlockHeader(const CBlock& block, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared)
 {
-    const CBlock& block = *pblock;
-
     if (fNewBlock) *fNewBlock = false;
     AssertLockHeld(cs_main);
-    prepared = PreparedBlock{};
+    prepared.pindex = nullptr;
+    prepared.pos = FlatFilePos{};
+    prepared.store = prepared.write = prepared.check = prepared.check_block_failed = false;
+    prepared.ctx.reset();
 
     CBlockIndex *pindexDummy = nullptr;
     CBlockIndex *&pindex = ppindex ? *ppindex : pindexDummy;
@@ -4744,26 +4745,70 @@ bool ChainstateManager::PrepareAcceptBlock(const std::shared_ptr<const CBlock>& 
         if (pindex->nChainWork < MinimumChainWork()) return true;
     }
 
-    const CChainParams& params{GetParams()};
+    // The block is wanted: its checks follow, with no lock needed, against this context.
+    prepared.pindex = pindex;
+    prepared.check = true;
+    prepared.ctx.emplace(MakeBlockValidationContext(pindex->GetBlockHash(), pindex->pprev));
+    return true;
+}
 
-    if (!CheckBlock(block, state, params.GetConsensus()) ||
-        !ContextualCheckBlock(block, state, MakeBlockValidationContext(pindex->GetBlockHash(), pindex->pprev), pindex->pprev)) {
-        if (Assume(state.IsInvalid())) {
+/**
+ * A block accepted over several holds of cs_main may find its chain marked invalid when the lock is taken
+ * again: the connector thread rejected an ancestor meanwhile and SetBlockFailureFlags() flagged every
+ * descendant, this block included. In one hold the header check would have refused the block as
+ * bad-prevblk (or duplicate-invalid, had the block itself been invalidated); the same verdict here, so
+ * that the block's transactions are never recorded against a validity the flag keeps from rising.
+ */
+static bool FailedMeanwhile(const CBlockIndex& pindex, BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+    if (!(pindex.nStatus & BLOCK_FAILED_VALID)) return false;
+    if (pindex.pprev && (pindex.pprev->nStatus & BLOCK_FAILED_VALID)) {
+        return !state.Invalid(BlockValidationResult::BLOCK_INVALID_PREV, "bad-prevblk");
+    }
+    return !state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID, "duplicate-invalid");
+}
+
+bool ChainstateManager::CheckAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared) const
+{
+    Assert(prepared.check);
+    prepared.check = false;
+    const CBlockIndex* pindex{Assert(prepared.pindex)};
+    if (!CheckBlock(block, state, prepared.ctx->params)) {
+        prepared.check_block_failed = true;
+        return false;
+    }
+    // pprev and the header fields it reaches are immutable once the entry exists.
+    return ContextualCheckBlock(block, state, *prepared.ctx, pindex->pprev);
+}
+
+bool ChainstateManager::PrepareAcceptBlockStorage(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, bool checks_ok, bool invalidate_on_check_block_failure, const FlatFilePos* dbp, bool* fNewBlock, PreparedBlock& prepared)
+{
+    AssertLockHeld(cs_main);
+    const CBlock& block = *pblock;
+    CBlockIndex* pindex{Assert(prepared.pindex)};
+    Assert(!prepared.check);
+
+    if (!checks_ok) {
+        if ((!prepared.check_block_failed || invalidate_on_check_block_failure) && Assume(state.IsInvalid())) {
             ActiveChainstate().InvalidBlockFound(pindex, state);
         }
         LogError("%s: %s\n", __func__, state.ToString());
         return false;
     }
 
-    // Header is valid/has work, merkle tree and segwit merkle tree are good...RELAY NOW
-    // (but if it does not build on our best tip, let the SendMessages loop relay it)
-    if (!IsInitialBlockDownload() && ActiveTip() == pindex->pprev && m_options.signals) {
-        m_options.signals->NewPoWValidBlock(pindex, pblock);
-    }
+    // Another thread may have stored the block while the checks ran without the lock.
+    if ((pindex->nStatus & BLOCK_HAVE_DATA) || m_blocks_being_stored.contains(pindex)) return true;
+    if (FailedMeanwhile(*pindex, state)) return false;
+
+    // Header is valid/has work, merkle tree and segwit merkle tree are good: the block is announced
+    // (NewPoWValidBlock) by FinishAcceptBlock(), once it is stored and recorded, so that a peer acting on
+    // the announcement finds a block the node can serve. Master announces here, before the write, but
+    // under the one hold that also records the block, which no peer's request can get between.
+    prepared.block = pblock;
 
     // Claim the block's place in the history file; the write itself may happen without the lock.
     if (fNewBlock) *fNewBlock = true;
-    prepared.pindex = pindex;
     prepared.store = true;
     try {
         if (dbp) {
@@ -4786,6 +4831,15 @@ bool ChainstateManager::PrepareAcceptBlock(const std::shared_ptr<const CBlock>& 
     return true;
 }
 
+bool ChainstateManager::PrepareAcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared)
+{
+    AssertLockHeld(cs_main);
+    if (!PrepareAcceptBlockHeader(*pblock, state, ppindex, fRequested, fNewBlock, min_pow_checked, prepared)) return false;
+    if (!prepared.check) return true;
+    const bool checks_ok{CheckAcceptBlock(*pblock, state, prepared)};
+    return PrepareAcceptBlockStorage(pblock, state, checks_ok, /*invalidate_on_check_block_failure=*/true, dbp, fNewBlock, prepared);
+}
+
 bool ChainstateManager::FinishAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared, bool written)
 {
     AssertLockHeld(cs_main);
@@ -4797,11 +4851,21 @@ bool ChainstateManager::FinishAcceptBlock(const CBlock& block, BlockValidationSt
         // WriteBlockAt() reported the fatal error already; the claimed space stays unused.
         return state.Error(strprintf("%s: Failed to write block to disk", __func__));
     }
+    // The block is on disk; its index entry records nothing of it, as after a write the node never
+    // finished, which is what master leaves behind when the same block is refused at its header.
+    if (FailedMeanwhile(*pindex, state)) return false;
     try {
         ReceivedBlockTransactions(block, pindex, prepared.pos);
     } catch (const std::runtime_error& e) {
         return FatalError(GetNotifications(), state, strprintf(_("System error while saving block to disk: %s"), e.what()));
     }
+
+    // Stored and recorded: RELAY NOW (but if it does not build on our best tip, let the SendMessages loop
+    // relay it).
+    if (prepared.block && !IsInitialBlockDownload() && ActiveTip() == pindex->pprev && m_options.signals) {
+        m_options.signals->NewPoWValidBlock(pindex, prepared.block);
+    }
+    prepared.block.reset();
 
     // TODO: FlushStateToDisk() handles flushing of both block and chainstate
     // data, so we should move this to ChainstateManager so that we can be more
@@ -4861,21 +4925,22 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
         }};
 
         {
-            // CheckBlock() does not support multi-threaded block validation because CBlock::fChecked can cause data race.
-            // Therefore, the following critical section must include the CheckBlock() call as well.
             LOCK(cs_main);
-
-            // Skipping AcceptBlock() for CheckBlock() failures means that we will never mark a block as invalid if
-            // CheckBlock() fails.  This is protective against consensus failure if there are any unknown forms of block
-            // malleability that cause CheckBlock() to fail; see e.g. CVE-2012-2459 and
-            // https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2019-February/016697.html.  Because CheckBlock() is
-            // not very expensive, the anti-DoS benefits of caching failure (of a definitely-invalid block) are not substantial.
-            bool ret = CheckBlock(*block, state, GetConsensus());
-            if (ret) {
-                // Validate and claim a place on disk; the write happens below, without the lock.
-                ret = PrepareAcceptBlock(block, state, &pindex, force_processing, nullptr, new_block, min_pow_checked, prepared);
-            }
-            if (!ret) return failed();
+            // Accept the header and decide whether the block is wanted; the block's own checks run below,
+            // without the lock. They are pure functions of the block and the context built here. (Two calls
+            // may be given one block object: the flags the checks memoise in, CBlock::fChecked and its two
+            // siblings, are atomic.)
+            if (!PrepareAcceptBlockHeader(*block, state, &pindex, force_processing, new_block, min_pow_checked, prepared)) return failed();
+        }
+        if (prepared.check) {
+            // Not marking a block invalid when CheckBlock() fails is protective against consensus failure if
+            // there are any unknown forms of block malleability that cause CheckBlock() to fail; see e.g.
+            // CVE-2012-2459 and https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2019-February/016697.html.
+            // Because CheckBlock() is not very expensive, the anti-DoS benefits of caching failure (of a
+            // definitely-invalid block) are not substantial.
+            const bool checks_ok{CheckAcceptBlock(*block, state, prepared)};
+            LOCK(cs_main);
+            if (!PrepareAcceptBlockStorage(block, state, checks_ok, /*invalidate_on_check_block_failure=*/false, nullptr, new_block, prepared)) return failed();
         }
         if (prepared.store) {
             bool written{true};
@@ -4937,9 +5002,8 @@ BlockValidationState TestBlockValidity(
     const bool check_pow,
     const bool check_merkle_root)
 {
-    // Lock must be held throughout this function for two reasons:
-    // 1. We don't want the tip to change during several of the validation steps
-    // 2. To prevent a CheckBlock() race condition for fChecked, see ProcessNewBlock()
+    // Lock must be held throughout this function: we don't want the tip to change during several of the
+    // validation steps.
     AssertLockHeld(chainstate.m_chainman.GetMutex());
 
     BlockValidationState state;

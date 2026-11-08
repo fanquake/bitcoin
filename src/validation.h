@@ -1497,8 +1497,30 @@ public:
         bool store{false};
         //! The block must be written at pos before FinishAcceptBlock().
         bool write{false};
+        //! The block's checks are pending: CheckAcceptBlock() then PrepareAcceptBlockStorage() must be called.
+        bool check{false};
+        //! Set by CheckAcceptBlock(): CheckBlock() itself failed (as opposed to the contextual checks).
+        bool check_block_failed{false};
+        //! For the checks, built under the lock.
+        std::optional<BlockValidationContext> ctx;
+        //! The block, for its announcement once it is recorded (FinishAcceptBlock).
+        std::shared_ptr<const CBlock> block;
     };
     bool PrepareAcceptBlock(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, const FlatFilePos* dbp, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /**
+     * PrepareAcceptBlock() in three parts so the block's own checks run with
+     * no lock held: PrepareAcceptBlockHeader() accepts the header and decides
+     * whether the block is wanted (prepared.check); CheckAcceptBlock() runs
+     * CheckBlock() and ContextualCheckBlock() against the context built under
+     * the lock, pure functions; PrepareAcceptBlockStorage() records an invalid
+     * block, relays a valid one and claims its place on disk. With
+     * invalidate_on_check_block_failure false, a block that fails CheckBlock()
+     * is rejected without being marked invalid, as ProcessNewBlock() has
+     * always done (see the comment there).
+     */
+    bool PrepareAcceptBlockHeader(const CBlock& block, BlockValidationState& state, CBlockIndex** ppindex, bool fRequested, bool* fNewBlock, bool min_pow_checked, PreparedBlock& prepared) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    bool CheckAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared) const;
+    bool PrepareAcceptBlockStorage(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, bool checks_ok, bool invalidate_on_check_block_failure, const FlatFilePos* dbp, bool* fNewBlock, PreparedBlock& prepared) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool FinishAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared, bool written) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     //! Block-index transition: the block's scripts were verified (or accepted

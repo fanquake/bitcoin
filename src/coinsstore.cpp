@@ -10,6 +10,8 @@
 #include <util/threadnames.h>
 #include <util/threadpool.h>
 
+#include <util/time.h>
+
 #include <algorithm>
 #include <array>
 #include <exception>
@@ -95,6 +97,10 @@ std::vector<CoinsStore::LockWait> CoinsStore::LockWaits()
     }
     return waits;
 }
+
+static TaskTimes g_record_free_times;
+
+const TaskTimes& CoinsStore::RecordFreeTimes() { return g_record_free_times; }
 
 CoinsStore::CoinsStore(CCoinsView* base_view, size_t shards, bool deterministic)
     : CCoinsViewCache(base_view, deterministic), m_shards(std::max<size_t>(1, shards))
@@ -1042,7 +1048,11 @@ void CoinsStore::ConfirmBlock(BlockId block, ThreadPool* pool)
     if (!pool || record.empty()) return;
     // The record's coins are freed where the task ends: on the pool, or here if the pool takes no more.
     auto moved{std::make_shared<std::vector<Undo>>(std::move(record))};
-    if (pool->Submit([moved] { moved->clear(); })) return;
+    auto task{[moved] {
+        const TaskTimer timer{g_record_free_times};
+        std::vector<Undo>{}.swap(*moved);
+    }};
+    if (pool->Submit(std::move(task))) return;
 }
 
 void CoinsStore::UnwindItem(Shard& shard, int height, Undo&& item)

@@ -2037,11 +2037,13 @@ bool Chainstate::StartWriteOutRun(BlockValidationState& state, int bound_height,
                 m_chainman.GetNotifications().fatalError(_("System error while writing the chainstate to disk."));
                 return;
             }
+            const auto landing_start{SteadyClock::now()};
             store.CommitWriteOut(*run);
             LogDebug(BCLog::COINDB, "Coins write-out run landed: %u changes (%.1f MiB), settled at height %d%s",
                      (unsigned int)run->count, run->bytes / double(1_MiB), run->settled_height, run->final ? ", final" : "");
             // What the run wrote is clean now: a run started for memory frees it here, not at the next crossing.
             if (evict_to) store.EvictClean(*evict_to);
+            m_chainman.time_run_landing += SteadyClock::now() - landing_start;
             m_last_flushed_block = m_blockman.LookupBlockIndex(run->new_head);
             if (m_chainman.m_options.signals) {
                 m_chainman.m_options.signals->ChainStateFlushed(this->GetRole(), GetLocator(m_last_flushed_block));
@@ -3567,6 +3569,28 @@ struct WindowSync {
     std::deque<StagedConnect*> slots GUARDED_BY(mutex);
 };
 
+namespace {
+//! Adds the wall time, the CPU time and the sleeps of its scope to a phase of a worker's task.
+class PhaseTimer
+{
+    SteadyClock::duration& m_wall;
+    std::chrono::nanoseconds& m_cpu;
+    uint64_t& m_sleeps;
+    const SteadyClock::time_point m_wall_start{SteadyClock::now()};
+    const std::chrono::nanoseconds m_cpu_start{ThreadCpuTime()};
+    const uint64_t m_sleeps_start{ThreadSleeps()};
+
+public:
+    PhaseTimer(SteadyClock::duration& wall, std::chrono::nanoseconds& cpu, uint64_t& sleeps) : m_wall{wall}, m_cpu{cpu}, m_sleeps{sleeps} {}
+    ~PhaseTimer()
+    {
+        m_wall += SteadyClock::now() - m_wall_start;
+        m_cpu += ThreadCpuTime() - m_cpu_start;
+        m_sleeps += ThreadSleeps() - m_sleeps_start;
+    }
+};
+} // namespace
+
 /**
  * A block connection in flight: staged, validated and published by
  * Chainstate::StageConnectTip(), RunStagedConnect() or RunConnectTask(), and
@@ -3619,6 +3643,19 @@ struct StagedConnect {
     SteadyClock::time_point time_start{};
     SteadyClock::time_point time_read{};
     SteadyClock::time_point time_connected{};
+    //! The window block's life, for the bench: when a worker took the task, when the block was applied
+    //! (core and batch), when its continuation began and when it was finished.
+    SteadyClock::time_point time_task_start{};
+    SteadyClock::time_point time_applied{};
+    SteadyClock::time_point time_cont_start{};
+    SteadyClock::time_point time_finished{};
+    //! The phases of the block's task and its continuation, for the bench (ChainstateManager::time_phase_wall):
+    //! written by the workers, read at publication.
+    enum Phase : size_t { READ, FETCH, CORE, BATCH, CONT, SIZE, NUM_PHASES };
+    std::array<SteadyClock::duration, NUM_PHASES> phase_wall{};
+    std::array<std::chrono::nanoseconds, NUM_PHASES> phase_cpu{};
+    std::array<uint64_t, NUM_PHASES> phase_sleeps{};
+    PhaseTimer Time(Phase phase) { return PhaseTimer{phase_wall[phase], phase_cpu[phase], phase_sleeps[phase]}; }
 };
 
 bool Chainstate::StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, StagedConnect& staged)
@@ -3700,9 +3737,15 @@ void Chainstate::RunConnectTask(StagedConnect& staged)
             if (staged.sync) chainstate.OnWindowBlockApplied(staged);
         }
     } guard{*this, staged};
+    staged.time_task_start = SteadyClock::now();
     if (!staged.block) {
         auto block{m_chainman.NewBlock()};
-        if (!m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash())) {
+        bool read;
+        {
+            const auto timer{staged.Time(StagedConnect::READ)};
+            read = m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash());
+        }
+        if (!read) {
             staged.read_failed = true;
             staged.time_read = staged.time_connected = SteadyClock::now();
             guard.done = true;
@@ -3713,13 +3756,23 @@ void Chainstate::RunConnectTask(StagedConnect& staged)
     }
     staged.time_read = SteadyClock::now();
     try {
-        staged.view->Prefetch(*staged.block);
-        staged.ok = ::ConnectBlock(*staged.block, *staged.ctx, staged.pindex, *staged.view, /*check_queue=*/nullptr,
-                                   m_chainman.m_validation_cache, /*just_check=*/false, staged.state, staged.result);
-        // With deferred transactions the undo data is complete only after the continuation.
-        if (staged.ok && staged.result.deferred_txs.empty()) SettleUndo(staged);
+        {
+            const auto timer{staged.Time(StagedConnect::FETCH)};
+            staged.view->Prefetch(*staged.block);
+        }
+        {
+            const auto timer{staged.Time(StagedConnect::CORE)};
+            staged.ok = ::ConnectBlock(*staged.block, *staged.ctx, staged.pindex, *staged.view, /*check_queue=*/nullptr,
+                                       m_chainman.m_validation_cache, /*just_check=*/false, staged.state, staged.result);
+            // With deferred transactions the undo data is complete only after the continuation.
+            if (staged.ok && staged.result.deferred_txs.empty()) SettleUndo(staged);
+        }
         // The block's changes reach the store here, on its worker, grouped by shard.
-        if (staged.ok) staged.view->ApplyChanges();
+        if (staged.ok) {
+            const auto timer{staged.Time(StagedConnect::BATCH)};
+            staged.view->ApplyChanges();
+        }
+        staged.time_applied = SteadyClock::now();
     } catch (const std::logic_error& e) {
         // The store refused a change the core did not expect: a defect, not a bad block. The node stops
         // rather than confirm what it does not understand; publication reports the block not ok.
@@ -3730,7 +3783,10 @@ void Chainstate::RunConnectTask(StagedConnect& staged)
         FatalError(m_chainman.GetNotifications(), staged.state, Untranslated(strprintf("ConnectBlock: %s", e.what())));
     }
     staged.time_connected = SteadyClock::now();
-    if (staged.sync) staged.bytes = WindowBlockBytes(*staged.block, staged.result.undo) + staged.view->DynamicMemoryUsage();
+    if (staged.sync) {
+        const auto timer{staged.Time(StagedConnect::SIZE)};
+        staged.bytes = WindowBlockBytes(*staged.block, staged.result.undo) + staged.view->DynamicMemoryUsage();
+    }
     guard.done = true;
     if (staged.sync) OnWindowBlockApplied(staged);
 }
@@ -3774,7 +3830,9 @@ void Chainstate::OnWindowBlockApplied(StagedConnect& staged)
 
 void Chainstate::RunContinuation(StagedConnect& s, WindowSync& sync)
 {
+    s.time_cont_start = SteadyClock::now();
     try {
+        const auto timer{s.Time(StagedConnect::CONT)};
         s.ok = FinishDeferredTransactions(*s.block, *s.ctx, s.pindex, *s.view, /*check_queue=*/nullptr,
                                           m_chainman.m_validation_cache, s.state, s.result);
         if (s.ok) {
@@ -3789,6 +3847,7 @@ void Chainstate::RunContinuation(StagedConnect& s, WindowSync& sync)
         s.ok = false;
         FatalError(m_chainman.GetNotifications(), s.state, Untranslated(strprintf("FinishDeferredTransactions: %s", e.what())));
     }
+    s.time_finished = SteadyClock::now();
     {
         LOCK(sync.mutex);
         s.finished = true;
@@ -3824,6 +3883,63 @@ bool Chainstate::PublishConnectTip(
 {
     AssertLockHeld(cs_main);
     if (m_mempool) AssertLockHeld(m_mempool->cs);
+    const auto time_lock{SteadyClock::now()};
+    if (staged.windowed && staged.time_task_start != SteadyClock::time_point{}) {
+        // The block's life, from staging to this publication, in its phases. "ready" is how long the
+        // finished block waited for the publisher; the publisher's own wait for the block is "Window wait".
+        const auto applied{staged.time_applied != SteadyClock::time_point{} ? staged.time_applied : staged.time_connected};
+        const auto finished{staged.time_finished != SteadyClock::time_point{} ? staged.time_finished : applied};
+        m_chainman.time_life_queue += staged.time_task_start - staged.time_start;
+        m_chainman.time_life_read += staged.time_read - staged.time_task_start;
+        m_chainman.time_life_apply += applied - staged.time_read;
+        if (staged.time_cont_start != SteadyClock::time_point{}) {
+            m_chainman.time_life_cont_wait += staged.time_cont_start - applied;
+            m_chainman.time_life_cont += staged.time_finished - staged.time_cont_start;
+        }
+        if (time_lock > finished) m_chainman.time_life_ready += time_lock - finished;
+        static_assert(StagedConnect::NUM_PHASES == ChainstateManager::WORKER_PHASES);
+        for (size_t i{0}; i < ChainstateManager::WORKER_PHASES; ++i) {
+            m_chainman.time_phase_wall[i] += staged.phase_wall[i];
+            m_chainman.time_phase_cpu[i] += staged.phase_cpu[i];
+            m_chainman.time_phase_sleeps[i] += staged.phase_sleeps[i];
+        }
+        const auto blocks{std::max<uint64_t>(1, m_chainman.m_window_blocks.load() + 1)};
+        LogDebug(BCLog::BENCH, "  - Block life (ms/blk): queued %.2f read %.2f apply %.2f cont-wait %.2f cont %.2f ready %.2f\n",
+                 Ticks<MillisecondsDouble>(m_chainman.time_life_queue) / blocks,
+                 Ticks<MillisecondsDouble>(m_chainman.time_life_read) / blocks,
+                 Ticks<MillisecondsDouble>(m_chainman.time_life_apply) / blocks,
+                 Ticks<MillisecondsDouble>(m_chainman.time_life_cont_wait) / blocks,
+                 Ticks<MillisecondsDouble>(m_chainman.time_life_cont) / blocks,
+                 Ticks<MillisecondsDouble>(m_chainman.time_life_ready) / blocks);
+        if (util::log::ShouldDebugLog(BCLog::BENCH)) {
+            // What the pool did with its time: where a phase's wall time is more than its CPU time the worker
+            // was not running, and the store's waits say how much of that was a shard held by another thread,
+            // by what the waiter and the holder were doing. The last two are tasks of their own, in which a
+            // worker frees what other threads allocated: a published block, and a confirmed block's record.
+            static constexpr std::array<const char*, ChainstateManager::WORKER_PHASES> NAMES{"read", "fetch", "core", "batch", "cont", "size"};
+            std::string phases;
+            std::string sleeps;
+            for (size_t i{0}; i < NAMES.size(); ++i) {
+                phases += strprintf(" %s %.2f/%.2f", NAMES[i],
+                                    Ticks<MillisecondsDouble>(m_chainman.time_phase_wall[i]) / blocks,
+                                    Ticks<MillisecondsDouble>(m_chainman.time_phase_cpu[i]) / blocks);
+                sleeps += strprintf(" %s %.1f", NAMES[i], double(m_chainman.time_phase_sleeps[i]) / blocks);
+            }
+            for (const auto& [name, times] : {std::pair<const char*, const TaskTimes&>{"free", *m_chainman.m_block_free_times}, {"record", CoinsStore::RecordFreeTimes()}}) {
+                phases += strprintf(" %s %.2f/%.2f", name, times.wall_ns.load(std::memory_order_relaxed) / 1e6 / blocks,
+                                    times.cpu_ns.load(std::memory_order_relaxed) / 1e6 / blocks);
+                sleeps += strprintf(" %s %.1f", name, double(times.sleeps.load(std::memory_order_relaxed)) / blocks);
+            }
+            LogDebug(BCLog::BENCH, "  - Worker phases wall/cpu (ms/blk):%s\n", phases);
+            LogDebug(BCLog::BENCH, "  - Worker phases sleeps (per blk):%s\n", sleeps);
+            std::string waits;
+            for (const CoinsStore::LockWait& wait : CoinsStore::LockWaits()) {
+                waits += strprintf(" %s<%s %.3f (%.2f/%.2f)", CoinsStore::SiteName(wait.waiter), CoinsStore::SiteName(wait.holder),
+                                   Ticks<MillisecondsDouble>(wait.time) / blocks, double(wait.count) / blocks, double(wait.slept) / blocks);
+            }
+            LogDebug(BCLog::BENCH, "  - Store lock waits ms/blk (contended/slept per blk):%s\n", waits.empty() ? " none" : waits);
+        }
+    }
 
     CBlockIndex* pindexNew{staged.pindex};
     // Nothing else moves this chain's tip while ActivateBestChain() runs
@@ -3883,6 +3999,11 @@ bool Chainstate::PublishConnectTip(
             return false;
         }
         time_3 = SteadyClock::now();
+        m_chainman.time_publish_finish += time_3 - time_lock;
+        LogDebug(BCLog::BENCH, "  - Publish finish: %.2fms [%.2fs (%.2fms/blk)]\n",
+                 Ticks<MillisecondsDouble>(time_3 - time_lock),
+                 Ticks<SecondsDouble>(m_chainman.time_publish_finish),
+                 Ticks<MillisecondsDouble>(m_chainman.time_publish_finish) / m_chainman.num_blocks_total);
         m_chainman.time_connect_total += time_3 - time_2;
         assert(m_chainman.num_blocks_total > 0);
         LogDebug(BCLog::BENCH, "  - Connect total: %.2fms [%.2fs (%.2fms/blk)]\n",
@@ -4425,7 +4546,13 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             const size_t window{step->use_window ? static_cast<size_t>(m_chainman.ConnectWindow()) : 1};
             const size_t window_bytes_cap{WITH_LOCK(::cs_main, return m_coinstip_cache_size_bytes) / WINDOW_BYTES_SHARE};
             bool step_over{false};
+            SteadyClock::duration pending_stage{};
+            SteadyClock::duration pending_periodic{};
+            SteadyClock::duration pending_write{};
+            SteadyClock::duration pending_run{};
+            SteadyClock::duration pending_queue{};
             while (!step_over) {
+                const auto stage_start{SteadyClock::now()};
                 // Keep the window full.
                 while (step->in_flight.size() < window) {
                     // The window is bounded by bytes as well as by blocks: the blocks in flight, their undo
@@ -4497,6 +4624,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                     }
                     step->in_flight.push_back(std::move(staged));
                 }
+                pending_stage += SteadyClock::now() - stage_start;
                 if (step->in_flight.empty()) break;
 
                 // The lowest block in flight: wait for its worker to apply it and for its continuation, if it
@@ -4504,6 +4632,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 // the worker's continuation walk, which may be finishing a higher block meanwhile.)
                 std::unique_ptr<StagedConnect> staged{std::move(step->in_flight.front())};
                 step->in_flight.pop_front();
+                const auto wait_start{SteadyClock::now()};
                 if (staged->sync) {
                     WAIT_LOCK(staged->sync->mutex, lock);
                     staged->sync->cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(staged->sync->mutex) {
@@ -4517,10 +4646,32 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 }
                 // Do not run ahead of the undo writes by more than the backlog limit.
                 m_blockman.m_effects.WaitForBacklogBelow(node::BlockManager::MAX_UNDO_BACKLOG_BYTES);
+                const auto waited{SteadyClock::now() - wait_start};
+                SteadyClock::time_point periodic_start;
                 bool run_pending{false};
                 {
                     LOCK(cs_main);
                     LOCK(MempoolMutex());
+                    m_chainman.time_window_wait += waited;
+                    m_chainman.time_window_stage += pending_stage;
+                    m_chainman.time_window_periodic += pending_periodic;
+                    m_chainman.time_window_write += pending_write;
+                    m_chainman.time_window_run += pending_run;
+                    m_chainman.time_window_queue += pending_queue;
+                    pending_stage = pending_periodic = pending_write = pending_run = pending_queue = {};
+                    const auto blocks{std::max<int64_t>(1, m_chainman.num_blocks_total)};
+                    LogDebug(BCLog::BENCH, "  - Window wait: %.2fms [%.2fs (%.2fms/blk)] stage [%.2fs (%.2fms/blk)] after [%.2fs (%.2fms/blk)]: write %.2fs, run %.2fs (landing %.2fs), queue %.2fs\n",
+                             Ticks<MillisecondsDouble>(waited),
+                             Ticks<SecondsDouble>(m_chainman.time_window_wait),
+                             Ticks<MillisecondsDouble>(m_chainman.time_window_wait) / blocks,
+                             Ticks<SecondsDouble>(m_chainman.time_window_stage),
+                             Ticks<MillisecondsDouble>(m_chainman.time_window_stage) / blocks,
+                             Ticks<SecondsDouble>(m_chainman.time_window_periodic),
+                             Ticks<MillisecondsDouble>(m_chainman.time_window_periodic) / blocks,
+                             Ticks<SecondsDouble>(m_chainman.time_window_write),
+                             Ticks<SecondsDouble>(m_chainman.time_window_run),
+                             Ticks<SecondsDouble>(m_chainman.time_run_landing),
+                             Ticks<SecondsDouble>(m_chainman.time_window_queue));
                     if (staged->read_failed) {
                         DrainWindow(*step);
                         staged->view->Unwind();
@@ -4555,6 +4706,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         return false;
                     }
                     PruneBlockIndexCandidates();
+                    periodic_start = SteadyClock::now();
                     if (!step->use_window) {
                         if (!step->old_tip || m_chain.Tip()->nChainWork > step->old_tip->nChainWork) {
                             // We're in a better position than we were. Return temporarily to release the lock.
@@ -4573,6 +4725,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         m_defer_write_out_wait = true;
                         const bool flushed{FlushStateToDisk(state, FlushStateMode::PERIODIC)};
                         m_defer_write_out_wait = false;
+                        pending_write += SteadyClock::now() - periodic_start;
                         if (!flushed) {
                             SettleWriteOut();
                             DrainWindow(*step);
@@ -4599,10 +4752,15 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 }
                 // The write-out run the periodic write started: waited for with no lock held, before another
                 // block is staged or published.
+                const auto run_start{SteadyClock::now()};
                 if (run_pending) m_blockman.SettleUndoWrites();
+                const auto queue_start{SteadyClock::now()};
+                pending_run += queue_start - run_start;
                 // As a pass does once per step at the tip: do not run ahead of the validation interface
                 // queue by more than a few callbacks (indexes and wallets consume it at their own pace).
                 if (step && step->use_window && m_chainman.m_options.signals) LimitValidationInterfaceQueue(*m_chainman.m_options.signals);
+                pending_queue += SteadyClock::now() - queue_start;
+                pending_periodic += SteadyClock::now() - periodic_start;
             }
         }
         if (interrupted) break;
@@ -7584,8 +7742,12 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
 
 std::shared_ptr<CBlock> ChainstateManager::NewBlock() const
 {
-    return std::shared_ptr<CBlock>(new CBlock, [pool = m_connect_pool](CBlock* block) {
-        if (!pool->Submit([block] { delete block; })) delete block;
+    return std::shared_ptr<CBlock>(new CBlock, [pool = m_connect_pool, times = m_block_free_times](CBlock* block) {
+        auto task{[block, times] {
+            const TaskTimer timer{*times};
+            delete block;
+        }};
+        if (!pool->Submit(std::move(task))) delete block;
     });
 }
 

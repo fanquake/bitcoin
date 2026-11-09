@@ -7,6 +7,7 @@
 #define BITCOIN_UTIL_TIME_H
 
 // The `util/time.h` header is designed to be a drop-in replacement for `chrono`.
+#include <atomic>
 #include <chrono> // IWYU pragma: export
 #include <cstdint>
 #include <ctime>
@@ -101,6 +102,43 @@ constexpr int64_t count_microseconds(std::chrono::microseconds t) { return t.cou
 using HoursDouble = std::chrono::duration<double, std::chrono::hours::period>;
 using SecondsDouble = std::chrono::duration<double, std::chrono::seconds::period>;
 using MillisecondsDouble = std::chrono::duration<double, std::chrono::milliseconds::period>;
+
+/**
+ * The CPU time the calling thread has used so far, where the platform tells (zero elsewhere). Against the
+ * wall time of the same stretch it says how long the thread was not running.
+ */
+std::chrono::nanoseconds ThreadCpuTime();
+
+/**
+ * How often the calling thread has gone to sleep of its own accord so far (its voluntary context switches:
+ * a lock another thread holds, a wait, a read that blocks), where the platform tells (zero elsewhere).
+ */
+uint64_t ThreadSleeps();
+
+/** What one kind of task cost the threads that ran it: counters any thread may add to. */
+struct TaskTimes {
+    std::atomic<int64_t> wall_ns{0};
+    std::atomic<int64_t> cpu_ns{0};
+    std::atomic<uint64_t> sleeps{0};
+};
+
+/** Adds the wall time, the CPU time and the sleeps of its scope to a TaskTimes. */
+class TaskTimer
+{
+    TaskTimes& m_times;
+    const SteadyClock::time_point m_wall_start{SteadyClock::now()};
+    const std::chrono::nanoseconds m_cpu_start{ThreadCpuTime()};
+    const uint64_t m_sleeps_start{ThreadSleeps()};
+
+public:
+    explicit TaskTimer(TaskTimes& times) : m_times{times} {}
+    ~TaskTimer()
+    {
+        m_times.wall_ns.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - m_wall_start).count(), std::memory_order_relaxed);
+        m_times.cpu_ns.fetch_add((ThreadCpuTime() - m_cpu_start).count(), std::memory_order_relaxed);
+        m_times.sleeps.fetch_add(ThreadSleeps() - m_sleeps_start, std::memory_order_relaxed);
+    }
+};
 
 /**
  * DEPRECATED

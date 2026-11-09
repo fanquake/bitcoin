@@ -12,6 +12,7 @@
 #include <sync.h>
 #include <uint256.h>
 #include <util/hasher.h>
+#include <util/time.h>
 
 #include <array>
 #include <atomic>
@@ -339,6 +340,9 @@ public:
     //! For the bench: every pair of sites that waited at all, over all stores of the process. Nothing
     //! in a build with the lock order checks (see ShardMutex).
     static std::vector<LockWait> LockWaits();
+    //! For the bench: the pool's tasks that free a confirmed block's record (ConfirmBlock()), over all
+    //! stores of the process.
+    static const TaskTimes& RecordFreeTimes();
 
 private:
     //! UNWOUND: being taken back (UnwindBlock()); the record is still the block's until that is through.

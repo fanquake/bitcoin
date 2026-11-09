@@ -21,6 +21,7 @@
 #ifdef WIN32
 #include <winsock2.h>
 #else
+#include <sys/resource.h>
 #include <sys/time.h>
 #endif
 
@@ -86,6 +87,24 @@ void MockableSteadyClock::ClearMockTime()
 }
 
 int64_t GetTime() { return GetTime<std::chrono::seconds>().count(); }
+
+std::chrono::nanoseconds ThreadCpuTime()
+{
+#ifdef CLOCK_THREAD_CPUTIME_ID
+    timespec ts;
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) return std::chrono::seconds{ts.tv_sec} + std::chrono::nanoseconds{ts.tv_nsec};
+#endif
+    return {};
+}
+
+uint64_t ThreadSleeps()
+{
+#ifdef RUSAGE_THREAD
+    rusage usage;
+    if (getrusage(RUSAGE_THREAD, &usage) == 0) return static_cast<uint64_t>(usage.ru_nvcsw);
+#endif
+    return 0;
+}
 
 std::string FormatISO8601DateTime(int64_t nTime)
 {

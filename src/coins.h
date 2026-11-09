@@ -718,7 +718,7 @@ private:
         if (i >= m_inputs.size()) return false;
 
         auto& input{m_inputs[i]};
-        input.coin = base->PeekCoin(input.outpoint);
+        input.coin = ReadBase(input.outpoint);
         // Use release so writing coin above happens before the main thread acquires.
         Assert(!input.ready.test_and_set(std::memory_order_release));
         input.ready.notify_one();
@@ -759,7 +759,7 @@ private:
         }
 
         // We will only get here for BIP30 checks, an invalid block, or if the threadpool has not been started.
-        return base->PeekCoin(outpoint);
+        return ReadBase(outpoint);
     }
 
     /// May have zero workers when input fetching is disabled.
@@ -767,6 +767,10 @@ private:
     std::vector<std::future<void>> m_futures{};
 
 protected:
+    //! How a coin is read from the base, by the prefetch workers and by the lookups the prefetch did not
+    //! cover. A subclass may read through a view of the base other than its confirmed state.
+    virtual std::optional<Coin> ReadBase(const COutPoint& outpoint) const { return base->PeekCoin(outpoint); }
+
     //! StopFetching must be called here for two reasons: InputToFetch objects hold references to the
     //! block's outpoints, so they must not outlive the block being connected; and when connecting a
     //! block fails, workers must not keep fetching inputs for the block that was abandoned.

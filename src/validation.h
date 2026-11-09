@@ -522,6 +522,13 @@ struct BlockValidationContext {
     script_verify_flags script_flags;
     //! Whether to verify input scripts at all. False only under -assumevalid.
     bool check_scripts{true};
+    /**
+     * Whether a transaction whose inputs are not all in the view is deferred rather than a consensus
+     * failure. True only while blocks below this one are still being applied (the window is incomplete):
+     * the transaction's outputs are created, its other checks wait for FinishDeferredTransactions() once
+     * every lower block is in. With a complete window a missing input is "bad-txns-inputs-missingorspent".
+     */
+    bool defer_missing_inputs{false};
 };
 
 /** Outputs of the pure ConnectBlock() besides the mutated coins view. */
@@ -532,6 +539,14 @@ struct ConnectBlockResult {
     int64_t sigops_cost{0};
     //! True when the block failed CheckBlock() before any UTXO work was done.
     bool failed_in_check_block{false};
+    //! Indices into block.vtx of the transactions deferred because an input was not in the view yet
+    //! (BlockValidationContext::defer_missing_inputs); their undo slots are empty until
+    //! FinishDeferredTransactions() fills them. The block is not valid until that has run.
+    std::vector<uint32_t> deferred_txs;
+    //! The fees of the transactions checked so far; completed by FinishDeferredTransactions().
+    CAmount fees{0};
+    //! True when deferred transactions kept the coinbase amount check from running.
+    bool coinbase_check_deferred{false};
     //! Phase boundaries, for the caller's bench logging.
     SteadyClock::time_point time_start{};
     SteadyClock::time_point time_checked{};
@@ -555,6 +570,18 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx, const 
                   CCoinsViewCache& view, CCheckQueue<CScriptCheck>* check_queue,
                   ValidationCache& validation_cache, bool just_check,
                   BlockValidationState& state, ConnectBlockResult& result);
+
+/**
+ * The second half of ConnectBlock() for a block that deferred transactions: run with every lower block in
+ * the view, it checks each deferred transaction in full (inputs present and unspent, amounts, maturity,
+ * BIP68, sigops, scripts), spends its inputs into its undo slot, completes the fee total and the sigop
+ * count and runs the coinbase amount check. Pure in the same sense as ConnectBlock(). On failure `state`
+ * holds the reason; the view may be partially updated.
+ */
+bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContext& ctx, const CBlockIndex* pindex,
+                                CCoinsViewCache& view, CCheckQueue<CScriptCheck>* check_queue,
+                                ValidationCache& validation_cache, BlockValidationState& state,
+                                ConnectBlockResult& result);
 
 struct ConnectStep;
 struct StagedConnect;
@@ -592,9 +619,10 @@ public:
     //! changed since it was last written out and as many clean coins as fit per the dbcache setting.
     std::unique_ptr<CoinsStore> m_store GUARDED_BY(cs_main);
 
-    //! Reused CoinsViewOverlay layered on top of m_store and passed to ConnectBlock().
-    //! Reset between calls and flushed only on success, so invalid blocks don't pollute the underlying cache.
-    std::unique_ptr<CoinsViewOverlay> m_connect_block_view GUARDED_BY(cs_main);
+    //! Reused BlockApplyView over m_store, passed to ConnectBlock(): a block's changes reach the store as
+    //! they are made, under the block's identity, and become confirmed state or are unwound by one status
+    //! flip, so an invalid block never pollutes what readers see.
+    std::unique_ptr<BlockApplyView> m_connect_block_view GUARDED_BY(cs_main);
 
     //! This constructor initializes CCoinsViewDB and CCoinsViewErrorCatcher instances, but it
     //! *does not* create a CCoinsViewCache instance by default. This is done separately because the

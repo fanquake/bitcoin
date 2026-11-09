@@ -60,6 +60,7 @@ struct Chain {
             .deployments = deployments,
             .script_flags = GetBlockScriptFlags(block_hash, deployments, Consensus()),
             .check_scripts = check_scripts,
+            .defer_missing_inputs = false,
         };
     }
 
@@ -203,6 +204,135 @@ BOOST_AUTO_TEST_CASE(just_check_leaves_best_block)
     BOOST_CHECK_MESSAGE(ConnectBlock(block, chain.Context(hash), &index, *view, nullptr, chain.cache, /*just_check=*/true, state, result), state.ToString());
     BOOST_CHECK(view->GetBestBlock() == chain.prev_hash);
     BOOST_CHECK(!view->HaveCoin(SEEDED_OUT));
+}
+
+//! Deferral waits only for inputs other blocks produce. A transaction spending an output of a later
+//! transaction of the same block is invalid in order, and invalid with deferral on too, at once.
+BOOST_AUTO_TEST_CASE(deferral_rejects_an_input_from_later_in_the_block)
+{
+    Chain chain;
+    const CAmount fee{COIN / 10};
+    const CTransactionRef later{Spend(COIN - fee)}; // spends the seeded coin
+    CMutableTransaction earlier_mut;
+    earlier_mut.vin.emplace_back(COutPoint{later->GetHash(), 0});
+    earlier_mut.vout.emplace_back(COIN - 2 * fee, CScript() << OP_TRUE);
+    const CTransactionRef earlier{MakeTransactionRef(std::move(earlier_mut))};
+    CBlock block{chain.MakeBlock(later, GetBlockSubsidy(2, chain.Consensus()) + 2 * fee)};
+    block.vtx = {block.vtx[0], earlier, later}; // the spender before the transaction it spends
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    while (!CheckProofOfWork(block.GetHash(), block.nBits, chain.Consensus())) ++block.nNonce;
+    const uint256 hash{block.GetHash()};
+    CBlockIndex index{block};
+    index.pprev = &chain.prev_index;
+    index.nHeight = 2;
+    index.phashBlock = &hash;
+
+    for (const bool defer : {false, true}) {
+        auto view{SeededView(chain, CScript() << OP_TRUE)};
+        BlockValidationContext ctx{chain.Context(hash)};
+        ctx.defer_missing_inputs = defer;
+        BlockValidationState state;
+        ConnectBlockResult result;
+        BOOST_CHECK(!ConnectBlock(block, ctx, &index, *view, nullptr, chain.cache, false, state, result));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-inputs-missingorspent");
+        BOOST_CHECK(result.deferred_txs.empty());
+    }
+}
+
+//! A block whose input is created by a lower block that is not in the view yet is applied with the
+//! transaction deferred, and completed once the lower block is in; the result is what connecting in order
+//! gives. Without deferral the same block is simply invalid.
+BOOST_AUTO_TEST_CASE(deferred_transaction_completes_when_input_arrives)
+{
+    Chain chain;
+    const CAmount fee{COIN / 10};
+    // Block A at height 2 spends the seeded coin into OP_TRUE; block B at height 3 spends A's output.
+    const CTransactionRef spend_a{Spend(COIN - fee)};
+    const CBlock block_a{chain.MakeBlock(spend_a, GetBlockSubsidy(2, chain.Consensus()) + fee)};
+    const uint256 hash_a{block_a.GetHash()};
+    CBlockIndex index_a{block_a};
+    index_a.pprev = &chain.prev_index;
+    index_a.nHeight = 2;
+    index_a.phashBlock = &hash_a;
+
+    CMutableTransaction spend_b_mut;
+    spend_b_mut.vin.emplace_back(COutPoint{spend_a->GetHash(), 0});
+    spend_b_mut.vout.emplace_back(COIN - 2 * fee, CScript() << OP_TRUE);
+    const CTransactionRef spend_b{MakeTransactionRef(std::move(spend_b_mut))};
+    CMutableTransaction coinbase_b;
+    coinbase_b.vin.emplace_back(COutPoint{}, CScript() << 3 << OP_0);
+    coinbase_b.vout.emplace_back(GetBlockSubsidy(3, chain.Consensus()) + fee, CScript() << OP_TRUE);
+    CBlock block_b;
+    block_b.nVersion = 4;
+    block_b.hashPrevBlock = hash_a;
+    block_b.nTime = block_a.nTime + 1;
+    block_b.nBits = block_a.nBits;
+    block_b.vtx.push_back(MakeTransactionRef(std::move(coinbase_b)));
+    block_b.vtx.push_back(spend_b);
+    block_b.hashMerkleRoot = BlockMerkleRoot(block_b);
+    while (!CheckProofOfWork(block_b.GetHash(), block_b.nBits, chain.Consensus())) ++block_b.nNonce;
+    const uint256 hash_b{block_b.GetHash()};
+    CBlockIndex index_b{block_b};
+    index_b.pprev = &index_a;
+    index_b.nHeight = 3;
+    index_b.phashBlock = &hash_b;
+
+    // In order, for reference.
+    auto in_order{SeededView(chain, CScript() << OP_TRUE)};
+    {
+        BlockValidationState state;
+        ConnectBlockResult result;
+        BOOST_REQUIRE(ConnectBlock(block_a, chain.Context(hash_a), &index_a, *in_order, nullptr, chain.cache, false, state, result));
+        BOOST_REQUIRE_MESSAGE(ConnectBlock(block_b, chain.Context(hash_b), &index_b, *in_order, nullptr, chain.cache, false, state, result), state.ToString());
+    }
+
+    // B first, with deferral allowed: its transaction is deferred, its outputs exist, the coinbase check waits.
+    auto view{SeededView(chain, CScript() << OP_TRUE)};
+    view->SetBestBlock(hash_a); // B's parent is A; the view claims to be at A though A's changes are missing
+    BlockValidationContext ctx_b{chain.Context(hash_b)};
+    ctx_b.defer_missing_inputs = true;
+    BlockValidationState state_b;
+    ConnectBlockResult result_b;
+    BOOST_REQUIRE_MESSAGE(ConnectBlock(block_b, ctx_b, &index_b, *view, nullptr, chain.cache, false, state_b, result_b), state_b.ToString());
+    BOOST_REQUIRE_EQUAL(result_b.deferred_txs.size(), 1U);
+    BOOST_CHECK_EQUAL(result_b.deferred_txs[0], 1U);
+    BOOST_CHECK(result_b.coinbase_check_deferred);
+    BOOST_CHECK(view->HaveCoin(COutPoint{spend_b->GetHash(), 0}));
+    BOOST_CHECK(result_b.undo.vtxundo.size() == 1 && result_b.undo.vtxundo[0].vprevout.empty());
+
+    // Now A's changes arrive (as the lower block's apply would bring them), and B is finished.
+    view->AddCoin(COutPoint{spend_a->GetHash(), 0}, Coin{spend_a->vout[0], 2, false}, false);
+    view->SpendCoin(SEEDED_OUT);
+    BOOST_REQUIRE_MESSAGE(FinishDeferredTransactions(block_b, ctx_b, &index_b, *view, nullptr, chain.cache, state_b, result_b), state_b.ToString());
+    BOOST_CHECK(result_b.deferred_txs.empty());
+    BOOST_CHECK(!result_b.coinbase_check_deferred);
+    BOOST_CHECK_EQUAL(result_b.fees, fee);
+    BOOST_REQUIRE_EQUAL(result_b.undo.vtxundo[0].vprevout.size(), 1U);
+    BOOST_CHECK_EQUAL(result_b.undo.vtxundo[0].vprevout[0].out.nValue, COIN - fee);
+    BOOST_CHECK(!view->HaveCoin(COutPoint{spend_a->GetHash(), 0}));
+    BOOST_CHECK(view->HaveCoin(COutPoint{spend_b->GetHash(), 0}));
+    BOOST_CHECK(view->HaveCoin(COutPoint{block_b.vtx[0]->GetHash(), 0}));
+    BOOST_CHECK_EQUAL(view->HaveCoin(SEEDED_OUT), in_order->HaveCoin(SEEDED_OUT));
+
+    // The deferred transaction's input never arriving is a consensus failure of B, attributed as such.
+    {
+        auto lonely{SeededView(chain, CScript() << OP_TRUE)};
+        lonely->SetBestBlock(hash_a);
+        BlockValidationState state;
+        ConnectBlockResult result;
+        BOOST_REQUIRE(ConnectBlock(block_b, ctx_b, &index_b, *lonely, nullptr, chain.cache, false, state, result));
+        BOOST_CHECK(!FinishDeferredTransactions(block_b, ctx_b, &index_b, *lonely, nullptr, chain.cache, state, result));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-inputs-missingorspent");
+    }
+    // Without deferral the block is invalid at once, as today.
+    {
+        auto strict{SeededView(chain, CScript() << OP_TRUE)};
+        strict->SetBestBlock(hash_a);
+        BlockValidationState state;
+        ConnectBlockResult result;
+        BOOST_CHECK(!ConnectBlock(block_b, chain.Context(hash_b), &index_b, *strict, nullptr, chain.cache, false, state, result));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-inputs-missingorspent");
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

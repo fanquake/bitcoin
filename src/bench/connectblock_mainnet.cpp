@@ -101,6 +101,7 @@ struct MainnetBlock {
             .deployments = deployments,
             .script_flags = GetBlockScriptFlags(block_hash, deployments, params->GetConsensus()),
             .check_scripts = check_scripts,
+            .defer_missing_inputs = false,
         };
     }
 };

@@ -590,6 +590,7 @@ bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContex
 
 struct ConnectStep;
 struct StagedConnect;
+struct WindowSync;
 
 /** @see Chainstate::FlushStateToDisk */
 inline constexpr std::array FlushStateModeNames{"NONE", "IF_NEEDED", "PERIODIC", "FORCE_FLUSH", "FORCE_SYNC"};
@@ -1068,6 +1069,10 @@ protected:
     bool StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void RunStagedConnect(StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void RunConnectTask(StagedConnect& staged);
+    //! A windowed block's worker has applied it: mark it so and run the continuations this makes possible.
+    void OnWindowBlockApplied(StagedConnect& staged);
+    //! Finish a window block's deferred transactions and apply the result; the block is marked finished.
+    void RunContinuation(StagedConnect& s, WindowSync& sync);
     bool PublishConnectTip(
         BlockValidationState& state,
         StagedConnect& staged,

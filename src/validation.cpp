@@ -20,6 +20,7 @@
 #include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <core_memusage.h>
 #include <cuckoocache.h>
 #include <flatfile.h>
 #include <hash.h>
@@ -3549,6 +3550,23 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     return true;
 }
 
+struct StagedConnect;
+
+/**
+ * What the window's workers share with the connector thread: the blocks in flight in height order, and
+ * for each whether its worker has applied it. The worker that applies the last block below a block that
+ * deferred transactions finishes them (the continuation), so that at publication there is nothing left
+ * to check but the conflict count. Held by shared pointer by the step and by every task, so it outlives
+ * whichever of them is last.
+ */
+struct WindowSync {
+    Mutex mutex;
+    std::condition_variable cv;
+    //! The blocks in flight, lowest unpublished first. An entry is removed by the connector thread before
+    //! the block is published and freed, so a pointer taken under the mutex is valid while it is held.
+    std::deque<StagedConnect*> slots GUARDED_BY(mutex);
+};
+
 /**
  * A block connection in flight: staged, validated and published by
  * Chainstate::StageConnectTip(), RunStagedConnect() or RunConnectTask(), and
@@ -3578,14 +3596,26 @@ struct StagedConnect {
     ConnectBlockResult result;
     bool ok{false};
     //! Validated on a connect pool worker (RunConnectTask), scripts inline, inputs lower blocks have not
-    //! produced yet deferred; `done` is the worker's future, invalid when the task ran on the caller.
+    //! produced yet deferred; `done` is the worker's future (invalid when the task ran on the caller),
+    //! which resolves after the worker's continuation walk; the connector waits on `applied` instead.
     bool windowed{false};
     std::future<void> done;
+    //! The window's shared state, and this block's part of it, all under its mutex: the worker has
+    //! applied the block; it deferred transactions that a continuation must finish; a worker has taken
+    //! that continuation up; it is done (`ok`, `state` and `result` then hold its outcome).
+    std::shared_ptr<WindowSync> sync;
+    bool applied{false};
+    bool needs_continuation{false};
+    bool claimed{false};
+    bool finished{false};
     //! The worker could not read the block from disk: a system error, fatal at publication.
     bool read_failed{false};
     //! Whether the block's undo data is to be written: not for a block connected before, which has it on
     //! disk (every block of a -reindex-chainstate). Decided at staging.
     bool write_undo{true};
+    //! What the block holds in memory until it is published (WindowBlockBytes()), written by its worker
+    //! before `applied` is set.
+    size_t bytes{0};
     SteadyClock::time_point time_start{};
     SteadyClock::time_point time_read{};
     SteadyClock::time_point time_connected{};
@@ -3620,6 +3650,23 @@ bool Chainstate::StageConnectTip(BlockValidationState& state, CBlockIndex* pinde
     return true;
 }
 
+//! What a window block holds in memory between its validation and its publication, beyond what the young
+//! tier counts for the coins it created: the block, its undo data and the store's record of its changes,
+//! an item for each with the coin it spent.
+static size_t WindowBlockBytes(const CBlock& block, const CBlockUndo& undo)
+{
+    size_t bytes{RecursiveDynamicUsage(block) + memusage::DynamicUsage(undo.vtxundo)};
+    for (const CTxUndo& tx : undo.vtxundo) {
+        bytes += memusage::DynamicUsage(tx.vprevout);
+        // Twice: the undo data's coin and the record's.
+        for (const Coin& coin : tx.vprevout) bytes += 2 * coin.DynamicMemoryUsage();
+    }
+    size_t changes{0};
+    for (const CTransactionRef& tx : block.vtx) changes += tx->vin.size() + tx->vout.size();
+    // A record item is an outpoint, a coin and the entry's state.
+    return bytes + changes * 96;
+}
+
 //! What a window block's worker does with the block's undo data once it is complete, so that the connector
 //! thread, which every block passes through, does not: measure it if it is to be written, free it if it is
 //! not. Freeing the undo data of a late block takes about as long as everything else its publication does.
@@ -3637,31 +3684,116 @@ void Chainstate::RunConnectTask(StagedConnect& staged)
     // On a connect pool worker, no lock held. The block is read here if it was not in memory; then the pure
     // core runs against the block's view, scripts inline (the check queue is the tip's), with the deferral
     // staging decided. The staged state is this task's alone until its future has been waited for.
+    //
+    // Whatever happens, the block ends up marked applied, or the connector would wait for it forever: an
+    // exception the core let through is a defect, and the node is asked to stop (the connector finds the
+    // block not ok with the error in its state).
+    struct AppliedGuard {
+        Chainstate& chainstate;
+        StagedConnect& staged;
+        bool done{false};
+        ~AppliedGuard()
+        {
+            if (done) return;
+            staged.ok = false;
+            if (staged.state.IsValid()) FatalError(chainstate.m_chainman.GetNotifications(), staged.state, _("Block validation threw an unexpected exception."));
+            if (staged.sync) chainstate.OnWindowBlockApplied(staged);
+        }
+    } guard{*this, staged};
     if (!staged.block) {
         auto block{m_chainman.NewBlock()};
         if (!m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash())) {
             staged.read_failed = true;
             staged.time_read = staged.time_connected = SteadyClock::now();
+            guard.done = true;
+            if (staged.sync) OnWindowBlockApplied(staged);
             return;
         }
         staged.block = std::move(block);
     }
     staged.time_read = SteadyClock::now();
     try {
+        staged.view->Prefetch(*staged.block);
         staged.ok = ::ConnectBlock(*staged.block, *staged.ctx, staged.pindex, *staged.view, /*check_queue=*/nullptr,
                                    m_chainman.m_validation_cache, /*just_check=*/false, staged.state, staged.result);
         // With deferred transactions the undo data is complete only after the continuation.
         if (staged.ok && staged.result.deferred_txs.empty()) SettleUndo(staged);
+        // The block's changes reach the store here, on its worker, grouped by shard.
+        if (staged.ok) staged.view->ApplyChanges();
     } catch (const std::logic_error& e) {
-        // The store refused a change the core did not expect: a defect, not a bad block. The error is
-        // reported at publication, where the node stops rather than confirm what it does not understand.
+        // The store refused a change the core did not expect: a defect, not a bad block. The node stops
+        // rather than confirm what it does not understand; publication reports the block not ok.
         staged.ok = false;
-        staged.state.Error(strprintf("ConnectBlock: %s", e.what()));
+        FatalError(m_chainman.GetNotifications(), staged.state, Untranslated(strprintf("ConnectBlock: %s", e.what())));
     } catch (const std::runtime_error& e) {
         staged.ok = false;
-        staged.state.Error(strprintf("ConnectBlock: %s", e.what()));
+        FatalError(m_chainman.GetNotifications(), staged.state, Untranslated(strprintf("ConnectBlock: %s", e.what())));
     }
     staged.time_connected = SteadyClock::now();
+    if (staged.sync) staged.bytes = WindowBlockBytes(*staged.block, staged.result.undo) + staged.view->DynamicMemoryUsage();
+    guard.done = true;
+    if (staged.sync) OnWindowBlockApplied(staged);
+}
+
+void Chainstate::OnWindowBlockApplied(StagedConnect& staged)
+{
+    // The block is applied: the connector may publish it once nothing is left to finish. Then the walk: from
+    // the lowest block in flight upwards, every block whose lower blocks are all applied and that deferred
+    // transactions is claimed for its continuation, since every input it waited for is in the store now;
+    // the walk stops at the first block still applying, whose own worker takes it up from there. The
+    // continuations of different blocks are independent of each other (a deferred transaction's outputs
+    // are created when its block is applied, and a conflict is settled at the batch), so the lowest one
+    // runs here, which the publisher waits for first, and every other one is a task of its own on the pool,
+    // beside the appliers; run one after another on this worker they were a serial segment the whole
+    // window waited behind. `staged` is not touched after its flags are set: the connector may publish and
+    // free it meanwhile.
+    std::shared_ptr<WindowSync> sync{staged.sync};
+    std::vector<StagedConnect*> ready;
+    {
+        LOCK(sync->mutex);
+        staged.applied = true;
+        staged.needs_continuation = staged.ok && !staged.result.deferred_txs.empty();
+        if (staged.needs_continuation) m_chainman.m_window_deferred_txs += staged.result.deferred_txs.size();
+        sync->cv.notify_all();
+        for (StagedConnect* s : sync->slots) {
+            if (!s->applied) break;
+            if (!s->needs_continuation || s->claimed) continue;
+            s->claimed = true;
+            ready.push_back(s);
+        }
+    }
+    // The others go to the front of the pool's queue, lowest first, ahead of the first passes of the
+    // blocks above them: a continuation is what the publisher waits for, a first pass only what keeps the
+    // pool busy, and behind forty first passes the publisher waited while appliers idled.
+    for (size_t i{ready.size()}; i-- > 1;) {
+        StagedConnect* s{ready[i]};
+        if (!m_chainman.m_connect_pool->Submit([this, s, sync] { RunContinuation(*s, *sync); }, /*front=*/true)) RunContinuation(*s, *sync);
+    }
+    if (!ready.empty()) RunContinuation(*ready[0], *sync);
+}
+
+void Chainstate::RunContinuation(StagedConnect& s, WindowSync& sync)
+{
+    try {
+        s.ok = FinishDeferredTransactions(*s.block, *s.ctx, s.pindex, *s.view, /*check_queue=*/nullptr,
+                                          m_chainman.m_validation_cache, s.state, s.result);
+        if (s.ok) {
+            s.view->ApplyChanges();
+            SettleUndo(s);
+        }
+    } catch (const std::logic_error& e) {
+        // As in RunConnectTask: a defect, the node stops, the block is reported not ok.
+        s.ok = false;
+        FatalError(m_chainman.GetNotifications(), s.state, Untranslated(strprintf("FinishDeferredTransactions: %s", e.what())));
+    } catch (const std::runtime_error& e) {
+        s.ok = false;
+        FatalError(m_chainman.GetNotifications(), s.state, Untranslated(strprintf("FinishDeferredTransactions: %s", e.what())));
+    }
+    {
+        LOCK(sync.mutex);
+        s.finished = true;
+    }
+    sync.cv.notify_all();
 }
 
 
@@ -3714,8 +3846,9 @@ bool Chainstate::PublishConnectTip(
     {
         if (staged.windowed) ++m_chainman.m_window_blocks;
         if (staged.ok && !staged.result.deferred_txs.empty()) {
-            // Every lower block is in the view now: finish what the block deferred.
-            m_chainman.m_window_deferred_txs += staged.result.deferred_txs.size();
+            // Every lower block is in the view now: finish what the block deferred. In the window a
+            // continuation did this on a worker already; this is the path for a block staged without one.
+            if (!staged.windowed) m_chainman.m_window_deferred_txs += staged.result.deferred_txs.size();
             staged.ok = FinishDeferredTransactions(*block_to_connect, *staged.ctx, pindexNew, view, &m_chainman.GetCheckQueue(),
                                                    m_chainman.m_validation_cache, staged.state, staged.result);
         }
@@ -3928,7 +4061,24 @@ struct ConnectStep {
     //! The blocks staged and not yet published, in height order; the next block of the batch to stage.
     std::deque<std::unique_ptr<StagedConnect>> in_flight;
     size_t next_in_batch{0};
+    //! The window's shared state (see WindowSync), when the window is in use.
+    std::shared_ptr<WindowSync> sync;
+    //! What the block published last held in memory: the estimate for a block still being validated.
+    size_t last_block_bytes{0};
 };
+
+//! The share of the coins cache budget the window's blocks may hold in memory beyond it.
+static constexpr size_t WINDOW_BYTES_SHARE{8};
+
+//! The memory the window's blocks hold: each applied block's own count, and for a block still being
+//! validated that of the block published last, the best guess there is before its worker knows.
+static size_t WindowBytes(const ConnectStep& step)
+{
+    LOCK(step.sync->mutex);
+    size_t bytes{0};
+    for (const StagedConnect* staged : step.sync->slots) bytes += staged->applied ? staged->bytes : step.last_block_bytes;
+    return bytes;
+}
 
 void Chainstate::DrainWindow(ConnectStep& step)
 {
@@ -3939,6 +4089,12 @@ void Chainstate::DrainWindow(ConnectStep& step)
     for (auto it{step.in_flight.rbegin()}; it != step.in_flight.rend(); ++it) {
         StagedConnect& staged{**it};
         if (staged.done.valid()) staged.done.wait();
+        if (staged.sync) {
+            // A continuation run by another block's worker ends on its own; wait for it before the view goes.
+            WAIT_LOCK(staged.sync->mutex, lock);
+            staged.sync->cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(staged.sync->mutex) { return !staged.claimed || staged.finished; });
+            std::erase(staged.sync->slots, &staged);
+        }
         if (staged.view && staged.view->HasBlock()) staged.view->Unwind();
     }
     step.in_flight.clear();
@@ -4223,6 +4379,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         const bool retry{std::exchange(m_window_retry_serial, false)};
                         step->use_window = !retry && was_in_ibd && !step->blocks_disconnected && m_chainman.ConnectWindow() > 1 &&
                                            m_chain.Height() >= m_chainman.GetConsensus().BIP34Height;
+                        if (step->use_window) step->sync = std::make_shared<WindowSync>();
                     }
 
                     if (pass_over) {
@@ -4266,10 +4423,15 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             // the step's target. The tip still moves one block at a time, with
             // its notification per block; what overlaps is the validation.
             const size_t window{step->use_window ? static_cast<size_t>(m_chainman.ConnectWindow()) : 1};
+            const size_t window_bytes_cap{WITH_LOCK(::cs_main, return m_coinstip_cache_size_bytes) / WINDOW_BYTES_SHARE};
             bool step_over{false};
             while (!step_over) {
                 // Keep the window full.
                 while (step->in_flight.size() < window) {
+                    // The window is bounded by bytes as well as by blocks: the blocks in flight, their undo
+                    // data and the store's records are not in the coins cache budget, so they get a share of
+                    // their own. One block is always in flight, whatever it weighs.
+                    if (step->use_window && !step->in_flight.empty() && WindowBytes(*step) >= window_bytes_cap) break;
                     if (step->next_in_batch == step->batch.size()) {
                         if (!step->use_window) break; // the pass loop plans the next batch
                         LOCK(cs_main);
@@ -4324,6 +4486,8 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         if (!staged->windowed) RunStagedConnect(*staged);
                     }
                     if (staged->windowed) {
+                        staged->sync = step->sync;
+                        WITH_LOCK(step->sync->mutex, step->sync->slots.push_back(staged.get()));
                         auto future{m_chainman.m_connect_pool->Submit([this, task = staged.get()] { RunConnectTask(*task); })};
                         if (future) {
                             staged->done = std::move(*future);
@@ -4335,10 +4499,22 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                 }
                 if (step->in_flight.empty()) break;
 
-                // The lowest block in flight: wait for its worker, then publish it.
+                // The lowest block in flight: wait for its worker to apply it and for its continuation, if it
+                // deferred transactions, then publish it. (Not for the worker's future: that resolves after
+                // the worker's continuation walk, which may be finishing a higher block meanwhile.)
                 std::unique_ptr<StagedConnect> staged{std::move(step->in_flight.front())};
                 step->in_flight.pop_front();
-                if (staged->done.valid()) staged->done.wait();
+                if (staged->sync) {
+                    WAIT_LOCK(staged->sync->mutex, lock);
+                    staged->sync->cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(staged->sync->mutex) {
+                        return staged->applied && (!staged->needs_continuation || staged->finished);
+                    });
+                    Assert(!staged->sync->slots.empty() && staged->sync->slots.front() == staged.get());
+                    staged->sync->slots.pop_front();
+                    step->last_block_bytes = staged->bytes;
+                } else if (staged->done.valid()) {
+                    staged->done.wait();
+                }
                 // Do not run ahead of the undo writes by more than the backlog limit.
                 m_blockman.m_effects.WaitForBacklogBelow(node::BlockManager::MAX_UNDO_BACKLOG_BYTES);
                 bool run_pending{false};

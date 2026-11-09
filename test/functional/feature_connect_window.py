@@ -68,9 +68,13 @@ class ConnectWindowTest(BitcoinTestFramework):
         wallet = MiniWallet(node)
         self.generate(wallet, 101, sync_fun=self.no_op)
         self.log.info(f"Mining {NUM_TX_BLOCKS} blocks of {TXS_PER_BLOCK} chained transactions each")
+        utxo = wallet.get_utxo()
         for _ in range(NUM_TX_BLOCKS):
-            # Each chain spends the previous block's output first, so every block depends on the one below.
-            wallet.send_self_transfer_chain(from_node=node, chain_length=TXS_PER_BLOCK)
+            # Each block's chain starts from the last output of the block below, so every block depends on the
+            # one below it: validated side by side, the first spend of a block finds its input only once the
+            # lower block has produced it.
+            chain = wallet.send_self_transfer_chain(from_node=node, chain_length=TXS_PER_BLOCK, utxo_to_spend=utxo)
+            utxo = chain[-1]["new_utxo"]
             self.generate(node, 1, sync_fun=self.no_op)
         assert_equal(node.getmempoolinfo()["size"], 0)
 
@@ -82,19 +86,21 @@ class ConnectWindowTest(BitcoinTestFramework):
             assert_equal(node.gettxoutsetinfo()["hash_serialized_3"], utxo)
 
     def stop_and_check_window_used(self, i, used):
-        """Stop the node and check its shutdown summary: the window's counters are logged only if it was used."""
+        """Stop the node and check its shutdown summary: the window's counters are logged only if it was used.
+        Returns the number of transactions deferred, which depends on the workers' timing and is reported,
+        not required, since the state checks hold either way."""
         expected = ["Connect window:"] if used else []
         unexpected = [] if used else ["Connect window:"]
         with self.nodes[i].assert_debug_log(expected_msgs=expected, unexpected_msgs=unexpected):
             self.stop_node(i)
-        if used:
-            with open(self.nodes[i].debug_log_path, encoding="utf-8") as log:
-                summary = [line for line in log if "Connect window:" in line][-1]
-            blocks, deferred = (int(n) for n in re.search(r"(\d+) blocks validated.*?(\d+) transactions deferred", summary).groups())
-            assert blocks > 0
-            # How many transactions waited for a lower block depends on the workers' timing; it is reported,
-            # not required, since the state checks above hold either way.
-            self.log.info(f"node {i}: {blocks} blocks in the window, {deferred} transactions deferred")
+        if not used:
+            return 0
+        with open(self.nodes[i].debug_log_path, encoding="utf-8") as log:
+            summary = [line for line in log if "Connect window:" in line][-1]
+        blocks, deferred = (int(n) for n in re.search(r"(\d+) blocks validated.*?(\d+) transactions deferred", summary).groups())
+        assert blocks > 0
+        self.log.info(f"node {i}: {blocks} blocks in the window, {deferred} transactions deferred")
+        return deferred
 
     def test_sync(self):
         self.log.info("Sync the chain with a window of four and of one, and compare chains and UTXO sets")
@@ -104,6 +110,16 @@ class ConnectWindowTest(BitcoinTestFramework):
         self.check_same_state(self.nodes[:3])
         self.stop_and_check_window_used(1, used=True)
         self.stop_and_check_window_used(2, used=False)
+
+        self.log.info("Reindex the chainstate through the window: every block is on disk, so the window is full")
+        # Over the network the blocks arrived one at a time and were mostly validated alone. Here the connect
+        # loop reads them from disk as fast as the workers take them, so blocks overlap and the transactions
+        # that spend the block below are deferred and finished by a continuation.
+        self.start_node(1, extra_args=self.extra_args[1] + ["-reindex-chainstate"])
+        self.wait_until(lambda: self.nodes[1].getblockcount() == self.nodes[0].getblockcount(), timeout=120)
+        self.check_same_state([self.nodes[0], self.nodes[1]])
+        deferred = self.stop_and_check_window_used(1, used=True)
+        self.log.info(f"reindex-chainstate deferred {deferred} transactions")
 
     def test_invalid_block_in_window(self):
         node0, node3 = self.nodes[0], self.nodes[3]

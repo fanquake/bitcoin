@@ -386,7 +386,7 @@ private:
         std::vector<Undo> record GUARDED_BY(mutex);
     };
     //! Enough slots for the widest window and the tip view, with room to spare.
-    static constexpr size_t MAX_WINDOW_SLOTS{64};
+    static constexpr size_t MAX_WINDOW_SLOTS{128};
     //! Which of its shard's lists an entry is on.
     enum List : uint8_t { LIST_NONE, LIST_DIRTY, LIST_CLEAN };
     /**

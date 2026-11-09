@@ -5113,7 +5113,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
             return;
         }
 
-        std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
+        std::shared_ptr<CBlock> pblock{m_chainman.NewBlock()};
         {
             // Hash the transactions from the wire bytes, on the hashing pool's workers for a large block.
             const auto time_start{SteadyClock::now()};

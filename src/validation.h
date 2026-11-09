@@ -96,7 +96,9 @@ inline constexpr uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES{550_MiB};
 inline constexpr int MAX_SCRIPTCHECK_THREADS{15};
 
 /** Maximum number of dedicated threads allowed for prefetching block input prevouts */
-inline constexpr int32_t MAX_PREVOUTFETCH_THREADS{16};
+inline constexpr int32_t MAX_PREVOUTFETCH_THREADS{32};
+//! The most blocks the connect window validates at once (-connectwindow); one batch of ActivateBestChain.
+inline constexpr int MAX_CONNECT_WINDOW{64};
 
 /** Current sync state passed to tip changed callbacks. */
 enum class SynchronizationState {
@@ -535,6 +537,9 @@ struct BlockValidationContext {
 struct ConnectBlockResult {
     //! Undo data for the connected block; empty when connection failed.
     CBlockUndo undo;
+    //! The serialized size of `undo`, when it was measured ahead of FinishConnectBlock() (a window block's
+    //! worker does, so that the connector thread need not walk the undo data).
+    std::optional<uint32_t> undo_size;
     int num_inputs{0};
     int64_t sigops_cost{0};
     //! True when the block failed CheckBlock() before any UTXO work was done.
@@ -619,10 +624,15 @@ public:
     //! changed since it was last written out and as many clean coins as fit per the dbcache setting.
     std::unique_ptr<CoinsStore> m_store GUARDED_BY(cs_main);
 
-    //! Reused BlockApplyView over m_store, passed to ConnectBlock(): a block's changes reach the store as
-    //! they are made, under the block's identity, and become confirmed state or are unwound by one status
-    //! flip, so an invalid block never pollutes what readers see.
-    std::unique_ptr<BlockApplyView> m_connect_block_view GUARDED_BY(cs_main);
+    //! The views blocks are connected into, one per block in flight, each a BlockApplyView over m_store: a
+    //! block's changes reach the store once it is validated, in one pass per shard under the block's identity, and become confirmed
+    //! state or are unwound by one status flip, so an invalid block never pollutes what readers see. The
+    //! first is the tip's (prefetch on the connect pool, the check queue); the others are the window's,
+    //! each applied by a connect pool worker.
+    std::vector<std::unique_ptr<BlockApplyView>> m_apply_views GUARDED_BY(cs_main);
+    BlockApplyView& TipView() EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return *m_apply_views.front(); }
+    //! A view with no block open, or nullptr when every view is in use.
+    BlockApplyView* FreeApplyView() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! This constructor initializes CCoinsViewDB and CCoinsViewErrorCatcher instances, but it
     //! *does not* create a CCoinsViewCache instance by default. This is done separately because the
@@ -632,8 +642,8 @@ public:
     //! All arguments forwarded onto CCoinsViewDB.
     CoinsViews(DBParams db_params, CoinsViewOptions options);
 
-    //! Initialize the CCoinsViewCache member.
-    void InitCache(int32_t prevoutfetch_threads) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Initialize the tier and `window` views over it, the connect pool shared by them.
+    void InitCache(util::NotNullSharedPtr<ThreadPool> connect_pool, int window) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 };
 
 enum class CoinsCacheSizeState
@@ -1034,29 +1044,44 @@ protected:
     void FinishConnectStep(ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
 
     /**
-     * Connecting a block to the tip happens in three parts, which together
-     * are what ConnectTip used to be:
-     *  - StageConnectTip(): with the block already read (by the caller, with
-     *    no lock held unless the step is a reorg), start the prefetch of the
-     *    coins it spends into the overlay, decide the node policy
-     *    (BlockValidationContext). Under cs_main.
-     *  - RunStagedConnect(): the pure ConnectBlock() into the overlay. Reads
-     *    only what staging captured and the overlay; ActivateBestChain holds
-     *    cs_main across it for now.
-     *  - PublishConnectTip(): queue the undo write, flush the overlay into
-     *    the shared cache, update mempool and tip, notify. Under cs_main and
-     *    the mempool lock. BlockConnected follows the undo write through the
-     *    effects executor.
+     * Connecting a block happens in three parts, which together are what
+     * ConnectTip used to be:
+     *  - StageConnectTip(): open the block in a view of the store, decide the
+     *    node policy (BlockValidationContext). At the tip the block is already
+     *    read (by the caller, with no lock held unless the step is a reorg)
+     *    and the prefetch of the coins it spends is started; in the window the
+     *    block takes a free view, defers the inputs lower blocks have not
+     *    produced yet, and is read by its worker. Under cs_main.
+     *  - RunStagedConnect() at the tip: the pure ConnectBlock() into the view
+     *    with the check queue, under cs_main. RunConnectTask() in the window:
+     *    the same on a connect pool worker with its scripts inline and no lock
+     *    held, reading only what staging captured and the store through the
+     *    block's view.
+     *  - PublishConnectTip(): finish what the block deferred, now that every
+     *    lower block is in; queue the undo write, confirm the block in the
+     *    store, update mempool and tip, notify. Under cs_main and the mempool
+     *    lock. BlockConnected follows the undo write through the effects
+     *    executor.
      * All three return true unless a system error occurred, or, for
      * PublishConnectTip, unless the block was invalid (state says which).
      */
     bool StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     void RunStagedConnect(StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void RunConnectTask(StagedConnect& staged);
     bool PublishConnectTip(
         BlockValidationState& state,
         StagedConnect& staged,
         const kernel::ChainstateRole& role,
         DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    //! Wait for the window's workers and take back every block still in flight, highest first.
+    void DrainWindow(ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /**
+     * The tip moved from `pindexFork` to `pindexNewTip`: UpdatedBlockTip through the effects executor
+     * (behind the blocks' BlockConnected signals) and the kernel's blockTip notification. Returns true when
+     * the latter asked to stop. Nothing is sent for a chainstate that is not the active one or when the two
+     * blocks are the same.
+     */
+    bool NotifyTipAdvanced(CBlockIndex* pindexNewTip, const CBlockIndex* pindexFork, bool still_in_ibd) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     /**
      * The assumevalid decision for a block: nullptr when its scripts are not
@@ -1110,6 +1135,12 @@ protected:
 
     NodeClock::time_point m_next_write{NodeClock::time_point::max()};
     const CBlockIndex* m_last_flushed_block GUARDED_BY(::cs_main){nullptr};
+    //! Set by the connect window around its periodic write: a write-out run started there is waited for
+    //! by the connector once it has released cs_main, not inside FlushStateToDisk().
+    bool m_defer_write_out_wait GUARDED_BY(::cs_main){false};
+    //! A block failed in the connect window: the next step connects it alone, which decides whether it is
+    //! invalid (PublishConnectTip()).
+    bool m_window_retry_serial GUARDED_BY(::cs_main){false};
 
     /**
      * In case of an invalid snapshot, rename the coins leveldb directory so
@@ -1217,6 +1248,12 @@ private:
     //! read at shutdown.
     std::atomic<uint64_t> m_blocks_accepted{0};
     std::atomic<int64_t> m_accept_time_us{0};
+    //! The window's: blocks validated on a connect pool worker, transactions deferred to their block's
+    //! confirmation because a lower block had not produced an input yet, and spends a lower block took from
+    //! a higher one (the higher block failed). Written under cs_main, read at shutdown.
+    std::atomic<uint64_t> m_window_blocks{0};
+    std::atomic<uint64_t> m_window_deferred_txs{0};
+    std::atomic<uint64_t> m_window_conflicts{0};
 
     std::thread m_connector_thread;
     mutable Mutex m_connector_mutex;
@@ -1706,6 +1743,19 @@ public:
     std::optional<int> BlocksAheadOfTip() const LOCKS_EXCLUDED(::cs_main);
 
     CCheckQueue<CScriptCheck>& GetCheckQueue() { return m_script_check_queue; }
+    //! The connect pool: block appliers of the window during initial block download, input prefetchers at
+    //! the tip (sized by -prevoutfetchthreads). Shared by every chainstate's views.
+    const util::NotNullSharedPtr<ThreadPool> m_connect_pool;
+    /**
+     * A block to be read or received, whose destruction runs on the connect pool. A block is destroyed on
+     * whichever thread drops its last reference, which for a connected block is the scheduler, in its
+     * BlockConnected callback: thousands of frees per block on the one thread every notification goes
+     * through, which at the window's block rate is the thread that bounds it. The deleter hands the
+     * destruction to the pool instead, and deletes in place when the pool has no workers.
+     */
+    std::shared_ptr<CBlock> NewBlock() const;
+    //! How many blocks the window validates at once: -connectwindow, or the connect pool's worker count.
+    int ConnectWindow() const;
 
     ~ChainstateManager() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 

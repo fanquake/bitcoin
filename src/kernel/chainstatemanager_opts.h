@@ -49,8 +49,12 @@ struct ChainstateManagerOpts {
     ValidationSignals* signals{nullptr};
     //! Number of script check worker threads. Zero means no parallel verification.
     int worker_threads_num{0};
-    //! Number of worker threads used for prefetching block input prevouts. Zero means no parallel fetching.
+    //! Number of worker threads of the connect pool: they apply the blocks of the connect window during
+    //! initial block download and prefetch block input prevouts at the tip. Zero means neither.
     int32_t prevoutfetch_threads_num{DEFAULT_PREVOUTFETCH_THREADS};
+    //! Blocks validated at the same time during initial block download (-connectwindow). Zero means as
+    //! many as the connect pool has workers; one disables the window.
+    int connect_window{0};
     //! Budget of the connect-side block cache (node::BlockCache). Zero disables it.
     size_t block_cache_bytes{DEFAULT_BLOCK_CACHE_BYTES};
     //! Test only (-test=write_out_every_block): start a coins write-out run after every connected block,

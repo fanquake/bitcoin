@@ -6,7 +6,9 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <validation.h>
+#include <deque>
 #include <unordered_set>
+#include <future>
 
 #include <arith_uint256.h>
 #include <chain.h>
@@ -77,6 +79,7 @@
 #include <ranges>
 #include <span>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 
@@ -1843,16 +1846,23 @@ CoinsViews::CoinsViews(DBParams db_params, CoinsViewOptions options)
     : m_dbview{std::move(db_params), std::move(options)},
       m_catcherview(&m_dbview) {}
 
-void CoinsViews::InitCache(int32_t prevoutfetch_threads)
+void CoinsViews::InitCache(util::NotNullSharedPtr<ThreadPool> connect_pool, int window)
 {
     AssertLockHeld(::cs_main);
     m_store = std::make_unique<CoinsStore>(&m_catcherview);
-    util::NotNull thread_pool{std::make_shared<ThreadPool>("prevout")};
-    if (prevoutfetch_threads > 0) {
-        thread_pool->Start(prevoutfetch_threads);
-        LogInfo("Block input prevout fetching uses %d additional threads", prevoutfetch_threads);
+    m_apply_views.clear();
+    for (int i{0}; i < std::max(window, 1); ++i) {
+        m_apply_views.push_back(std::make_unique<BlockApplyView>(*m_store, connect_pool));
     }
-    m_connect_block_view = std::make_unique<BlockApplyView>(*m_store, std::move(thread_pool));
+}
+
+BlockApplyView* CoinsViews::FreeApplyView()
+{
+    AssertLockHeld(::cs_main);
+    for (auto& view : m_apply_views) {
+        if (!view->HasBlock()) return view.get();
+    }
+    return nullptr;
 }
 
 Chainstate::Chainstate(
@@ -1928,7 +1938,7 @@ void Chainstate::InitCoinsCache(size_t cache_size_bytes)
     AssertLockHeld(::cs_main);
     assert(m_coins_views != nullptr);
     m_coinstip_cache_size_bytes = cache_size_bytes;
-    m_coins_views->InitCache(m_chainman.m_options.prevoutfetch_threads_num);
+    m_coins_views->InitCache(m_chainman.m_connect_pool, m_chainman.ConnectWindow());
     m_coins_views->m_store->SetBaseWrites(m_chainman.m_options.coins_view.batch_write_bytes, /*concurrent=*/true);
 }
 
@@ -2045,6 +2055,15 @@ bool Chainstate::StartWriteOutRun(BlockValidationState& state, int bound_height,
         },
         0);
     return true;
+}
+
+int ChainstateManager::ConnectWindow() const
+{
+    // By default as wide as the pool, but no wider than the machine has cores: the workers validate whole
+    // blocks and are CPU-bound, and every block in flight is held in memory. The count is read here and not
+    // through GetNumCores(), whose file (common/system.cpp) is not a source of the kernel library.
+    const int window{m_options.connect_window > 0 ? m_options.connect_window : std::min(static_cast<int>(m_connect_pool->WorkersCount()), static_cast<int>(std::thread::hardware_concurrency()))};
+    return std::clamp(window, 1, MAX_CONNECT_WINDOW);
 }
 
 // Lock-free: depends on `m_cached_is_ibd`, which is latched by `UpdateIBDStatus()`.
@@ -3045,7 +3064,7 @@ bool Chainstate::FinishConnectBlock(const CBlock& block, BlockValidationState& s
     // stored undo when the completion is applied (BlockManager::OnUndoWritten),
     // and readers that need it earlier settle the executor first.
     if (pindex->GetUndoPos().IsNull()) {
-        const auto undo_size{static_cast<uint32_t>(GetSerializeSize(result.undo))};
+        const uint32_t undo_size{result.undo_size ? *result.undo_size : static_cast<uint32_t>(GetSerializeSize(result.undo))};
         const auto pos{m_blockman.ClaimUndoPos(state, *pindex, undo_size)};
         if (!pos) return false;
         auto undo{std::make_shared<const CBlockUndo>(std::move(result.undo))};
@@ -3319,10 +3338,11 @@ bool Chainstate::FlushStateToDisk(
                         // changes, not everything) and what remains (the young tier, not an emptied cache);
                         // a write that outlived the connection would leave a crash between two blocks with
                         // the later block accepted but not durable, which is not how a node behaves today
-                        // (feature_dbcrash pins that). The write-out runs on the executor behind the undo
-                        // writes all the same; letting it overlap the next blocks is the window stage's, where
-                        // the appliers are not the thread that waits.
-                        SettleWriteOut();
+                        // (feature_dbcrash pins that). The connect window is the exception: its connector
+                        // waits as soon as it has released cs_main, before it publishes or stages another
+                        // block, so that the database write is not made under the lock. A run that pruning
+                        // rests on is always waited for here: the files are unlinked below.
+                        if (!m_defer_write_out_wait || fFlushForPrune) SettleWriteOut();
                     } else if (fFlushForPrune) {
                         // Nothing to write for the coins; the block index still records the pruned files.
                         m_blockman.SettleUndoWrites();
@@ -3531,9 +3551,10 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
 
 /**
  * A block connection in flight: staged, validated and published by
- * Chainstate::StageConnectTip(), RunStagedConnect() and PublishConnectTip().
- * The three run under one cs_main hold for now; the split is the shape the
- * later stages build on, not yet a lock release.
+ * Chainstate::StageConnectTip(), RunStagedConnect() or RunConnectTask(), and
+ * PublishConnectTip(). At the tip the three run under one cs_main hold on the
+ * connector thread; in the window the validation runs on a connect pool
+ * worker with no lock held, between the staging hold and the publication hold.
  */
 struct StagedConnect {
     //! Resets the overlay, stopping its prefetch workers, when the staged connection ends, however it ends.
@@ -3543,6 +3564,8 @@ struct StagedConnect {
     };
 
     CBlockIndex* pindex{nullptr};
+    //! Where the block is on disk, for a windowed block that its worker reads.
+    FlatFilePos pos;
     std::shared_ptr<const CBlock> block;
     //! The view the block is connected into, its changes reaching the store under the block's identity.
     //! Owned by the chainstate's CoinsViews.
@@ -3554,6 +3577,15 @@ struct StagedConnect {
     BlockValidationState state;
     ConnectBlockResult result;
     bool ok{false};
+    //! Validated on a connect pool worker (RunConnectTask), scripts inline, inputs lower blocks have not
+    //! produced yet deferred; `done` is the worker's future, invalid when the task ran on the caller.
+    bool windowed{false};
+    std::future<void> done;
+    //! The worker could not read the block from disk: a system error, fatal at publication.
+    bool read_failed{false};
+    //! Whether the block's undo data is to be written: not for a block connected before, which has it on
+    //! disk (every block of a -reindex-chainstate). Decided at staging.
+    bool write_undo{true};
     SteadyClock::time_point time_start{};
     SteadyClock::time_point time_read{};
     SteadyClock::time_point time_connected{};
@@ -3562,22 +3594,76 @@ struct StagedConnect {
 bool Chainstate::StageConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, StagedConnect& staged)
 {
     AssertLockHeld(cs_main);
-    assert(pindexNew->pprev == m_chain.Tip());
-    assert(staged.block);
+    assert(staged.windowed || pindexNew->pprev == m_chain.Tip());
+    assert(staged.windowed || staged.block);
     staged.pindex = pindexNew;
+    staged.write_undo = pindexNew->GetUndoPos().IsNull();
 
-    // Everything the validation of this block reads from the node is gathered
-    // here: the prefetch of the coins it spends is started into the overlay,
-    // the node's decisions go into the context.
-    BlockApplyView& view{*m_coins_views->m_connect_block_view};
-    staged.view = &view;
-    view.BeginBlock(pindexNew->nHeight);
-    staged.fetch = std::make_unique<StagedConnect::FetchGuard>(view, *staged.block);
+    // Everything the validation of this block reads from the node is gathered here: the node's decisions go
+    // into the context, and the block is opened in a view of the store. At the tip that is the tip view,
+    // into which the prefetch of the coins the block spends is started. In the window the block takes a
+    // free view, which reads the store as the block sees it (the creates of the lower blocks applied so
+    // far) and fetches its inputs itself on its worker.
+    BlockApplyView* view{staged.windowed ? m_coins_views->FreeApplyView() : &m_coins_views->TipView()};
+    Assert(view);
+    staged.view = view;
+    // The view stands at the parent, whether or not the parent is confirmed yet.
+    if (pindexNew->pprev) view->SetBestBlock(pindexNew->pprev->GetBlockHash());
+    view->BeginBlock(pindexNew->nHeight);
+    if (!staged.windowed) staged.fetch = std::make_unique<StagedConnect::FetchGuard>(*view, *staged.block);
     staged.script_check_reason = ScriptCheckReason(*pindexNew);
     staged.ctx.emplace(m_chainman.MakeBlockValidationContext(pindexNew->GetBlockHash(), pindexNew->pprev));
     staged.ctx->check_scripts = !!staged.script_check_reason;
+    // An input a lower block in flight has not produced yet is deferred to publication, when every lower
+    // block is in. With the parent confirmed there is nothing to wait for: a missing input is final.
+    staged.ctx->defer_missing_inputs = staged.windowed && pindexNew->pprev != m_chain.Tip();
     return true;
 }
+
+//! What a window block's worker does with the block's undo data once it is complete, so that the connector
+//! thread, which every block passes through, does not: measure it if it is to be written, free it if it is
+//! not. Freeing the undo data of a late block takes about as long as everything else its publication does.
+static void SettleUndo(StagedConnect& staged)
+{
+    if (staged.write_undo) {
+        staged.result.undo_size = static_cast<uint32_t>(GetSerializeSize(staged.result.undo));
+    } else {
+        staged.result.undo = {};
+    }
+}
+
+void Chainstate::RunConnectTask(StagedConnect& staged)
+{
+    // On a connect pool worker, no lock held. The block is read here if it was not in memory; then the pure
+    // core runs against the block's view, scripts inline (the check queue is the tip's), with the deferral
+    // staging decided. The staged state is this task's alone until its future has been waited for.
+    if (!staged.block) {
+        auto block{m_chainman.NewBlock()};
+        if (!m_blockman.ReadBlock(*block, staged.pos, staged.pindex->GetBlockHash())) {
+            staged.read_failed = true;
+            staged.time_read = staged.time_connected = SteadyClock::now();
+            return;
+        }
+        staged.block = std::move(block);
+    }
+    staged.time_read = SteadyClock::now();
+    try {
+        staged.ok = ::ConnectBlock(*staged.block, *staged.ctx, staged.pindex, *staged.view, /*check_queue=*/nullptr,
+                                   m_chainman.m_validation_cache, /*just_check=*/false, staged.state, staged.result);
+        // With deferred transactions the undo data is complete only after the continuation.
+        if (staged.ok && staged.result.deferred_txs.empty()) SettleUndo(staged);
+    } catch (const std::logic_error& e) {
+        // The store refused a change the core did not expect: a defect, not a bad block. The error is
+        // reported at publication, where the node stops rather than confirm what it does not understand.
+        staged.ok = false;
+        staged.state.Error(strprintf("ConnectBlock: %s", e.what()));
+    } catch (const std::runtime_error& e) {
+        staged.ok = false;
+        staged.state.Error(strprintf("ConnectBlock: %s", e.what()));
+    }
+    staged.time_connected = SteadyClock::now();
+}
+
 
 void Chainstate::RunStagedConnect(StagedConnect& staged)
 {
@@ -3611,6 +3697,9 @@ bool Chainstate::PublishConnectTip(
     // Nothing else moves this chain's tip while ActivateBestChain() runs
     // (m_chainstate_mutex), so what was staged still applies.
     assert(pindexNew->pprev == m_chain.Tip());
+    // Nor does a block lose its stored undo data while it is in flight, so undo data the worker dropped is
+    // not asked for below.
+    assert(staged.write_undo || !pindexNew->GetUndoPos().IsNull());
     // Hand on the completions of earlier blocks (their notifications) now that the lock is held, so they
     // trail the blocks they belong to by at most one block even when the lock is otherwise busy.
     m_blockman.ApplyEffectCompletions();
@@ -3623,16 +3712,30 @@ bool Chainstate::PublishConnectTip(
     // When adding aggregate statistics in the future, keep in mind that
     // num_blocks_total may be zero until the FinishConnectBlock() call below.
     {
+        if (staged.windowed) ++m_chainman.m_window_blocks;
         if (staged.ok && !staged.result.deferred_txs.empty()) {
             // Every lower block is in the view now: finish what the block deferred.
+            m_chainman.m_window_deferred_txs += staged.result.deferred_txs.size();
             staged.ok = FinishDeferredTransactions(*block_to_connect, *staged.ctx, pindexNew, view, &m_chainman.GetCheckQueue(),
                                                    m_chainman.m_validation_cache, staged.state, staged.result);
         }
         if (staged.ok && view.Conflicts() != 0) {
-            // Another block of lower height spent one of this block's inputs first.
+            // Another block of lower height spent one of this block's inputs first, or created an output of
+            // this block's first (which this block could not see, BIP30).
+            m_chainman.m_window_conflicts += view.Conflicts();
             staged.state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-inputs-missingorspent",
-                                 strprintf("%u inputs spent by a lower block", view.Conflicts()));
+                                 strprintf("%u inputs spent or outputs created by a lower block", view.Conflicts()));
             staged.ok = false;
+        }
+        if (!staged.ok && staged.windowed && !staged.state.IsError()) {
+            // A window block's failure is no verdict on the block. Its worker read the store while the
+            // blocks above it changed it: a coin one of them spent that the database never held is in
+            // that block's record alone, where a block's worker does not look. Only a chain that fails
+            // somewhere gets here, but which block fails is not settled: the window is unwound (by the
+            // caller, the blocks above first) and this block is connected again alone, which decides. A
+            // failure of the node (an error state) is none of this and ends the pass as it does at the tip.
+            m_window_retry_serial = true;
+            return false;
         }
         state = staged.state;
         const bool rv{FinishConnectBlock(*block_to_connect, state, pindexNew, staged.script_check_reason, staged.ok, staged.result, /*just_check=*/false)};
@@ -3819,7 +3922,27 @@ struct ConnectStep {
     bool improved{false};
     //! A block of the batch was invalid: the step ends and the target is recomputed.
     bool invalid_found{false};
+    //! The window is in use: the step's blocks are validated on connect pool workers, several at a time,
+    //! and the step runs to its target with the tip notified per block.
+    bool use_window{false};
+    //! The blocks staged and not yet published, in height order; the next block of the batch to stage.
+    std::deque<std::unique_ptr<StagedConnect>> in_flight;
+    size_t next_in_batch{0};
 };
+
+void Chainstate::DrainWindow(ConnectStep& step)
+{
+    AssertLockHeld(cs_main);
+    // The blocks above the one that failed or ended the step rest on it: wait for their workers, then take
+    // each one's changes back by status, highest first so that a spend of a lower block's create is
+    // forgotten before the create is erased.
+    for (auto it{step.in_flight.rbegin()}; it != step.in_flight.rend(); ++it) {
+        StagedConnect& staged{**it};
+        if (staged.done.valid()) staged.done.wait();
+        if (staged.view && staged.view->HasBlock()) staged.view->Unwind();
+    }
+    step.in_flight.clear();
+}
 
 bool Chainstate::PlanConnectStep(BlockValidationState& state, ConnectStep& step)
 {
@@ -3859,6 +3982,7 @@ bool Chainstate::PlanNextBatch(ConnectStep& step)
 {
     AssertLockHeld(cs_main);
     step.batch.clear();
+    step.next_in_batch = 0;
     if (step.planned_height == step.target->nHeight) return false;
     // Don't iterate the entire list of potential improvements toward the best tip, as we likely only need
     // a few blocks along the way.
@@ -3902,6 +4026,37 @@ void ChainstateManager::UpdateIBDStatus()
     if (!CurrentChainstate().m_chain.IsTipRecent(MinimumChainWork(), m_options.max_tip_age)) return;
     LogInfo("Leaving InitialBlockDownload (latching to false)");
     m_cached_is_ibd.store(false, std::memory_order_relaxed);
+}
+
+bool Chainstate::NotifyTipAdvanced(CBlockIndex* pindexNewTip, const CBlockIndex* pindexFork, bool still_in_ibd)
+{
+    AssertLockHeld(cs_main);
+    if (this != &m_chainman.ActiveChainstate() || pindexFork == pindexNewTip) return false;
+    // UpdatedBlockTip goes through the effects executor's completion queue, behind the BlockConnected
+    // signals of the blocks it covers (PublishConnectTip), so subscribers see it in the order in which
+    // blocks are connected, as they always have.
+    if (m_chainman.m_options.signals) {
+        m_blockman.m_effects.Enqueue(
+            /*effect=*/nullptr,
+            [signals = m_chainman.m_options.signals, pindexNewTip, pindexFork, still_in_ibd](bool) {
+                signals->UpdatedBlockTip(pindexNewTip, pindexFork, still_in_ibd);
+            });
+        if (!still_in_ibd) {
+            // Outside initial block download the notifications leave with the pass, as they always did:
+            // wait for the pass's undo writes (what the synchronous write used to cost here) and hand the
+            // completions on before the lock goes. Peers are announced new blocks one at a time this way,
+            // not in a batch that net_processing would turn into inv announcements.
+            m_blockman.m_effects.WaitForIO();
+            m_blockman.ApplyEffectCompletions();
+        }
+    }
+    // Just stopping and returning success for now. This could be changed to bubble up the
+    // kernel::Interrupted value to the caller so the caller could distinguish between completed and
+    // interrupted operations.
+    return kernel::IsInterrupted(m_chainman.GetNotifications().blockTip(
+        /*state=*/GetSynchronizationState(still_in_ibd, m_chainman.m_blockman.m_blockfiles_indexed),
+        /*index=*/*pindexNewTip,
+        /*verification_progress=*/m_chainman.GuessVerificationProgress(pindexNewTip)));
 }
 
 bool ChainstateManager::NotifyHeaderTip()
@@ -3982,6 +4137,9 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             was_in_ibd = m_chainman.IsInitialBlockDownload();
             starting_tip = m_chain.Tip();
         }
+        // The last tip a window step notified of, per block, as it went: the pass's own notification then
+        // covers only what came after.
+        const CBlockIndex* notified_tip{nullptr};
         bool blocks_connected{false}; // whether any step ran in this pass, as the name has always meant here
         bool pass_done{false};
         bool interrupted{false};
@@ -4057,11 +4215,20 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                             reorg_lock_main.emplace(::cs_main, "cs_main", __FILE__, __LINE__);
                             if (m_mempool) reorg_lock_mempool.emplace(m_mempool->cs, "m_mempool->cs", __FILE__, __LINE__);
                         }
+                        // The window: in initial block download, extending the tip, once BIP34 has made
+                        // duplicate transactions impossible (below that height a block's BIP30 check reads
+                        // the view, and could see a coin a lower block in flight spends).
+                        // A block that failed in the window is connected alone, in a step of its own
+                        // (PublishConnectTip()).
+                        const bool retry{std::exchange(m_window_retry_serial, false)};
+                        step->use_window = !retry && was_in_ibd && !step->blocks_disconnected && m_chainman.ConnectWindow() > 1 &&
+                                           m_chain.Height() >= m_chainman.GetConsensus().BIP34Height;
                     }
 
                     if (pass_over) {
                         pass_done = true;
-                        const CBlockIndex* pindexFork = starting_tip ? m_chain.FindFork(*starting_tip) : nullptr;
+                        const CBlockIndex* pindexFork{notified_tip ? LastCommonAncestor(notified_tip, pindexNewTip)
+                                                                   : starting_tip ? m_chain.FindFork(*starting_tip) : nullptr};
                         bool still_in_ibd = m_chainman.IsInitialBlockDownload();
 
                         if (was_in_ibd && !still_in_ibd) {
@@ -4069,41 +4236,9 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                             exited_ibd = true;
                         }
 
-                        // Notify external listeners about the new tip.
-                        // UpdatedBlockTip goes through the effects executor's completion queue, behind the
-                        // BlockConnected signals of the blocks it covers (PublishConnectTip), so subscribers
-                        // see it in the order in which blocks are connected, as they always have.
-                        if (this == &m_chainman.ActiveChainstate() && pindexFork != pindexNewTip) {
-                            // Notify ValidationInterface subscribers
-                            if (m_chainman.m_options.signals) {
-                                m_blockman.m_effects.Enqueue(
-                                    /*effect=*/nullptr,
-                                    [signals = m_chainman.m_options.signals, pindexNewTip, pindexFork, still_in_ibd](bool) {
-                                        signals->UpdatedBlockTip(pindexNewTip, pindexFork, still_in_ibd);
-                                    });
-                                if (!still_in_ibd) {
-                                    // Outside initial block download the notifications leave with the pass, as
-                                    // they always did: wait for the pass's undo writes (what the synchronous
-                                    // write used to cost here) and hand the completions on before the lock
-                                    // goes. Peers are announced new blocks one at a time this way, not in
-                                    // a batch that net_processing would turn into inv announcements.
-                                    m_blockman.m_effects.WaitForIO();
-                                    m_blockman.ApplyEffectCompletions();
-                                }
-                            }
-
-                            if (kernel::IsInterrupted(m_chainman.GetNotifications().blockTip(
-                                    /*state=*/GetSynchronizationState(still_in_ibd, m_chainman.m_blockman.m_blockfiles_indexed),
-                                    /*index=*/*pindexNewTip,
-                                    /*verification_progress=*/m_chainman.GuessVerificationProgress(pindexNewTip))))
-                            {
-                                // Just stopping and returning success for now. This could
-                                // be changed to bubble up the kernel::Interrupted value to
-                                // the caller so the caller could distinguish between
-                                // completed and interrupted operations.
-                                interrupted = true;
-                            }
-                        }
+                        // Notify external listeners about the new tip (a window step notified per block as it
+                        // went; what remains is from the last block it notified).
+                        if (NotifyTipAdvanced(pindexNewTip, pindexFork, still_in_ibd)) interrupted = true;
                     }
                 } // release MempoolMutex
                 if (pass_done && !interrupted) {
@@ -4115,58 +4250,123 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             } // release cs_main
             if (pass_done) break;
 
-            // Connect the batch, one block at a time. Each block is read with
-            // no lock held (unless the step is a reorg), then staged,
-            // validated and published under one hold of both locks, which is
-            // what a step used to hold for its whole batch; a step that
-            // extends the tip ends after the block that improved it, so the
-            // locks are released after every such block, as before.
-            for (const auto& [pindexConnect, block_pos] : step->batch) {
-                // Do not run ahead of the undo writes by more than the backlog limit.
-                m_blockman.m_effects.WaitForBacklogBelow(node::BlockManager::MAX_UNDO_BACKLOG_BYTES);
-                StagedConnect staged;
-                staged.time_start = SteadyClock::now();
-                // Read the block from disk, with no lock held unless the step is a reorg. The position was
-                // captured when the batch was planned; a block above the tip is never pruned meanwhile.
-                std::shared_ptr<const CBlock> from_cache{m_chainman.m_block_cache.Take(pindexConnect->nHeight, pindexConnect->GetBlockHash())};
-                if (pblock && pindexConnect == step->target && pblock->GetHash() == pindexConnect->GetBlockHash()) {
-                    staged.block = pblock;
-                    LogDebug(BCLog::BENCH, "  - Using cached block\n");
-                } else if (from_cache) {
-                    // Received and checked earlier, before its parent could be connected.
-                    staged.block = std::move(from_cache);
-                    LogDebug(BCLog::BENCH, "  - Using block from the cache\n");
-                } else {
-                    if (!step->blocks_disconnected) AssertLockNotHeld(::cs_main);
-                    std::shared_ptr<CBlock> pblockNew = std::make_shared<CBlock>();
-                    if (!m_blockman.ReadBlock(*pblockNew, block_pos, pindexConnect->GetBlockHash())) {
+            // Connect the batch. At the tip one block at a time: read with no lock
+            // held (unless the step is a reorg), then staged, validated and
+            // published under one hold of both locks, which is what a step used
+            // to hold for its whole batch; a step that extends the tip ends after
+            // the block that improved it, so the locks are released after every
+            // such block, as before.
+            //
+            // In initial block download, the window: up to `window` blocks are
+            // staged and handed to the connect pool, each validated on a worker
+            // against its own view of the store with the inputs lower blocks have
+            // not produced yet deferred; the connector thread publishes them in
+            // height order as their workers finish, each under one hold, and
+            // refills the window from the batch and the batches after it, up to
+            // the step's target. The tip still moves one block at a time, with
+            // its notification per block; what overlaps is the validation.
+            const size_t window{step->use_window ? static_cast<size_t>(m_chainman.ConnectWindow()) : 1};
+            bool step_over{false};
+            while (!step_over) {
+                // Keep the window full.
+                while (step->in_flight.size() < window) {
+                    if (step->next_in_batch == step->batch.size()) {
+                        if (!step->use_window) break; // the pass loop plans the next batch
+                        LOCK(cs_main);
+                        if (!PlanNextBatch(*step)) break; // the target is reached once the window drains
+                        step->next_in_batch = 0;
+                        continue;
+                    }
+                    const auto& [pindexConnect, block_pos]{step->batch[step->next_in_batch++]};
+                    auto staged{std::make_unique<StagedConnect>()};
+                    staged->windowed = step->use_window;
+                    staged->time_start = SteadyClock::now();
+                    staged->pos = block_pos;
+                    // Read the block from disk, with no lock held unless the step is a reorg; a windowed block
+                    // is read by its worker. The position was captured when the batch was planned; a block
+                    // above the tip is never pruned meanwhile.
+                    std::shared_ptr<const CBlock> from_cache{m_chainman.m_block_cache.Take(pindexConnect->nHeight, pindexConnect->GetBlockHash())};
+                    if (pblock && pindexConnect == step->target && pblock->GetHash() == pindexConnect->GetBlockHash()) {
+                        staged->block = pblock;
+                        LogDebug(BCLog::BENCH, "  - Using cached block\n");
+                    } else if (from_cache) {
+                        // Received and checked earlier, before its parent could be connected.
+                        staged->block = std::move(from_cache);
+                        LogDebug(BCLog::BENCH, "  - Using block from the cache\n");
+                    } else if (!staged->windowed) {
+                        if (!step->blocks_disconnected) AssertLockNotHeld(::cs_main);
+                        std::shared_ptr<CBlock> pblockNew{m_chainman.NewBlock()};
+                        if (!m_blockman.ReadBlock(*pblockNew, block_pos, pindexConnect->GetBlockHash())) {
+                            LOCK(cs_main);
+                            LOCK(MempoolMutex());
+                            FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
+                            MaybeUpdateMempoolForReorg(step->disconnectpool, false);
+                            return false;
+                        }
+                        staged->block = std::move(pblockNew);
+                    }
+                    if (!staged->windowed) {
+                        staged->time_read = SteadyClock::now();
+                        LogDebug(BCLog::BENCH, "  - Load block from disk: %.2fms\n",
+                                 Ticks<MillisecondsDouble>(staged->time_read - staged->time_start));
+                    }
+                    {
                         LOCK(cs_main);
                         LOCK(MempoolMutex());
+                        if (!StageConnectTip(state, pindexConnect, *staged)) {
+                            // A system error occurred (disk space, database error, ...).
+                            // Make the mempool consistent with the current tip, just in case
+                            // any observers try to use it before shutdown.
+                            DrainWindow(*step);
+                            MaybeUpdateMempoolForReorg(step->disconnectpool, false);
+                            return false;
+                        }
+                        if (!staged->windowed) RunStagedConnect(*staged);
+                    }
+                    if (staged->windowed) {
+                        auto future{m_chainman.m_connect_pool->Submit([this, task = staged.get()] { RunConnectTask(*task); })};
+                        if (future) {
+                            staged->done = std::move(*future);
+                        } else {
+                            RunConnectTask(*staged); // a pool without workers: here, as the tip path would
+                        }
+                    }
+                    step->in_flight.push_back(std::move(staged));
+                }
+                if (step->in_flight.empty()) break;
+
+                // The lowest block in flight: wait for its worker, then publish it.
+                std::unique_ptr<StagedConnect> staged{std::move(step->in_flight.front())};
+                step->in_flight.pop_front();
+                if (staged->done.valid()) staged->done.wait();
+                // Do not run ahead of the undo writes by more than the backlog limit.
+                m_blockman.m_effects.WaitForBacklogBelow(node::BlockManager::MAX_UNDO_BACKLOG_BYTES);
+                bool run_pending{false};
+                {
+                    LOCK(cs_main);
+                    LOCK(MempoolMutex());
+                    if (staged->read_failed) {
+                        DrainWindow(*step);
+                        staged->view->Unwind();
                         FatalError(m_chainman.GetNotifications(), state, _("Failed to read block."));
                         MaybeUpdateMempoolForReorg(step->disconnectpool, false);
                         return false;
                     }
-                    staged.block = std::move(pblockNew);
-                }
-                staged.time_read = SteadyClock::now();
-                LogDebug(BCLog::BENCH, "  - Load block from disk: %.2fms\n",
-                         Ticks<MillisecondsDouble>(staged.time_read - staged.time_start));
-                {
-                    LOCK(cs_main);
-                    LOCK(MempoolMutex());
-                    if (!StageConnectTip(state, pindexConnect, staged)) {
-                        // A system error occurred (disk space, database error, ...).
-                        // Make the mempool consistent with the current tip, just in case
-                        // any observers try to use it before shutdown.
-                        MaybeUpdateMempoolForReorg(step->disconnectpool, false);
-                        return false;
-                    }
-                    RunStagedConnect(staged);
-                    if (!PublishConnectTip(state, staged, *step->role, step->disconnectpool)) {
+                    if (!PublishConnectTip(state, *staged, *step->role, step->disconnectpool)) {
+                        // The blocks above it rested on it.
+                        DrainWindow(*step);
+                        if (m_window_retry_serial) {
+                            // Failed in the window, which decides nothing: the step ends here, and the next
+                            // one connects the block alone.
+                            staged->view->Unwind();
+                            step->improved = true;
+                            break;
+                        }
                         if (state.IsInvalid()) {
-                            // The block violates a consensus rule.
+                            // The block violates a consensus rule, and so does every block towards the step's
+                            // target (the batch may have been consumed by the window already).
                             if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
-                                InvalidChainFound(step->batch.back().first);
+                                InvalidChainFound(step->target);
                             }
                             state = BlockValidationState();
                             step->invalid_found = true;
@@ -4179,12 +4379,54 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
                         return false;
                     }
                     PruneBlockIndexCandidates();
-                    if (!step->old_tip || m_chain.Tip()->nChainWork > step->old_tip->nChainWork) {
-                        // We're in a better position than we were. Return temporarily to release the lock.
-                        step->improved = true;
-                        break;
+                    if (!step->use_window) {
+                        if (!step->old_tip || m_chain.Tip()->nChainWork > step->old_tip->nChainWork) {
+                            // We're in a better position than we were. Return temporarily to release the lock.
+                            step->improved = true;
+                            break;
+                        }
+                    } else {
+                        // The tip moved: its notification goes out now, per block as at the tip, and so does
+                        // the periodic write, which a pass does once per step at the tip. The window goes on
+                        // unless a listener asked to stop or the node is going down, in which case the step
+                        // ends here, closed as a finished step is.
+                        // A write-out run it starts is waited for below, once the lock is released: the
+                        // database write is not made under cs_main. Nothing is published meanwhile (this
+                        // thread publishes), so the run sees no new confirmed change; the workers already
+                        // in flight go on applying, and what they touch stays dirty for the next run.
+                        m_defer_write_out_wait = true;
+                        const bool flushed{FlushStateToDisk(state, FlushStateMode::PERIODIC)};
+                        m_defer_write_out_wait = false;
+                        if (!flushed) {
+                            SettleWriteOut();
+                            DrainWindow(*step);
+                            MaybeUpdateMempoolForReorg(step->disconnectpool, false);
+                            return false;
+                        }
+                        run_pending = CoinsStoreTip().RunInFlight();
+                        CBlockIndex* tip{m_chain.Tip()};
+                        const bool stop{NotifyTipAdvanced(tip, tip->pprev, m_chainman.IsInitialBlockDownload())};
+                        notified_tip = tip;
+                        if (stop || m_chainman.m_interrupt) {
+                            // The window's blocks are unwound next: the run lands first.
+                            SettleWriteOut();
+                            run_pending = false;
+                            DrainWindow(*step);
+                            FinishConnectStep(*step);
+                            step.reset();
+                            pindexNewTip = tip;
+                            interrupted = true;
+                            pass_done = true;
+                            step_over = true;
+                        }
                     }
                 }
+                // The write-out run the periodic write started: waited for with no lock held, before another
+                // block is staged or published.
+                if (run_pending) m_blockman.SettleUndoWrites();
+                // As a pass does once per step at the tip: do not run ahead of the validation interface
+                // queue by more than a few callbacks (indexes and wallets consume it at their own pace).
+                if (step && step->use_window && m_chainman.m_options.signals) LimitValidationInterfaceQueue(*m_chainman.m_options.signals);
             }
         }
         if (interrupted) break;
@@ -6015,7 +6257,7 @@ void ChainstateManager::LoadExternalBlockFile(
                     if (!pindex || (pindex->nStatus & BLOCK_HAVE_DATA) == 0) {
                         // This block can be processed immediately; rewind to its start, read and deserialize it.
                         blkdat.SetPos(nBlockPos);
-                        pblock = std::make_shared<CBlock>();
+                        pblock = NewBlock();
                         {
                             // Read the block's bytes and hash its transactions from them, on the pool's workers.
                             std::vector<std::byte> block_bytes(nSize);
@@ -7148,15 +7390,27 @@ ChainstateManager::ChainstateManager(const util::SignalInterrupt& interrupt, Opt
       m_options{Flatten(std::move(options))},
       m_blockman{interrupt, std::move(blockman_options)},
       m_all_consensus_script_flags{GetAllConsensusScriptFlags(m_options.chainparams.GetConsensus())},
-      m_validation_cache{m_options.script_execution_cache_bytes, m_options.signature_cache_bytes}
+      m_validation_cache{m_options.script_execution_cache_bytes, m_options.signature_cache_bytes},
+      m_connect_pool{std::make_shared<ThreadPool>("connect")}
 {
     if (const int hash_threads{std::clamp(m_options.worker_threads_num, 0, MAX_SCRIPTCHECK_THREADS)}; hash_threads > 0) {
         m_blockman.m_hash_pool.Start(hash_threads);
         LogInfo("Block transaction hashing uses %d additional threads", hash_threads);
     }
+    if (const int connect_threads{std::clamp(m_options.prevoutfetch_threads_num, 0, MAX_PREVOUTFETCH_THREADS)}; connect_threads > 0) {
+        m_connect_pool->Start(connect_threads);
+        LogInfo("Block connection uses %d additional threads (window of %d blocks in initial block download)", connect_threads, ConnectWindow());
+    }
     if (m_options.signals) {
         m_options.signals->SetPreSyncHook([this] { m_blockman.SettleUndoWrites(); });
     }
+}
+
+std::shared_ptr<CBlock> ChainstateManager::NewBlock() const
+{
+    return std::shared_ptr<CBlock>(new CBlock, [pool = m_connect_pool](CBlock* block) {
+        if (!pool->Submit([block] { delete block; })) delete block;
+    });
 }
 
 ChainstateManager::~ChainstateManager()
@@ -7170,6 +7424,10 @@ ChainstateManager::~ChainstateManager()
     if (m_blocks_accepted > 0) {
         LogInfo("Connect pipeline: %u blocks accepted for the connector thread in %.1fs (%.2fms/blk)",
                 m_blocks_accepted.load(), m_accept_time_us / 1e6, m_accept_time_us / 1e3 / m_blocks_accepted);
+    }
+    if (m_window_blocks > 0) {
+        LogInfo("Connect window: %u blocks validated on the connect pool (%u wide), %u transactions deferred to their block's confirmation, %u conflicts",
+                m_window_blocks.load(), ConnectWindow(), m_window_deferred_txs.load(), m_window_conflicts.load());
     }
     LOCK(::cs_main);
 

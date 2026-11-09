@@ -135,6 +135,7 @@ BASE_SCRIPTS = [
     'feature_async_undo.py',
     'feature_block_cache.py',
     'feature_coins_lag.py',
+    'feature_connect_window.py',
     'wallet_taproot.py',
     'feature_bip68_sequence.py',
     'rpc_packages.py',

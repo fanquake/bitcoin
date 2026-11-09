@@ -725,8 +725,12 @@ private:
         return true;
     }
 
+protected:
+    ThreadPool& Pool() const { return *m_thread_pool; }
+
     //! Stop all worker threads and clear fetching data.
-    //! Calling this is idempotent, and may safely be called if not fetching.
+    //! Calling this is idempotent, and may safely be called if not fetching. A subclass whose ReadBase()
+    //! depends on per-block state calls it before that state goes.
     void StopFetching() noexcept
     {
         if (m_futures.empty()) {
@@ -762,6 +766,7 @@ private:
         return ReadBase(outpoint);
     }
 
+private:
     /// May have zero workers when input fetching is disabled.
     util::NotNullSharedPtr<ThreadPool> m_thread_pool;
     std::vector<std::future<void>> m_futures{};

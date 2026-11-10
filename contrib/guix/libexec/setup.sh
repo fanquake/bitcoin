@@ -73,6 +73,13 @@ check_cross_paths() {
     done
 }
 
+# Print sorted -ffile-prefix-map flags mapping each store directory to /usr
+guix_store_prefix_map_flags() {
+    find /gnu/store -maxdepth 1 -mindepth 1 -type d -printf ' -ffile-prefix-map=%p=/usr\n' \
+        | sort \
+        | tr --delete '\n'
+}
+
 # Given a hostname, determine the correct value for -Wl,--dynamic-linker.
 glibc_dynamic_linker() {
     case "$1" in

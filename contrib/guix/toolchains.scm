@@ -114,8 +114,17 @@ chain for " target " development."))
       (license (package-license xgcc)))))
 
 (define base-gcc
-  (package-with-extra-patches gcc-14
-    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
+  (package
+    (inherit gcc-14)
+    (source (origin
+              (inherit (package-source gcc-14))
+              (patches (append (origin-patches (package-source gcc-14))
+                               (search-our-patches "gcc-ssa-generation.patch")))))
+    (arguments
+      (substitute-keyword-arguments (package-arguments gcc-14)
+        ((#:make-flags flags)
+          #~(cons (string-append "CFLAGS_FOR_TARGET=-g -O2" #$guix-store-prefix-map-flags)
+                  #$flags))))))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 
@@ -276,8 +285,7 @@ chain for " target " development."))
               (sha256
                (base32
                 "07arjrc1smqy8wrhg38apr1s9ji7xv1rpzdapk4k2ps2n07irp58"))
-              (patches (search-our-patches "glibc-guix-prefix.patch"
-                                           "glibc-riscv-jumptarget.patch"))))
+              (patches (search-our-patches "glibc-riscv-jumptarget.patch"))))
     (arguments
       (substitute-keyword-arguments (package-arguments glibc)
         ((#:configure-flags flags)
@@ -293,6 +301,12 @@ chain for " target " development."))
                   ,building-on)))
     ((#:phases phases)
         `(modify-phases ,phases
+           (add-before 'configure 'remap-guix-store-paths
+             (lambda _
+               (let ((mapping ,guix-store-prefix-map-flags))
+                 (for-each (lambda (var)
+                             (setenv var (string-append "-O2 -g" (or (getenv var) "") mapping)))
+                           '("CFLAGS" "CPPFLAGS")))))
            (add-before 'configure 'set-etc-rpc-installation-directory
              (lambda* (#:key outputs #:allow-other-keys)
                ;; Install the rpc data base file under `$out/etc/rpc'.

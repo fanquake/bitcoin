@@ -25,7 +25,14 @@ FILE-NAME found in ./patches relative to the current file."
       ((%patch-path (list (string-append (dirname (current-filename)) "/patches"))))
     (list (search-patch file-name) ...)))
 
-;; Return a string of ` -ffile-prefix-map=OLD=/usr' flags.
+;; Return a string of ` -ffile-prefix-map=OLD=/usr' flags, one per directory
+;; in the store, sorted. Only uses core Guile, so it can be used in any phase.
+;;
+;; Without -ffile-prefix-map, the debug symbols will contain paths for the
+;; guix store which will include the hashes of each package. However, the
+;; hash for the same package will differ when on different architectures.
+;; In order to be reproducible regardless of the architecture used to build
+;; the package, map all guix store prefixes to something fixed, e.g. /usr.
 (define guix-store-prefix-map-flags
   #~(let ((store (opendir "/gnu/store")))
       (let loop ((dirs '()))
@@ -119,8 +126,19 @@ chain for " target " development."))
       (license (package-license xgcc)))))
 
 (define base-gcc
-  (package-with-extra-patches gcc-14
-    (search-our-patches "gcc-remap-guix-store.patch" "gcc-ssa-generation.patch")))
+  (let ((gcc (package-with-extra-patches gcc-14
+               (search-our-patches "gcc-ssa-generation.patch"))))
+    (package
+      (inherit gcc)
+      (arguments
+        (substitute-keyword-arguments (package-arguments gcc)
+          ((#:phases phases)
+            #~(modify-phases #$phases
+                (add-after 'unpack 'remap-guix-store-paths
+                  (lambda _
+                    (substitute* "libgcc/Makefile.in"
+                      (("^c_flags := -f(no-)?exceptions" all)
+                       (string-append all #$guix-store-prefix-map-flags))))))))))))
 
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 
@@ -142,9 +160,18 @@ desirable for building Bitcoin Core release binaries."
   (package-with-extra-patches binutils
     (search-our-patches "binutils-unaligned-default.patch")))
 
-(define (winpthreads-patches mingw-w64-x86_64-winpthreads)
-  (package-with-extra-patches mingw-w64-x86_64-winpthreads
-    (search-our-patches "winpthreads-remap-guix-store.patch")))
+(define (winpthreads-remap-guix-store mingw)
+  (package
+    (inherit mingw)
+    (arguments
+      (substitute-keyword-arguments (package-arguments mingw)
+        ((#:phases phases)
+          #~(modify-phases #$phases
+              (add-after 'unpack 'remap-guix-store-paths
+                (lambda _
+                  (substitute* "mingw-w64-libraries/winpthreads/Makefile.in"
+                    (("^AM_CFLAGS = [^\n]*" all)
+                     (string-append all #$guix-store-prefix-map-flags)))))))))))
 
 (define (mingw-force-ucrt mingw)
   (package
@@ -179,7 +206,7 @@ desirable for building Bitcoin Core release binaries."
   "Create a cross-compilation toolchain package for TARGET"
   (let* ((xbinutils (binutils-mingw-patches (base-binutils target)))
          (machine (substring target 0 (string-index target #\-)))
-         (pthreads-xlibc (winpthreads-patches (make-mingw-w64-ucrt machine
+         (pthreads-xlibc (winpthreads-remap-guix-store (make-mingw-w64-ucrt machine
                                                                    (cross-gcc target #:xgcc base-gcc))))
          (pthreads-xgcc (cross-gcc target
                                     #:xgcc mingw-w64-base-gcc
@@ -281,8 +308,7 @@ chain for " target " development."))
               (sha256
                (base32
                 "07arjrc1smqy8wrhg38apr1s9ji7xv1rpzdapk4k2ps2n07irp58"))
-              (patches (search-our-patches "glibc-guix-prefix.patch"
-                                           "glibc-riscv-jumptarget.patch"))))
+              (patches (search-our-patches "glibc-riscv-jumptarget.patch"))))
     (arguments
       (substitute-keyword-arguments (package-arguments glibc)
         ((#:configure-flags flags)
@@ -298,6 +324,11 @@ chain for " target " development."))
                   #$building-on)))
     ((#:phases phases)
         #~(modify-phases #$phases
+           (add-after 'unpack 'remap-guix-store-paths
+             (lambda _
+               (substitute* "Makeconfig"
+                 (("^CFLAGS-\\.o = [^\n]*\n" line)
+                  (string-append line "CFLAGS-.o +=" #$guix-store-prefix-map-flags "\n")))))
            (add-before 'configure 'set-etc-rpc-installation-directory
              (lambda* (#:key outputs #:allow-other-keys)
                ;; Install the rpc data base file under `$out/etc/rpc'.

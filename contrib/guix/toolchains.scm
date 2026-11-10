@@ -286,18 +286,18 @@ chain for " target " development."))
     (arguments
       (substitute-keyword-arguments (package-arguments glibc)
         ((#:configure-flags flags)
-          `(append ,flags
+          #~(append #$flags
             ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
-            (list "--enable-bind-now",
-                  "--enable-cet",
-                  "--enable-kernel=3.17.0",
-                  "--enable-stack-protector=all",
-                  "--disable-profile",
-                  "--disable-timezone-tools",
-                  "--disable-werror",
-                  building-on)))
+            (list "--enable-bind-now"
+                  "--enable-cet"
+                  "--enable-kernel=3.17.0"
+                  "--enable-stack-protector=all"
+                  "--disable-profile"
+                  "--disable-timezone-tools"
+                  "--disable-werror"
+                  #$building-on)))
     ((#:phases phases)
-        `(modify-phases ,phases
+        #~(modify-phases #$phases
            (add-before 'configure 'set-etc-rpc-installation-directory
              (lambda* (#:key outputs #:allow-other-keys)
                ;; Install the rpc data base file under `$out/etc/rpc'.

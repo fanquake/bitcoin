@@ -283,14 +283,14 @@ chain for " target " development."))
         ((#:configure-flags flags)
           `(append ,flags
             ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
-            (list "--enable-bind-now",
-                  "--enable-cet",
-                  "--enable-kernel=3.17.0",
-                  "--enable-stack-protector=all",
-                  "--disable-profile",
-                  "--disable-timezone-tools",
-                  "--disable-werror",
-                  building-on)))
+            (list "--enable-bind-now"
+                  "--enable-cet"
+                  "--enable-kernel=3.17.0"
+                  "--enable-stack-protector=all"
+                  "--disable-profile"
+                  "--disable-timezone-tools"
+                  "--disable-werror"
+                  ,building-on)))
     ((#:phases phases)
         `(modify-phases ,phases
            (add-before 'configure 'set-etc-rpc-installation-directory

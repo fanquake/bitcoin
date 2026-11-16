@@ -46,6 +46,7 @@ readability-avoid-const-params-in-decls,
 readability-const-return-type,
 readability-container-contains,
 readability-redundant-declaration,
+readability-redundant-smartptr-get,
 readability-redundant-string-init,
 '
 HeaderFilterRegex: '.'

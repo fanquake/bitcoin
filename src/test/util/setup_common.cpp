@@ -514,7 +514,7 @@ std::pair<CMutableTransaction, CAmount> TestChain100Setup::CreateValidTransactio
     // - Populate a CoinsViewCache with the unspent output
     CCoinsViewCache coins_cache{&CoinsViewEmpty::Get()};
     for (const auto& input_transaction : input_transactions) {
-        AddCoins(coins_cache, *input_transaction.get(), input_height);
+        AddCoins(coins_cache, *input_transaction, input_height);
     }
     // Build Outpoint to Coin map for SignTransaction
     std::map<COutPoint, Coin> input_coins;

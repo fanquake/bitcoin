@@ -101,7 +101,7 @@ static void MemPoolAddTransactions(benchmark::Bench& bench)
         childTxs = static_cast<int>(bench.complexityN());
     }
     const auto testing_setup = MakeNoLogFileContext<const TestingSetup>(ChainType::MAIN);
-    CTxMemPool& pool = *testing_setup.get()->m_node.mempool;
+    CTxMemPool& pool = *testing_setup->m_node.mempool;
 
     std::vector<CTransactionRef> transactions;
     // Create 1000 clusters of 100 transactions each
@@ -128,7 +128,7 @@ static void ComplexMemPool(benchmark::Bench& bench)
         childTxs = static_cast<int>(bench.complexityN());
     }
     const auto testing_setup = MakeNoLogFileContext<const TestingSetup>(ChainType::MAIN);
-    CTxMemPool& pool = *testing_setup.get()->m_node.mempool;
+    CTxMemPool& pool = *testing_setup->m_node.mempool;
 
     std::vector<CTransactionRef> tx_remove_for_block;
     std::vector<Txid> hashes_remove_for_block;
@@ -172,7 +172,7 @@ static void MemPoolAncestorsDescendants(benchmark::Bench& bench)
         childTxs = static_cast<int>(bench.complexityN());
     }
     const auto testing_setup = MakeNoLogFileContext<const TestingSetup>(ChainType::MAIN);
-    CTxMemPool& pool = *testing_setup.get()->m_node.mempool;
+    CTxMemPool& pool = *testing_setup->m_node.mempool;
 
     LOCK2(cs_main, pool.cs);
 
@@ -197,10 +197,10 @@ static void MempoolCheck(benchmark::Bench& bench)
 {
     FastRandomContext det_rand{true};
     auto testing_setup = MakeNoLogFileContext<TestChain100Setup>(ChainType::REGTEST, {.extra_args = {"-checkmempool=1"}});
-    CTxMemPool& pool = *testing_setup.get()->m_node.mempool;
+    CTxMemPool& pool = *testing_setup->m_node.mempool;
     LOCK2(cs_main, pool.cs);
     testing_setup->PopulateMempool(det_rand, 400, true);
-    const CCoinsViewCache& coins_tip = testing_setup.get()->m_node.chainman->ActiveChainstate().CoinsTip();
+    const CCoinsViewCache& coins_tip = testing_setup->m_node.chainman->ActiveChainstate().CoinsTip();
 
     bench.run([&]() NO_THREAD_SAFETY_ANALYSIS {
         // Bump up the spendheight so we don't hit premature coinbase spend errors.

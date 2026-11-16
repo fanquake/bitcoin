@@ -290,7 +290,7 @@ public:
     }
     bool transactionCanBeBumped(const Txid& txid) override
     {
-        return feebumper::TransactionCanBeBumped(*m_wallet.get(), txid);
+        return feebumper::TransactionCanBeBumped(*m_wallet, txid);
     }
     bool createBumpTransaction(const Txid& txid,
         const CCoinControl& coin_control,
@@ -300,15 +300,15 @@ public:
         CMutableTransaction& mtx) override
     {
         std::vector<CTxOut> outputs; // just an empty list of new recipients for now
-        return feebumper::CreateRateBumpTransaction(*m_wallet.get(), txid, coin_control, errors, old_fee, new_fee, mtx, /* require_mine= */ true, outputs) == feebumper::Result::OK;
+        return feebumper::CreateRateBumpTransaction(*m_wallet, txid, coin_control, errors, old_fee, new_fee, mtx, /* require_mine= */ true, outputs) == feebumper::Result::OK;
     }
-    bool signBumpTransaction(CMutableTransaction& mtx) override { return feebumper::SignTransaction(*m_wallet.get(), mtx); }
+    bool signBumpTransaction(CMutableTransaction& mtx) override { return feebumper::SignTransaction(*m_wallet, mtx); }
     bool commitBumpTransaction(const Txid& txid,
         CMutableTransaction&& mtx,
         std::vector<bilingual_str>& errors,
         Txid& bumped_txid) override
     {
-        return feebumper::CommitTransaction(*m_wallet.get(), txid, std::move(mtx), errors, bumped_txid) ==
+        return feebumper::CommitTransaction(*m_wallet, txid, std::move(mtx), errors, bumped_txid) ==
                feebumper::Result::OK;
     }
     CTransactionRef getTx(const Txid& txid) override

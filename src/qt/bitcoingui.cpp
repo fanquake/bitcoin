@@ -962,7 +962,7 @@ void BitcoinGUI::createTrayIconMenu()
                     tr("&Hide") :
                     tr("S&how"));
             if (QApplication::activeModalWidget()) {
-                for (QAction* a : trayIconMenu.get()->actions()) {
+                for (QAction* a : trayIconMenu->actions()) {
                     a->setEnabled(false);
                 }
             } else {

@@ -1194,14 +1194,29 @@ void CoinsStore::ConfirmBlock(BlockId block)
     if (marked) {
         // The markers of coins the database never held have no one left to tell: freed here, they do not
         // wait in the map for a run that a large cache never makes. A run may have met one first.
+        // Grouped by shard, with the entries and what their erase writes asked for ahead, as in ApplyBatch().
+        std::vector<const Undo*> spends;
+        std::vector<uint32_t> shard_of;
+        std::vector<uint64_t> hashes;
         for (const Undo& item : record) {
             if (!item.spend || !item.fresh || item.dead) continue;
-            Shard& shard{ShardFor(item.outpoint)};
-            LOCK(shard.mutex);
-            const auto it{shard.map.find(item.outpoint)};
-            if (it == shard.map.end()) continue;
-            const Entry& entry{it->second};
-            if (entry.unwritten && entry.height == height) EraseEntry(shard, it);
+            spends.push_back(&item);
+            shard_of.push_back(ShardIndex(item.outpoint));
+            hashes.push_back(KeyHash(item.outpoint));
+        }
+        if (!spends.empty()) {
+            VisitShards(block, shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
+                shard.map.PrefetchAll(hashes, items, [](uint32_t) { return true; });
+                for (const uint32_t i : items) {
+                    if (const auto it{shard.map.find(spends[i]->outpoint, hashes[i])}; it != shard.map.end()) Map::PrefetchLinks(*it);
+                }
+                for (const uint32_t i : items) {
+                    const auto it{shard.map.find(spends[i]->outpoint, hashes[i])};
+                    if (it == shard.map.end()) continue;
+                    const Entry& entry{it->second};
+                    if (entry.unwritten && entry.height == height) EraseEntry(shard, it);
+                }
+            });
         }
     }
     if (owed_spends) {

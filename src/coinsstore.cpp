@@ -2323,7 +2323,14 @@ void BlockApplyView::ApplyChanges()
     // read from the store from now on, where this block sees it. A conflict with another applied block is
     // recorded against the loser and settled at confirmation; the core is not told, so that its verdict
     // stays the block's own.
+    const size_t entries{cacheCoins.size()};
     cacheCoins.clear();
+    // The map's pool hands the nodes it took back out in the order they were freed, which after a few
+    // blocks is no order: every entry the next block makes, finds or walks here is then somewhere else in
+    // memory last touched many blocks ago. A new pool hands them out by address. The map is sized for as
+    // many entries again, so that it does not grow step by step in every block.
+    ReallocateCache();
+    cacheCoins.reserve(entries);
     cachedCoinsUsage = 0;
     m_dirty_count = 0;
     m_store.ApplyBatch(m_block, std::move(changes));

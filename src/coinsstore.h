@@ -739,6 +739,14 @@ private:
             for (const uint32_t i : items) Prefetch(hashes[i]);
             for (const uint32_t i : items) PrefetchNode(hashes[i], whole(i));
         }
+        //! Ask for what an unlink of the node writes, the links of its two neighbours on its list
+        //! (Detach()). Reads the node.
+        static void PrefetchLinks(const Node& node)
+        {
+            if (node.second.list == LIST_NONE) return;
+            if (const Node* prev{node.second.prev}) Ahead(&prev->second.next, /*to_write=*/true);
+            if (const Node* next{node.second.next}) Ahead(&next->second.prev, /*to_write=*/true);
+        }
         iterator find(const COutPoint& key) const { return find(key, KeyHash(key)); }
         iterator find(const COutPoint& key, uint64_t hash) const
         {
@@ -791,12 +799,17 @@ private:
     private:
         static constexpr size_t MIN_BUCKETS{16};
         //! A hint only: without the builtin the probe waits for its memory.
-        static void Ahead(const void* p)
+        static void Ahead(const void* p, bool to_write = false)
         {
 #if defined(__GNUC__) || defined(__clang__)
-            __builtin_prefetch(p);
+            if (to_write) {
+                __builtin_prefetch(p, 1);
+            } else {
+                __builtin_prefetch(p);
+            }
 #else
             (void)p;
+            (void)to_write;
 #endif
         }
         static void Free(Cell* cell)

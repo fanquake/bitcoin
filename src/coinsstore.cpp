@@ -1109,6 +1109,12 @@ void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes)
     VisitShards(block, shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
         // A create looks for its outpoint only to find none.
         shard.map.PrefetchAll(hashes, items, [&](uint32_t i) { return applied[i]->coin.IsSpent(); });
+        // A spend takes its entry off a list, which writes the entry's two neighbours there: nodes that
+        // have nothing to do with the block. Asked for ahead as well, once the entries are found.
+        for (const uint32_t i : items) {
+            if (!applied[i]->coin.IsSpent()) continue;
+            if (const auto it{shard.map.find(applied[i]->outpoint, hashes[i])}; it != shard.map.end()) Map::PrefetchLinks(*it);
+        }
         // Read with the shard held: an entry dropped from it was dropped after the height was stored.
         const bool base_unseen{m_dropped_through.load(std::memory_order_relaxed) > begin_confirmed};
         for (const uint32_t i : items) {

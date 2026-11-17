@@ -669,6 +669,8 @@ private:
             Cell* chain;
             Node node;
         };
+        //! The link and the key are in a cell's first cache line (PrefetchNode()).
+        static_assert(sizeof(Cell*) + sizeof(COutPoint) <= 64 && alignof(Node) <= alignof(Cell*));
         class iterator
         {
         public:
@@ -720,20 +722,22 @@ private:
         {
             if (m_bucket_count != 0) Ahead(&m_buckets[hash & (m_bucket_count - 1)]);
         }
-        //! Ask for the first node of the bucket's chain, both of its cache lines. Reads the bucket.
-        void PrefetchNode(uint64_t hash) const
+        //! Ask for the first node of the bucket's chain: its first cache line, which has the key, and with
+        //! `whole` the second too, which has the rest of the entry. Reads the bucket.
+        void PrefetchNode(uint64_t hash, bool whole) const
         {
             if (m_bucket_count == 0) return;
             if (const Cell* cell{m_buckets[hash & (m_bucket_count - 1)]}) {
                 Ahead(cell);
-                Ahead(reinterpret_cast<const char*>(cell) + 64);
+                if (whole) Ahead(reinterpret_cast<const char*>(cell) + 64);
             }
         }
         //! Ask for every item's bucket, then every chain's first node, before the first probe waits for one.
-        void PrefetchAll(std::span<const uint64_t> hashes, std::span<const uint32_t> items) const
+        //! `whole(i)` says whether item i reads the entry it finds, or only whether there is one.
+        void PrefetchAll(std::span<const uint64_t> hashes, std::span<const uint32_t> items, auto&& whole) const
         {
             for (const uint32_t i : items) Prefetch(hashes[i]);
-            for (const uint32_t i : items) PrefetchNode(hashes[i]);
+            for (const uint32_t i : items) PrefetchNode(hashes[i], whole(i));
         }
         iterator find(const COutPoint& key) const { return find(key, KeyHash(key)); }
         iterator find(const COutPoint& key, uint64_t hash) const

@@ -645,11 +645,15 @@ private:
         }
         friend bool operator==(const NodeAllocator&, const NodeAllocator&) noexcept { return true; }
     };
-    //! The salted hash of an outpoint, one salt for all shards: a batch hashes its keys before it takes a shard.
+    //! Where an outpoint goes in its shard's table, one salt for all shards: a batch hashes its keys before
+    //! it takes a shard. The salted hash of the txid plus the index: the outputs of one transaction lie in
+    //! buckets next to each other, so that making them reads one cache line of the bucket array for every
+    //! eight and not one for each. A transaction has each bucket once, so a bucket holds as many entries as
+    //! under a hash of the whole outpoint.
     static uint64_t KeyHash(const COutPoint& outpoint) noexcept
     {
         static const SaltedCoinsCacheHasher hasher;
-        return hasher(outpoint);
+        return hasher(outpoint.hash) + outpoint.n;
     }
     /**
      * A shard's table: chained, with nodes that never move (the lists and a run in flight point at them),

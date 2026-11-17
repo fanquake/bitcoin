@@ -6,6 +6,7 @@ tests
 exhaustive_tests
 precompute_ecmult_gen
 precompute_ecmult
+precompute_ecdsa_ifma
 ctime_tests
 ecdh_example
 ecdsa_example

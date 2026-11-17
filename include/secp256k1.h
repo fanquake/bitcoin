@@ -418,6 +418,9 @@ typedef void (*secp256k1_sha256_compression_function)(
  * The provided callback must exactly implement the effect of n_blocks
  * repeated applications of the SHA256 compression function.
  *
+ * The callback processes secrets such as secret keys, so it must run in
+ * constant time with respect to its input and must not keep or log it.
+ *
  * This API exists to support environments that wish to route the
  * SHA256 compression step through a hardware-accelerated or otherwise
  * specialized implementation. It is NOT meant for replacing SHA256
@@ -627,6 +630,32 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_ecdsa_verify(
     const unsigned char *msghash32,
     const secp256k1_pubkey *pubkey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
+
+/** Verify multiple independent ECDSA signatures.
+ *
+ *  Returns: 1: all arguments were valid
+ *           0: invalid argument
+ *  Args:    ctx:         pointer to a context object
+ *  Out:     results:     pointer to an array of n_sigs bytes. Each byte is set
+ *                        to 1 if the corresponding signature is correct, or 0
+ *                        otherwise.
+ *  In:      sigs:        pointer to an array of n_sigs signatures.
+ *           msghashes32: pointer to an array of n_sigs consecutive 32-byte
+ *                        message hashes.
+ *           pubkeys:     pointer to an array of n_sigs public keys.
+ *           n_sigs:      number of signatures to verify. Must be greater than 0.
+ *
+ * This function has the same verification semantics as calling
+ * secp256k1_ecdsa_verify for every input, including the lower-S requirement.
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_ecdsa_verify_many(
+    const secp256k1_context *ctx,
+    unsigned char *results,
+    const secp256k1_ecdsa_signature *sigs,
+    const unsigned char *msghashes32,
+    const secp256k1_pubkey *pubkeys,
+    size_t n_sigs
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
 
 /** Convert a signature to a normalized lower-S form.
  *

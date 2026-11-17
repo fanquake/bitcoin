@@ -12,6 +12,8 @@
 #include "util.h"
 #include "bench.h"
 
+#define ECDSA_VERIFY_MANY_COUNT 128
+
 static void help(const char *executable_path, int default_iters) {
     printf("Benchmarks the following algorithms:\n");
     printf("    - ECDSA signing/verification\n");
@@ -89,6 +91,10 @@ typedef struct {
     size_t siglen;
     unsigned char pubkey[33];
     size_t pubkeylen;
+    secp256k1_ecdsa_signature many_sigs[ECDSA_VERIFY_MANY_COUNT];
+    unsigned char many_msghashes32[ECDSA_VERIFY_MANY_COUNT][32];
+    secp256k1_pubkey many_pubkeys[ECDSA_VERIFY_MANY_COUNT];
+    unsigned char many_results[ECDSA_VERIFY_MANY_COUNT];
 } bench_data;
 
 static void bench_verify(void* arg, int iters) {
@@ -107,6 +113,28 @@ static void bench_verify(void* arg, int iters) {
         data->sig[data->siglen - 1] ^= (i & 0xFF);
         data->sig[data->siglen - 2] ^= ((i >> 8) & 0xFF);
         data->sig[data->siglen - 3] ^= ((i >> 16) & 0xFF);
+    }
+}
+
+static void bench_verify_serial(void* arg, int iters) {
+    bench_data* data = (bench_data*)arg;
+    int i;
+    for (i = 0; i < iters; i++) {
+        size_t index = (size_t)i % ECDSA_VERIFY_MANY_COUNT;
+        data->many_results[index] = (unsigned char)secp256k1_ecdsa_verify(data->ctx, &data->many_sigs[index], data->many_msghashes32[index], &data->many_pubkeys[index]);
+    }
+}
+
+static void bench_verify_many(void* arg, int iters) {
+    bench_data* data = (bench_data*)arg;
+    int done = 0;
+    while (done < iters) {
+        size_t count = (size_t)(iters - done);
+        if (count > ECDSA_VERIFY_MANY_COUNT) {
+            count = ECDSA_VERIFY_MANY_COUNT;
+        }
+        CHECK(secp256k1_ecdsa_verify_many(data->ctx, data->many_results, data->many_sigs, &data->many_msghashes32[0][0], data->many_pubkeys, count));
+        done += (int)count;
     }
 }
 
@@ -193,7 +221,7 @@ int main(int argc, char** argv) {
     int d = argc == 1;
 
     /* Check for invalid user arguments */
-    char* valid_args[] = {"ecdsa", "verify", "ecdsa_verify", "sign", "ecdsa_sign", "ecdh", "recover",
+    char* valid_args[] = {"ecdsa", "verify", "ecdsa_verify", "ecdsa_verify_many", "sign", "ecdsa_sign", "ecdh", "recover",
                          "ecdsa_recover", "schnorrsig", "schnorrsig_verify", "schnorrsig_sign", "ec",
                          "keygen", "ec_keygen", "ellswift", "encode", "ellswift_encode", "decode",
                          "ellswift_decode", "ellswift_keygen", "ellswift_ecdh", "silentpayments",
@@ -279,9 +307,23 @@ int main(int argc, char** argv) {
     CHECK(secp256k1_ec_pubkey_create(data.ctx, &pubkey, data.key));
     data.pubkeylen = 33;
     CHECK(secp256k1_ec_pubkey_serialize(data.ctx, data.pubkey, &data.pubkeylen, &pubkey, SECP256K1_EC_COMPRESSED) == 1);
+    for (i = 0; i < ECDSA_VERIFY_MANY_COUNT; i++) {
+        unsigned char seckey[32] = {0};
+        int j;
+        secp256k1_write_be32(&seckey[28], (uint32_t)i + 1);
+        for (j = 0; j < 32; j++) {
+            data.many_msghashes32[i][j] = (unsigned char)(i + j + 1);
+        }
+        CHECK(secp256k1_ec_pubkey_create(data.ctx, &data.many_pubkeys[i], seckey));
+        CHECK(secp256k1_ecdsa_sign(data.ctx, &data.many_sigs[i], data.many_msghashes32[i], seckey, NULL, NULL));
+    }
 
     print_output_table_header_row();
     if (d || have_flag(argc, argv, "ecdsa") || have_flag(argc, argv, "verify") || have_flag(argc, argv, "ecdsa_verify")) run_benchmark("ecdsa_verify", bench_verify, NULL, NULL, &data, 10, iters);
+    if (d || have_flag(argc, argv, "ecdsa") || have_flag(argc, argv, "verify") || have_flag(argc, argv, "ecdsa_verify_many")) {
+        run_benchmark("ecdsa_verify_serial", bench_verify_serial, NULL, NULL, &data, 10, iters);
+        run_benchmark("ecdsa_verify_many", bench_verify_many, NULL, NULL, &data, 10, iters);
+    }
 
     if (d || have_flag(argc, argv, "ecdsa") || have_flag(argc, argv, "sign") || have_flag(argc, argv, "ecdsa_sign")) run_benchmark("ecdsa_sign", bench_sign_run, bench_sign_setup, NULL, &data, 10, iters);
     if (d || have_flag(argc, argv, "ec") || have_flag(argc, argv, "keygen") || have_flag(argc, argv, "ec_keygen")) run_benchmark("ec_keygen", bench_keygen_run, bench_keygen_setup, NULL, &data, 10, iters);

@@ -19,7 +19,10 @@ noinst_HEADERS += src/scalar_low_impl.h
 noinst_HEADERS += src/group.h
 noinst_HEADERS += src/group_impl.h
 noinst_HEADERS += src/ecdsa.h
+noinst_HEADERS += src/ecdsa_ifma_config.h
 noinst_HEADERS += src/ecdsa_impl.h
+noinst_HEADERS += src/ecdsa_ifma.h
+noinst_HEADERS += src/ecdsa_ifma_impl.h
 noinst_HEADERS += src/eckey.h
 noinst_HEADERS += src/eckey_impl.h
 noinst_HEADERS += src/ecmult.h
@@ -66,6 +69,7 @@ noinst_HEADERS += src/hash.h
 noinst_HEADERS += src/hash_impl.h
 noinst_HEADERS += src/field.h
 noinst_HEADERS += src/field_impl.h
+noinst_HEADERS += src/precomputed_ecdsa_ifma.h
 noinst_HEADERS += src/bench.h
 noinst_HEADERS += src/wycheproof/ecdsa_secp256k1_sha256_bitcoin_test.h
 noinst_HEADERS += src/hsort.h
@@ -78,7 +82,7 @@ noinst_HEADERS += examples/examples_util.h
 
 PRECOMPUTED_LIB = libsecp256k1_precomputed.la
 noinst_LTLIBRARIES = $(PRECOMPUTED_LIB)
-libsecp256k1_precomputed_la_SOURCES =  src/precomputed_ecmult.c src/precomputed_ecmult_gen.c
+libsecp256k1_precomputed_la_SOURCES = src/precomputed_ecmult.c src/precomputed_ecmult_gen.c src/precomputed_ecdsa_ifma.c
 # We need `-I$(top_srcdir)/src` in VPATH builds if libsecp256k1_precomputed_la_SOURCES have been recreated in the build tree.
 # This helps users and packagers who insist on recreating the precomputed files (e.g., Gentoo).
 libsecp256k1_precomputed_la_CPPFLAGS = -I$(top_srcdir)/src $(SECP_CONFIG_DEFINES)
@@ -224,7 +228,7 @@ endif
 endif
 
 ### Precomputed tables
-EXTRA_PROGRAMS = precompute_ecmult precompute_ecmult_gen
+EXTRA_PROGRAMS = precompute_ecmult precompute_ecmult_gen precompute_ecdsa_ifma
 CLEANFILES = $(EXTRA_PROGRAMS)
 
 precompute_ecmult_SOURCES = src/precompute_ecmult.c
@@ -234,6 +238,10 @@ precompute_ecmult_LDADD = $(COMMON_LIB)
 precompute_ecmult_gen_SOURCES = src/precompute_ecmult_gen.c
 precompute_ecmult_gen_CPPFLAGS = $(SECP_CONFIG_DEFINES) -DVERIFY
 precompute_ecmult_gen_LDADD = $(COMMON_LIB)
+
+precompute_ecdsa_ifma_SOURCES = src/precompute_ecdsa_ifma.c
+precompute_ecdsa_ifma_CPPFLAGS = $(SECP_CONFIG_DEFINES) -DVERIFY
+precompute_ecdsa_ifma_LDADD = $(COMMON_LIB)
 
 # See Automake manual, Section "Errors with distclean".
 # We don't list any dependencies for the prebuilt files here because
@@ -247,8 +255,11 @@ src/precomputed_ecmult.c:
 src/precomputed_ecmult_gen.c:
 	$(MAKE) $(AM_MAKEFLAGS) precompute_ecmult_gen$(EXEEXT)
 	./precompute_ecmult_gen$(EXEEXT)
+src/precomputed_ecdsa_ifma.c:
+	$(MAKE) $(AM_MAKEFLAGS) precompute_ecdsa_ifma$(EXEEXT)
+	./precompute_ecdsa_ifma$(EXEEXT)
 
-PRECOMP = src/precomputed_ecmult_gen.c src/precomputed_ecmult.c
+PRECOMP = src/precomputed_ecmult_gen.c src/precomputed_ecmult.c src/precomputed_ecdsa_ifma.c
 precomp: $(PRECOMP)
 
 # Ensure the prebuilt files will be build first (only if they don't exist,

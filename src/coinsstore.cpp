@@ -1107,7 +1107,8 @@ void CoinsStore::ApplyBatch(BlockId block, std::vector<Change>&& changes)
     uint32_t conflicts{0};
     std::vector<const Change*> misses;
     VisitShards(block, shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
-        shard.map.PrefetchAll(hashes, items);
+        // A create looks for its outpoint only to find none.
+        shard.map.PrefetchAll(hashes, items, [&](uint32_t i) { return applied[i]->coin.IsSpent(); });
         // Read with the shard held: an entry dropped from it was dropped after the height was stored.
         const bool base_unseen{m_dropped_through.load(std::memory_order_relaxed) > begin_confirmed};
         for (const uint32_t i : items) {
@@ -1147,7 +1148,7 @@ std::vector<std::pair<COutPoint, Coin>> CoinsStore::FetchFor(BlockId viewer, std
     std::vector<std::pair<COutPoint, Coin>> found;
     found.reserve(outpoints.size());
     VisitShards(viewer, shard_of, [&](Shard& shard, std::span<const uint32_t> items) EXCLUSIVE_LOCKS_REQUIRED(shard.mutex) {
-        shard.map.PrefetchAll(hashes, items);
+        shard.map.PrefetchAll(hashes, items, [](uint32_t) { return true; });
         for (const uint32_t i : items) {
             const COutPoint& outpoint{outpoints[i]};
             const auto it{shard.map.find(outpoint, hashes[i])};

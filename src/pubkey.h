@@ -338,6 +338,53 @@ public:
     SERIALIZE_METHODS(XOnlyPubKey, obj) { READWRITE(obj.m_keydata); }
 };
 
+struct secp256k1_xonly_pubkey;
+
+/** BIP340 signature checks verified together. */
+class SchnorrBatch
+{
+    std::vector<unsigned char> m_sigs;
+    std::vector<uint256> m_hashes;
+    std::vector<secp256k1_xonly_pubkey> m_pubkeys;
+
+public:
+    SchnorrBatch();
+    ~SchnorrBatch();
+
+    /** Add a check with the semantics of XOnlyPubKey::VerifySchnorr. Returns false, adding nothing, if the public key
+     *  does not parse: such a check fails without being verified. */
+    bool Add(const XOnlyPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig);
+
+    size_t size() const { return m_hashes.size(); }
+    void clear();
+
+    /** Verify every added check. Element i of results is whether the i-th added check succeeded. */
+    void Verify(std::vector<unsigned char>& results) const;
+};
+
+/** Taproot commitment checks (XOnlyPubKey::CheckTapTweak) verified together. */
+class TapTweakBatch
+{
+    std::vector<XOnlyPubKey> m_outputs;
+    std::vector<int> m_parities;
+    std::vector<secp256k1_xonly_pubkey> m_internals;
+    std::vector<uint256> m_tweaks;
+
+public:
+    TapTweakBatch();
+    ~TapTweakBatch();
+
+    /** Add a check with the semantics of output.CheckTapTweak(internal, merkle_root, parity). Returns false, adding
+     *  nothing, if the internal key does not parse: such a check fails without being verified. */
+    bool Add(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity);
+
+    size_t size() const { return m_tweaks.size(); }
+    void clear();
+
+    /** Verify every added check. Element i of results is whether the i-th added check succeeded. */
+    void Verify(std::vector<unsigned char>& results) const;
+};
+
 /** An ElligatorSwift-encoded public key. */
 struct EllSwiftPubKey
 {

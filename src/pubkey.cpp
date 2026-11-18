@@ -339,6 +339,67 @@ void ECDSABatch::Verify(std::vector<unsigned char>& results) const
     assert(args_valid);
 }
 
+SchnorrBatch::SchnorrBatch() = default;
+SchnorrBatch::~SchnorrBatch() = default;
+
+bool SchnorrBatch::Add(const XOnlyPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig)
+{
+    assert(sig.size() == 64);
+    secp256k1_xonly_pubkey parsed;
+    if (!secp256k1_xonly_pubkey_parse(secp256k1_context_static, &parsed, pubkey.data())) return false;
+    m_pubkeys.push_back(parsed);
+    m_hashes.push_back(hash);
+    m_sigs.insert(m_sigs.end(), sig.begin(), sig.end());
+    return true;
+}
+
+void SchnorrBatch::clear()
+{
+    m_sigs.clear();
+    m_hashes.clear();
+    m_pubkeys.clear();
+}
+
+void SchnorrBatch::Verify(std::vector<unsigned char>& results) const
+{
+    results.resize(size());
+    if (results.empty()) return;
+    static_assert(sizeof(uint256) == 32);
+    const int args_valid{secp256k1_schnorrsig_verify_many(secp256k1_context_static, results.data(), m_sigs.data(), m_hashes.front().data(), m_pubkeys.data(), size())};
+    assert(args_valid);
+}
+
+TapTweakBatch::TapTweakBatch() = default;
+TapTweakBatch::~TapTweakBatch() = default;
+
+bool TapTweakBatch::Add(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity)
+{
+    secp256k1_xonly_pubkey parsed;
+    if (!secp256k1_xonly_pubkey_parse(secp256k1_context_static, &parsed, internal.data())) return false;
+    m_outputs.push_back(output);
+    m_parities.push_back(parity);
+    m_internals.push_back(parsed);
+    m_tweaks.push_back(internal.ComputeTapTweakHash(&merkle_root));
+    return true;
+}
+
+void TapTweakBatch::clear()
+{
+    m_outputs.clear();
+    m_parities.clear();
+    m_internals.clear();
+    m_tweaks.clear();
+}
+
+void TapTweakBatch::Verify(std::vector<unsigned char>& results) const
+{
+    results.resize(size());
+    if (results.empty()) return;
+    static_assert(sizeof(XOnlyPubKey) == 32 && sizeof(uint256) == 32);
+    const int args_valid{secp256k1_xonly_pubkey_tweak_add_check_many(secp256k1_context_static, results.data(), m_outputs.front().data(), m_parities.data(), m_internals.data(), m_tweaks.front().data(), size())};
+    assert(args_valid);
+}
+
 bool CPubKey::RecoverCompact(const uint256 &hash, const std::vector<unsigned char>& vchSig) {
     if (vchSig.size() != COMPACT_SIGNATURE_SIZE)
         return false;

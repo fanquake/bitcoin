@@ -331,6 +331,8 @@ void BlockManager::FindFilesToPruneManual(
         if (fileinfo.nSize == 0 || fileinfo.nHeightLast > (unsigned)last_block_can_prune || fileinfo.nHeightFirst < (unsigned)min_block_to_prune) {
             continue;
         }
+        // a block is being written to the file with cs_main released
+        if (m_blockfiles_being_written.contains(fileNumber)) continue;
 
         PruneOneBlockFile(fileNumber);
         setFilesToPrune.insert(fileNumber);
@@ -406,6 +408,8 @@ void BlockManager::FindFilesToPrune(
             if (fileinfo.nHeightLast > (unsigned)last_block_can_prune || fileinfo.nHeightFirst < (unsigned)min_block_to_prune) {
                 continue;
             }
+            // a block is being written to the file with cs_main released
+            if (m_blockfiles_being_written.contains(fileNumber)) continue;
 
             PruneOneBlockFile(fileNumber);
             // Queue up the files for removal
@@ -1208,20 +1212,43 @@ BlockManager::ReadRawBlockResult BlockManager::ReadRawBlock(const FlatFilePos& p
     }
 }
 
-FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
+FlatFilePos BlockManager::AllocateBlockPos(const CBlock& block, int nHeight)
 {
     AssertLockHeld(::cs_main);
     const unsigned int block_size{static_cast<unsigned int>(GetSerializeSize(TX_WITH_WITNESS(block)))};
     FlatFilePos pos{FindNextBlockPos(block_size + STORAGE_HEADER_BYTES, nHeight, block.GetBlockTime())};
     if (pos.IsNull()) {
         LogError("FindNextBlockPos failed for %s while writing block", pos.ToString());
-        return FlatFilePos();
     }
+    return pos;
+}
+
+void BlockManager::PinBlockFile(int file)
+{
+    AssertLockHeld(::cs_main);
+    ++m_blockfiles_being_written[file];
+}
+
+void BlockManager::UnpinBlockFile(int file)
+{
+    AssertLockHeld(::cs_main);
+    const auto it{m_blockfiles_being_written.find(file)};
+    if (!Assume(it != m_blockfiles_being_written.end())) return;
+    if (--it->second == 0) m_blockfiles_being_written.erase(it);
+    // The write was made off the lock, after its position was claimed: a sync made in between did not
+    // cover its bytes, also where the cursor left the file meanwhile and finalized it. The file is marked
+    // again, and whatever writes the block index next syncs it first (SyncWrittenFiles()).
+    m_unsynced_block_files.insert(file);
+}
+
+bool BlockManager::WriteBlockAt(const CBlock& block, FlatFilePos& pos)
+{
+    const unsigned int block_size{static_cast<unsigned int>(GetSerializeSize(TX_WITH_WITNESS(block)))};
     AutoFile file{OpenBlockFile(pos, /*fReadOnly=*/false)};
     if (file.IsNull()) {
         LogError("OpenBlockFile failed for %s while writing block", pos.ToString());
         m_opts.notifications.fatalError(_("Failed to write block."));
-        return FlatFilePos();
+        return false;
     }
     {
         BufferedWriter fileout{file};
@@ -1236,9 +1263,18 @@ FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
     if (file.fclose() != 0) {
         LogError("Failed to close block file %s: %s", pos.ToString(), SysErrorString(errno));
         m_opts.notifications.fatalError(_("Failed to close file when writing block."));
-        return FlatFilePos();
+        return false;
     }
 
+    return true;
+}
+
+FlatFilePos BlockManager::WriteBlock(const CBlock& block, int nHeight)
+{
+    AssertLockHeld(::cs_main);
+    FlatFilePos pos{AllocateBlockPos(block, nHeight)};
+    if (pos.IsNull()) return FlatFilePos();
+    if (!WriteBlockAt(block, pos)) return FlatFilePos();
     return pos;
 }
 

@@ -94,6 +94,15 @@ Wtxid CTransaction::ComputeWitnessHash() const
 
 CTransaction::CTransaction(const CMutableTransaction& tx) : vin(tx.vin), vout(tx.vout), version{tx.version}, nLockTime{tx.nLockTime}, m_has_witness{ComputeHasWitness()}, hash{ComputeHash()}, m_witness_hash{ComputeWitnessHash()} {}
 CTransaction::CTransaction(CMutableTransaction&& tx) : vin(std::move(tx.vin)), vout(std::move(tx.vout)), version{tx.version}, nLockTime{tx.nLockTime}, m_has_witness{ComputeHasWitness()}, hash{ComputeHash()}, m_witness_hash{ComputeWitnessHash()} {}
+CTransaction::CTransaction(PrecomputedHashes, CMutableTransaction&& tx, const Txid& txid, const Wtxid& wtxid, bool has_witness) : vin(std::move(tx.vin)), vout(std::move(tx.vout)), version{tx.version}, nLockTime{tx.nLockTime}, m_has_witness{has_witness}, hash{txid}, m_witness_hash{wtxid} {}
+CTransaction::CTransaction(Deserialized&& d) : CTransaction(PrecomputedHashes{}, std::move(d.tx), d.txid, d.wtxid, d.has_witness) {}
+
+std::pair<Txid, Wtxid> CTransaction::HashBySerialising(const CMutableTransaction& tx)
+{
+    const Txid txid{tx.GetHash()};
+    if (!tx.HasWitness()) return {txid, Wtxid::FromUint256(txid.ToUint256())};
+    return {txid, Wtxid::FromUint256((HashWriter{} << TX_WITH_WITNESS(tx)).GetHash())};
+}
 
 CAmount CTransaction::GetValueOut() const
 {

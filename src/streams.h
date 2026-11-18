@@ -100,6 +100,8 @@ public:
 
     size_t size() const { return m_data.size(); }
     bool empty() const { return m_data.empty(); }
+    //! The unread bytes.
+    const std::byte* data() const { return m_data.data(); }
 
     void read(std::span<std::byte> dst)
     {

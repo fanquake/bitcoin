@@ -3231,6 +3231,9 @@ struct ConnectedBlock {
  * Connect a new block to m_chain. block_to_connect is either nullptr or a pointer to a CBlock
  * corresponding to pindexNew, to bypass loading it again from disk.
     //! With the block's position on disk and its size, if known: a worker reads neither from the index.
+    // A window block's reads of the database stay in the store for its apply. At the tip they do not: a
+    // block that fails there leaves the cache as it was.
+    view->SetKeepBaseReads(staged.windowed);
     in.ctx.block_pos = pos;
     in.ctx.known_bytes = block_bytes;
     size_t block_bytes{in.ctx.known_bytes};

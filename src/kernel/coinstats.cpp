@@ -118,7 +118,11 @@ static std::optional<CCoinsStats> ComputeUTXOStats(T hash_obj, const CCoinsViewD
         pcursor = view.Cursor();
         pindex = blockman.LookupBlockIndex(pcursor->GetBestBlock());
     }
-    CCoinsStats stats{Assert(pindex)->nHeight, pindex->GetBlockHash()};
+    // A write-out run that is not the last of its write-out leaves the database without a best block
+    // until a later run closes it. One may have started since the caller wrote the cache out: there is
+    // no block the database's coins are the set of.
+    if (!pindex) return std::nullopt;
+    CCoinsStats stats{pindex->nHeight, pindex->GetBlockHash()};
 
     Txid prevkey;
     std::map<uint32_t, Coin> outputs;

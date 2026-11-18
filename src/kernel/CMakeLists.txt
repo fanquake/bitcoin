@@ -22,6 +22,7 @@ add_library(bitcoinkernel
   ../arith_uint256.cpp
   ../chain.cpp
   ../coins.cpp
+  ../coinsstore.cpp
   ../compressor.cpp
   ../consensus/merkle.cpp
   ../consensus/tx_check.cpp

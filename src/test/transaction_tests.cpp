@@ -36,8 +36,10 @@
 #include <util/string.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -390,6 +392,54 @@ BOOST_AUTO_TEST_CASE(basic_transaction_tests)
     // Check that duplicate txins fail
     tx.vin.push_back(tx.vin[0]);
     BOOST_CHECK_MESSAGE(!CheckTransaction(CTransaction(tx), state) || !state.IsValid(), "Transaction with duplicate txins should be invalid.");
+}
+
+//! The duplicate input check gives the verdict of a std::set of the outpoints, at every input count on
+//! both sides of its switch from comparing pairs to sorting, and wherever the two equal inputs stand.
+BOOST_AUTO_TEST_CASE(duplicate_inputs_match_a_set)
+{
+    const auto set_says_duplicate{[](const CTransaction& tx) {
+        std::set<COutPoint> seen;
+        for (const auto& txin : tx.vin) {
+            if (!seen.insert(txin.prevout).second) return true;
+        }
+        return false;
+    }};
+    const auto check{[&](const CMutableTransaction& mtx, bool duplicate) {
+        const CTransaction tx{mtx};
+        BOOST_CHECK_EQUAL(set_says_duplicate(tx), duplicate);
+        BOOST_CHECK_EQUAL(HasDuplicateInputs(tx), duplicate);
+        TxValidationState state;
+        BOOST_CHECK_EQUAL(CheckTransaction(tx, state), !duplicate);
+        if (duplicate) BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-inputs-duplicate");
+    }};
+    for (const size_t inputs : {1U, 2U, 3U, 7U, 8U, 9U, 10U, 33U, 200U}) {
+        CMutableTransaction mtx;
+        mtx.vout.emplace_back(1, CScript{} << OP_TRUE);
+        // A few transaction ids only, with distinct output indexes: outpoints that agree in one half.
+        for (size_t i{0}; i < inputs; ++i) {
+            mtx.vin.emplace_back(COutPoint{Txid::FromUint256(uint256{static_cast<uint8_t>(1 + m_rng.randrange(3))}), static_cast<uint32_t>(i)});
+        }
+        std::shuffle(mtx.vin.begin(), mtx.vin.end(), m_rng);
+        check(mtx, /*duplicate=*/false);
+        if (inputs == 1) continue;
+        // Every pair of positions at the small counts, random pairs at the large ones.
+        for (size_t round{0}; round < (inputs <= 10 ? 10U : 5U); ++round) {
+            for (size_t to{0}; to < inputs; ++to) {
+                const size_t from{inputs <= 10 ? round % inputs : m_rng.randrange(inputs)};
+                if (from == to) continue;
+                CMutableTransaction dup{mtx};
+                dup.vin[to].prevout = dup.vin[from].prevout;
+                check(dup, /*duplicate=*/true);
+                // The same hash with another index, and the same index with another hash, are no duplicate.
+                CMutableTransaction near{mtx};
+                near.vin[to].prevout = COutPoint{mtx.vin[from].prevout.hash, static_cast<uint32_t>(inputs + to)};
+                check(near, /*duplicate=*/false);
+                near.vin[to].prevout = COutPoint{Txid::FromUint256(uint256{9}), mtx.vin[from].prevout.n};
+                check(near, /*duplicate=*/false);
+            }
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(test_Get)

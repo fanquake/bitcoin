@@ -482,6 +482,19 @@ private:
     //! for the node. Only a hint. Freed with FreeRegion().
     static void* HintedRegion(size_t bytes);
     static inline std::atomic<size_t> s_node_region_bytes{0};
+    //! The size of the regions the nodes' memory is asked for in.
+    static constexpr size_t NODE_REGION_BYTES{size_t{32} << 20};
+    //! From this much node memory of the process on, the next region is made ready ahead of its use
+    //! (NodeRegion()); below it a region ahead would be a large share of a small store.
+    static constexpr size_t NODE_REGION_AHEAD_FROM{size_t{1} << 30};
+    //! A region of NODE_REGION_BYTES for nodes, as HintedRegion() gives it. The system supplies memory at
+    //! its first touch, on the touching thread, which for a node is a thread connecting blocks under a
+    //! shard's mutex. Once the store is large, a thread of its own therefore asks for the next region as
+    //! soon as one is taken and touches all of it; a region asked for before the next is ready is supplied
+    //! on the asking thread. The thread runs while there is a store: the last one to be destroyed joins it.
+    static void* NodeRegion();
+    struct RegionAhead;
+    static RegionAhead& RegionAheadState();
     static void FreeRegion(void* region) noexcept { ::operator delete(region, std::align_val_t{HUGE_PAGE_BYTES}); }
     //! A shard's entries are inserted and erased by whichever thread holds its mutex, so a node is often freed
     //! by another thread than the one that allocated it. A thread keeps the nodes it frees for its own next
@@ -496,7 +509,7 @@ private:
     struct NodeAllocator {
         using value_type = T;
         static constexpr size_t MAX_KEPT{1024};
-        static constexpr size_t REGION_BYTES{size_t{32} << 20};
+        static constexpr size_t REGION_BYTES{NODE_REGION_BYTES};
         //! The next full list after this one in the depot: the second word of a list's first node.
         static void*& NextList(void* list) { return static_cast<void**>(list)[1]; }
         //! Full lists, each MAX_KEPT nodes, for whichever thread next runs out, and the region new ones are
@@ -541,7 +554,7 @@ private:
                     if (lists) return std::exchange(lists, NextList(lists));
                     if (fresh_bytes < LIST_BYTES) {
                         // The remainder, less than a list, is left behind.
-                        fresh = static_cast<std::byte*>(HintedRegion(REGION_BYTES));
+                        fresh = static_cast<std::byte*>(NodeRegion());
                         fresh_bytes = REGION_BYTES;
                         s_node_region_bytes.fetch_add(REGION_BYTES, std::memory_order_relaxed);
                     }
@@ -888,6 +901,13 @@ private:
     size_t SumTotals(std::atomic<int64_t> Totals::* field) const;
     //! What an entry's map node costs, as DynamicMemoryUsage() counts it.
     static int64_t NodeBytes();
+    //! The region made ready ahead of its use, as DynamicMemoryUsage() counts it: memory the system has
+    //! supplied and no node lives in yet. A bound, not a reading: NODE_REGION_BYTES for a store whose own
+    //! nodes come to NODE_REGION_AHEAD_FROM, nothing for a smaller store, whose budget may be less than a
+    //! region (a chainstate beside a snapshot's). The process may hold a region all the same while this
+    //! counts nothing (NodeRegion()). Not counted, here or elsewhere: the free nodes (NodeAllocator), and
+    //! the part of the newest region no list was carved from, which the system has not supplied.
+    size_t RegionAheadBytes() const;
     /**
      * How many change heights share a list of dirty entries, as a power of two. While nothing is written
      * out the dirty entries are the coins of every height since the last write, a few to a shard for each:

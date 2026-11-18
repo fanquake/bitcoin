@@ -4061,6 +4061,9 @@ void Chainstate::RunConnectTask(StagedConnect& staged) noexcept
     if (!in.block) {
         auto block{m_chainman.NewBlock(/*on_pool=*/true)};
         const bool read{m_blockman.ReadBlock(*block, in.ctx.block_pos, in.ctx.block_hash, &block_bytes)};
+        // The pages the system keeps of block files already read are memory the store's huge pages are then
+        // not granted from. The files well behind this block's are let go.
+        if (read && staged.sync) m_blockman.ReleaseBlockFilesBelow(in.ctx.block_pos.nFile - node::BlockManager::BLOCK_FILE_RELEASE_LAG);
         if (!read) {
             staged.time_read = staged.time_connected = SteadyClock::now();
             staged.at.emplace<connect_phase::ReadFailed>();

@@ -41,6 +41,11 @@
 #include <util/translation.h>
 #include <validation.h>
 
+#if defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <cerrno>
 #include <compare>
@@ -1356,6 +1361,24 @@ bool BlockManager::ReadBlock(CBlock& block, const CBlockIndex& index) const
 {
     const FlatFilePos block_pos{WITH_LOCK(cs_main, return index.GetBlockPos())};
     return ReadBlock(block, block_pos, index.GetBlockHash());
+}
+
+void BlockManager::ReleaseBlockFilesBelow(int file) const noexcept
+{
+    int from{m_block_files_released.load(std::memory_order_relaxed)};
+    while (from < file) {
+        if (!m_block_files_released.compare_exchange_weak(from, file, std::memory_order_relaxed)) continue;
+#if defined(__linux__) && defined(POSIX_FADV_DONTNEED)
+        for (int n{from}; n < file; ++n) {
+            const int fd{::open(m_block_file_seq.FileName(FlatFilePos{n, 0}).c_str(), O_RDONLY | O_CLOEXEC)};
+            if (fd < 0) continue;
+            // The whole file, in one call.
+            (void)::posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+            ::close(fd);
+        }
+#endif
+        return;
+    }
 }
 
 BlockManager::ReadRawBlockResult BlockManager::ReadRawBlock(const FlatFilePos& pos, std::optional<std::pair<size_t, size_t>> block_part) const

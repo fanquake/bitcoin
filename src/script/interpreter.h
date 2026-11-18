@@ -285,6 +285,9 @@ public:
         return false;
     }
 
+    /** Check a Taproot commitment, with the semantics of output.CheckTapTweak(internal, merkle_root, parity). */
+    virtual bool CheckTapTweak(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity) const;
+
     virtual bool CheckLockTime(const CScriptNum& nLockTime) const
     {
          return false;
@@ -353,6 +356,11 @@ public:
     bool CheckSchnorrSignature(std::span<const unsigned char> sig, std::span<const unsigned char> pubkey, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror = nullptr) const override
     {
         return m_checker.CheckSchnorrSignature(sig, pubkey, sigversion, execdata, serror);
+    }
+
+    bool CheckTapTweak(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity) const override
+    {
+        return m_checker.CheckTapTweak(output, internal, merkle_root, parity);
     }
 
     bool CheckLockTime(const CScriptNum& nLockTime) const override

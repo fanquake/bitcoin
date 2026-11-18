@@ -800,5 +800,69 @@ SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_verify_many(const s
     }
 }
 
+SECP256K1_ECDSA_IFMA_INLINE secp256k1_ecdsa_ifma_fe8 secp256k1_ecdsa_ifma_fe8_sqr_n(secp256k1_ecdsa_ifma_fe8 a, int n) {
+    int j;
+    for (j = 0; j < n; j++) {
+        a = secp256k1_ecdsa_ifma_fe8_sqr(a);
+    }
+    return a;
+}
+
+/* Set r[lane] to a[lane]^((p+1)/4), using the addition chain of secp256k1_fe_sqrt.
+ * The inputs must be normalized. r[lane] is a square root of a[lane] only if
+ * a[lane] is a square, which the caller has to check. */
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_fe8_sqrt_candidates(secp256k1_fe r[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_fe a[SECP256K1_ECDSA_IFMA_LANES]) {
+    secp256k1_ecdsa_ifma_fe8 va = secp256k1_ecdsa_ifma_fe8_pack(a);
+    secp256k1_ecdsa_ifma_fe8 x2, x3, x6, x9, x11, x22, x44, x88, x176, x220, x223, t1;
+    int lane;
+
+    x2 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr(va), va);
+    x3 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr(x2), va);
+    x6 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x3, 3), x3);
+    x9 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x6, 3), x3);
+    x11 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x9, 2), x2);
+    x22 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x11, 11), x11);
+    x44 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x22, 22), x22);
+    x88 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x44, 44), x44);
+    x176 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x88, 88), x88);
+    x220 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x176, 44), x44);
+    x223 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x220, 3), x3);
+    t1 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(x223, 23), x22);
+    t1 = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_sqr_n(t1, 6), x2);
+    t1 = secp256k1_ecdsa_ifma_fe8_sqr_n(t1, 2);
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        secp256k1_ecdsa_ifma_fe8_get_lane(&r[lane], &t1, lane);
+    }
+}
+
+/* Do secp256k1_ge_set_xo_var for each of eight lanes; ret[lane] is its result.
+ * The x values must be normalized. Each square root is checked with the
+ * scalar field code, so the results are exact. */
+static void secp256k1_ecdsa_ifma_ge_set_xo8_var(secp256k1_ge r[SECP256K1_ECDSA_IFMA_LANES], int ret[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_fe x[SECP256K1_ECDSA_IFMA_LANES], const int odd[SECP256K1_ECDSA_IFMA_LANES]) {
+    secp256k1_fe rhs[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_fe y[SECP256K1_ECDSA_IFMA_LANES];
+    int lane;
+
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        secp256k1_fe x2;
+        secp256k1_fe_sqr(&x2, &x[lane]);
+        secp256k1_fe_mul(&rhs[lane], &x[lane], &x2);
+        secp256k1_fe_add_int(&rhs[lane], SECP256K1_B);
+        secp256k1_fe_normalize_var(&rhs[lane]);
+    }
+    secp256k1_ecdsa_ifma_fe8_sqrt_candidates(y, rhs);
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        secp256k1_fe y2;
+        secp256k1_fe_normalize_var(&y[lane]);
+        secp256k1_fe_sqr(&y2, &y[lane]);
+        ret[lane] = secp256k1_fe_equal(&y2, &rhs[lane]);
+        if (secp256k1_fe_is_odd(&y[lane]) != odd[lane]) {
+            secp256k1_fe_negate(&y[lane], &y[lane], 1);
+        }
+        r[lane].x = x[lane];
+        r[lane].y = y[lane];
+        r[lane].infinity = 0;
+    }
+}
 
 #endif /* SECP256K1_ECDSA_IFMA_IMPL_H */

@@ -155,6 +155,29 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add_
     const unsigned char *tweak32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
 
+/** Parse many 32-byte x-only public keys, as secp256k1_xonly_pubkey_parse
+ *  does for one.
+ *
+ *  Returns: 1: all arguments were valid
+ *           0: invalid argument
+ *  Args:      ctx:      pointer to a context object.
+ *  Out:       results:  pointer to an array of n bytes. Each byte is set to 1
+ *                       if the corresponding public key could be parsed, or 0
+ *                       otherwise.
+ *             pubkeys:  pointer to an array of n x-only public key objects.
+ *                       Each is set to the parsed key, or zeroed if parsing
+ *                       failed.
+ *  In:        inputs32: pointer to an array of n consecutive 32-byte keys.
+ *             n:        number of keys. Must be greater than 0.
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_parse_many(
+    const secp256k1_context *ctx,
+    unsigned char *results,
+    secp256k1_xonly_pubkey *pubkeys,
+    const unsigned char *inputs32,
+    size_t n
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
+
 /** Check many tweaked public keys, as secp256k1_xonly_pubkey_tweak_add_check
  *  does for one.
  *

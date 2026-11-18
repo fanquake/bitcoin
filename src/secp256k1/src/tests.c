@@ -6701,6 +6701,101 @@ static void run_ecdsa_sign_verify(void) {
     }
 }
 
+/* Check that secp256k1_ec_pubkey_parse_many agrees with secp256k1_ec_pubkey_parse. */
+static void test_ec_pubkey_parse_many_compare(const unsigned char *const *inputs, const size_t *inputlens, size_t n) {
+    unsigned char results[64];
+    secp256k1_pubkey pubkeys[64];
+    size_t i;
+    CHECK(secp256k1_ec_pubkey_parse_many(CTX, results, pubkeys, inputs, inputlens, n));
+    for (i = 0; i < n; i++) {
+        secp256k1_pubkey expected;
+        CHECK(results[i] == secp256k1_ec_pubkey_parse(CTX, &expected, inputs[i], inputlens[i]));
+        CHECK(secp256k1_memcmp_var(&pubkeys[i], &expected, sizeof(expected)) == 0);
+    }
+}
+
+static void run_ec_pubkey_parse_many(void) {
+    enum { N = 48 };
+    unsigned char buf[N][65];
+    const unsigned char *inputs[N];
+    size_t inputlens[N];
+    unsigned char results[N];
+    secp256k1_pubkey pubkeys[N];
+    int round;
+    size_t i;
+
+    for (round = 0; round < COUNT; round++) {
+        for (i = 0; i < N; i++) {
+            unsigned char sk[32];
+            secp256k1_pubkey pk;
+            size_t len = 65;
+            inputs[i] = buf[i];
+            testutil_random_scalar_order_b32(sk);
+            CHECK(secp256k1_ec_pubkey_create(CTX, &pk, sk));
+            switch (i % 8) {
+            case 0: case 1: case 2:
+                /* Valid compressed keys. */
+                CHECK(secp256k1_ec_pubkey_serialize(CTX, buf[i], &len, &pk, SECP256K1_EC_COMPRESSED));
+                break;
+            case 3:
+                /* Random x, which has a point about half the time. */
+                testrand256(&buf[i][1]);
+                buf[i][0] = 2 + testrand_bits(1);
+                len = 33;
+                break;
+            case 4:
+                /* x at or above p. */
+                memset(&buf[i][1], 0xff, 32);
+                buf[i][32] = (unsigned char)(0x2f + testrand_bits(4));
+                buf[i][28] = 0xfe + testrand_bits(1);
+                buf[i][0] = 2 + testrand_bits(1);
+                len = 33;
+                break;
+            case 5:
+                /* A compressed key with a wrong tag. */
+                CHECK(secp256k1_ec_pubkey_serialize(CTX, buf[i], &len, &pk, SECP256K1_EC_COMPRESSED));
+                buf[i][0] = (unsigned char)(testrand_bits(1) ? 4 : 5 + testrand_bits(1));
+                break;
+            case 6:
+                /* Uncompressed or hybrid keys. */
+                CHECK(secp256k1_ec_pubkey_serialize(CTX, buf[i], &len, &pk, SECP256K1_EC_UNCOMPRESSED));
+                if (testrand_bits(1)) {
+                    buf[i][0] = (unsigned char)(6 + (buf[i][64] & 1));
+                }
+                break;
+            default:
+                /* Wrong lengths. */
+                CHECK(secp256k1_ec_pubkey_serialize(CTX, buf[i], &len, &pk, SECP256K1_EC_COMPRESSED));
+                len = testrand_bits(1) ? 32 : 64;
+                break;
+            }
+            inputlens[i] = len;
+        }
+        /* Shuffle the kinds over the lane positions. */
+        for (i = N - 1; i > 0; i--) {
+            size_t j = testrand_int(i + 1);
+            const unsigned char *t = inputs[i];
+            size_t tl = inputlens[i];
+            inputs[i] = inputs[j];
+            inputlens[i] = inputlens[j];
+            inputs[j] = t;
+            inputlens[j] = tl;
+        }
+        for (i = 1; i <= 20; i++) {
+            test_ec_pubkey_parse_many_compare(inputs, inputlens, i);
+        }
+        test_ec_pubkey_parse_many_compare(inputs, inputlens, N);
+    }
+
+    CHECK_ILLEGAL(CTX, secp256k1_ec_pubkey_parse_many(CTX, NULL, pubkeys, inputs, inputlens, N));
+    CHECK_ILLEGAL(CTX, secp256k1_ec_pubkey_parse_many(CTX, results, NULL, inputs, inputlens, N));
+    CHECK_ILLEGAL(CTX, secp256k1_ec_pubkey_parse_many(CTX, results, pubkeys, NULL, inputlens, N));
+    CHECK_ILLEGAL(CTX, secp256k1_ec_pubkey_parse_many(CTX, results, pubkeys, inputs, NULL, N));
+    CHECK_ILLEGAL(CTX, secp256k1_ec_pubkey_parse_many(CTX, results, pubkeys, inputs, inputlens, 0));
+    inputs[3] = NULL;
+    CHECK_ILLEGAL(CTX, secp256k1_ec_pubkey_parse_many(CTX, results, pubkeys, inputs, inputlens, N));
+}
+
 static void run_ecdsa_verify_many(void) {
     enum { N_SIGS = 129 };
     secp256k1_ecdsa_signature sigs[N_SIGS];
@@ -8491,6 +8586,7 @@ static const struct tf_test_entry tests_ecdsa[] = {
     CASE(ecdsa_der_parse),
     CASE(ecdsa_der_parse_long_form),
     CASE(ecdsa_sign_verify),
+    CASE(ec_pubkey_parse_many),
     CASE(ecdsa_verify_many),
 #ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
     CASE(ecdsa_ifma_fe8),

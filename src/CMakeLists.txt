@@ -220,6 +220,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   node/abort.cpp
   node/block_template_manager.cpp
   node/blockmanager_args.cpp
+  node/blockcache.cpp
   node/blockstorage.cpp
   node/caches.cpp
   node/chainstate.cpp

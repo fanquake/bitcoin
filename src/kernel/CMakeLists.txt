@@ -32,6 +32,7 @@ add_library(bitcoinkernel
   ../deploymentstatus.cpp
   ../flatfile.cpp
   ../hash.cpp
+  ../node/blockcache.cpp
   ../node/blockstorage.cpp
   ../node/chainstate.cpp
   ../node/utxo_snapshot.cpp

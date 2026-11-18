@@ -240,21 +240,27 @@ class ECDSABatch
 {
     std::vector<secp256k1_ecdsa_signature> m_sigs;
     std::vector<uint256> m_hashes;
+    std::vector<CPubKey> m_keys;
+    //! Verify's parsing space, kept between batches.
     std::vector<secp256k1_pubkey> m_pubkeys;
+    std::vector<const unsigned char*> m_key_data;
+    std::vector<size_t> m_key_sizes;
+    std::vector<unsigned char> m_parsed;
 
 public:
     ECDSABatch();
     ~ECDSABatch();
 
-    /** Add a check with the semantics of CPubKey::Verify. Returns false, adding nothing, if the public key or the
-     *  signature does not parse: such a check fails without being verified. */
+    /** Add a check with the semantics of CPubKey::Verify. Returns false, adding nothing, if the signature does not
+     *  parse or the public key has an invalid size: such a check fails without being verified. Public keys are
+     *  parsed together in Verify. */
     bool Add(const CPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig);
 
     size_t size() const { return m_hashes.size(); }
     void clear();
 
     /** Verify every added check. Element i of results is whether the i-th added check succeeded. */
-    void Verify(std::vector<unsigned char>& results) const;
+    void Verify(std::vector<unsigned char>& results);
 };
 
 class XOnlyPubKey
@@ -345,21 +351,23 @@ class SchnorrBatch
 {
     std::vector<unsigned char> m_sigs;
     std::vector<uint256> m_hashes;
+    std::vector<XOnlyPubKey> m_keys;
+    //! Verify's parsing space, kept between batches.
     std::vector<secp256k1_xonly_pubkey> m_pubkeys;
+    std::vector<unsigned char> m_parsed;
 
 public:
     SchnorrBatch();
     ~SchnorrBatch();
 
-    /** Add a check with the semantics of XOnlyPubKey::VerifySchnorr. Returns false, adding nothing, if the public key
-     *  does not parse: such a check fails without being verified. */
-    bool Add(const XOnlyPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig);
+    /** Add a check with the semantics of XOnlyPubKey::VerifySchnorr. Public keys are parsed together in Verify. */
+    void Add(const XOnlyPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig);
 
     size_t size() const { return m_hashes.size(); }
     void clear();
 
     /** Verify every added check. Element i of results is whether the i-th added check succeeded. */
-    void Verify(std::vector<unsigned char>& results) const;
+    void Verify(std::vector<unsigned char>& results);
 };
 
 /** Taproot commitment checks (XOnlyPubKey::CheckTapTweak) verified together. */
@@ -367,22 +375,25 @@ class TapTweakBatch
 {
     std::vector<XOnlyPubKey> m_outputs;
     std::vector<int> m_parities;
-    std::vector<secp256k1_xonly_pubkey> m_internals;
+    std::vector<XOnlyPubKey> m_internal_keys;
     std::vector<uint256> m_tweaks;
+    //! Verify's parsing space, kept between batches.
+    std::vector<secp256k1_xonly_pubkey> m_internals;
+    std::vector<unsigned char> m_parsed;
 
 public:
     TapTweakBatch();
     ~TapTweakBatch();
 
-    /** Add a check with the semantics of output.CheckTapTweak(internal, merkle_root, parity). Returns false, adding
-     *  nothing, if the internal key does not parse: such a check fails without being verified. */
-    bool Add(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity);
+    /** Add a check with the semantics of output.CheckTapTweak(internal, merkle_root, parity). Internal keys are
+     *  parsed together in Verify. */
+    void Add(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity);
 
     size_t size() const { return m_tweaks.size(); }
     void clear();
 
     /** Verify every added check. Element i of results is whether the i-th added check succeeded. */
-    void Verify(std::vector<unsigned char>& results) const;
+    void Verify(std::vector<unsigned char>& results);
 };
 
 /** An ElligatorSwift-encoded public key. */

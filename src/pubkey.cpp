@@ -306,17 +306,34 @@ bool CPubKey::Verify(const uint256 &hash, const std::vector<unsigned char>& vchS
     return secp256k1_ecdsa_verify(secp256k1_context_static, &sig, hash.begin(), &pubkey);
 }
 
+/** Give each check whose key did not parse the key of one that did, so that the batch can be verified, and return
+ *  whether any key parsed. The results of the checks whose keys did not parse must then be cleared. */
+template <typename Key>
+static bool StandInForUnparsedKeys(std::vector<Key>& keys, const std::vector<unsigned char>& parsed)
+{
+    const auto it{std::ranges::find(parsed, 1)};
+    if (it == parsed.end()) return false;
+    const Key stand_in{keys[it - parsed.begin()]};
+    for (size_t i{0}; i < keys.size(); ++i) {
+        if (!parsed[i]) keys[i] = stand_in;
+    }
+    return true;
+}
+
+static void ClearUnparsed(std::vector<unsigned char>& results, const std::vector<unsigned char>& parsed)
+{
+    for (size_t i{0}; i < results.size(); ++i) results[i] &= parsed[i];
+}
+
 ECDSABatch::ECDSABatch() = default;
 ECDSABatch::~ECDSABatch() = default;
 
 bool ECDSABatch::Add(const CPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig)
 {
-    secp256k1_pubkey parsed_pubkey;
     secp256k1_ecdsa_signature parsed_sig;
-    if (!ParseForVerify(pubkey, sig, parsed_pubkey, parsed_sig)) {
-        return false;
-    }
-    m_pubkeys.push_back(parsed_pubkey);
+    if (!pubkey.IsValid() || !ecdsa_signature_parse_der_lax(&parsed_sig, sig.data(), sig.size())) return false;
+    secp256k1_ecdsa_signature_normalize(secp256k1_context_static, &parsed_sig, &parsed_sig);
+    m_keys.push_back(pubkey);
     m_sigs.push_back(parsed_sig);
     m_hashes.push_back(hash);
     return true;
@@ -324,80 +341,107 @@ bool ECDSABatch::Add(const CPubKey& pubkey, const uint256& hash, std::span<const
 
 void ECDSABatch::clear()
 {
-    m_pubkeys.clear();
+    m_keys.clear();
     m_sigs.clear();
     m_hashes.clear();
 }
 
-void ECDSABatch::Verify(std::vector<unsigned char>& results) const
+void ECDSABatch::Verify(std::vector<unsigned char>& results)
 {
     results.resize(size());
     if (results.empty()) return;
+    m_key_data.clear();
+    m_key_sizes.clear();
+    for (const CPubKey& key : m_keys) {
+        m_key_data.push_back(key.data());
+        m_key_sizes.push_back(key.size());
+    }
+    m_pubkeys.resize(size());
+    m_parsed.resize(size());
+    const int parse_args_valid{secp256k1_ec_pubkey_parse_many(secp256k1_context_static, m_parsed.data(), m_pubkeys.data(), m_key_data.data(), m_key_sizes.data(), size())};
+    assert(parse_args_valid);
+    if (!StandInForUnparsedKeys(m_pubkeys, m_parsed)) {
+        std::ranges::fill(results, 0);
+        return;
+    }
     // secp256k1 takes the message hashes as one array of consecutive 32-byte hashes.
     static_assert(sizeof(uint256) == 32);
     const int args_valid{secp256k1_ecdsa_verify_many(secp256k1_context_static, results.data(), m_sigs.data(), m_hashes.front().data(), m_pubkeys.data(), size())};
     assert(args_valid);
+    ClearUnparsed(results, m_parsed);
 }
 
 SchnorrBatch::SchnorrBatch() = default;
 SchnorrBatch::~SchnorrBatch() = default;
 
-bool SchnorrBatch::Add(const XOnlyPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig)
+void SchnorrBatch::Add(const XOnlyPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig)
 {
     assert(sig.size() == 64);
-    secp256k1_xonly_pubkey parsed;
-    if (!secp256k1_xonly_pubkey_parse(secp256k1_context_static, &parsed, pubkey.data())) return false;
-    m_pubkeys.push_back(parsed);
+    m_keys.push_back(pubkey);
     m_hashes.push_back(hash);
     m_sigs.insert(m_sigs.end(), sig.begin(), sig.end());
-    return true;
 }
 
 void SchnorrBatch::clear()
 {
     m_sigs.clear();
     m_hashes.clear();
-    m_pubkeys.clear();
+    m_keys.clear();
 }
 
-void SchnorrBatch::Verify(std::vector<unsigned char>& results) const
+void SchnorrBatch::Verify(std::vector<unsigned char>& results)
 {
     results.resize(size());
     if (results.empty()) return;
-    static_assert(sizeof(uint256) == 32);
+    static_assert(sizeof(XOnlyPubKey) == 32 && sizeof(uint256) == 32);
+    m_pubkeys.resize(size());
+    m_parsed.resize(size());
+    const int parse_args_valid{secp256k1_xonly_pubkey_parse_many(secp256k1_context_static, m_parsed.data(), m_pubkeys.data(), m_keys.front().data(), size())};
+    assert(parse_args_valid);
+    if (!StandInForUnparsedKeys(m_pubkeys, m_parsed)) {
+        std::ranges::fill(results, 0);
+        return;
+    }
     const int args_valid{secp256k1_schnorrsig_verify_many(secp256k1_context_static, results.data(), m_sigs.data(), m_hashes.front().data(), m_pubkeys.data(), size())};
     assert(args_valid);
+    ClearUnparsed(results, m_parsed);
 }
 
 TapTweakBatch::TapTweakBatch() = default;
 TapTweakBatch::~TapTweakBatch() = default;
 
-bool TapTweakBatch::Add(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity)
+void TapTweakBatch::Add(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity)
 {
-    secp256k1_xonly_pubkey parsed;
-    if (!secp256k1_xonly_pubkey_parse(secp256k1_context_static, &parsed, internal.data())) return false;
     m_outputs.push_back(output);
     m_parities.push_back(parity);
-    m_internals.push_back(parsed);
+    m_internal_keys.push_back(internal);
     m_tweaks.push_back(internal.ComputeTapTweakHash(&merkle_root));
-    return true;
 }
 
 void TapTweakBatch::clear()
 {
     m_outputs.clear();
     m_parities.clear();
-    m_internals.clear();
+    m_internal_keys.clear();
     m_tweaks.clear();
 }
 
-void TapTweakBatch::Verify(std::vector<unsigned char>& results) const
+void TapTweakBatch::Verify(std::vector<unsigned char>& results)
 {
     results.resize(size());
     if (results.empty()) return;
     static_assert(sizeof(XOnlyPubKey) == 32 && sizeof(uint256) == 32);
+    m_internals.resize(size());
+    m_parsed.resize(size());
+    const int parse_args_valid{secp256k1_xonly_pubkey_parse_many(secp256k1_context_static, m_parsed.data(), m_internals.data(), m_internal_keys.front().data(), size())};
+    assert(parse_args_valid);
+    if (!StandInForUnparsedKeys(m_internals, m_parsed)) {
+        std::ranges::fill(results, 0);
+        return;
+    }
     const int args_valid{secp256k1_xonly_pubkey_tweak_add_check_many(secp256k1_context_static, results.data(), m_outputs.front().data(), m_parities.data(), m_internals.data(), m_tweaks.front().data(), size())};
     assert(args_valid);
+    ClearUnparsed(results, m_parsed);
 }
 
 bool CPubKey::RecoverCompact(const uint256 &hash, const std::vector<unsigned char>& vchSig) {

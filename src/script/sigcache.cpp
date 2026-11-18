@@ -87,7 +87,7 @@ bool CachingTransactionSignatureChecker::VerifySchnorrSignature(std::span<const 
     if (m_signature_cache.Get(entry, !store)) return true;
     if (m_deferred) {
         if (const auto it{m_deferred->verified.find(entry)}; it != m_deferred->verified.end()) return it->second;
-        if (!m_deferred->schnorr.Add(pubkey, sighash, sig)) return false;
+        m_deferred->schnorr.Add(pubkey, sighash, sig);
         m_deferred->checks.push_back({entry, DeferredSignatureChecks::Kind::SCHNORR, uint32_t(m_deferred->schnorr.size() - 1)});
         return true;
     }
@@ -102,7 +102,7 @@ bool CachingTransactionSignatureChecker::CheckTapTweak(const XOnlyPubKey& output
     static const HashWriter HASHER_DEFERRED_TAP_TWEAK{TaggedHash("Bitcoin Core deferred TapTweak check")};
     const uint256 id{(HashWriter{HASHER_DEFERRED_TAP_TWEAK} << output << internal << merkle_root << parity).GetSHA256()};
     if (const auto it{m_deferred->verified.find(id)}; it != m_deferred->verified.end()) return it->second;
-    if (!m_deferred->tap_tweaks.Add(output, internal, merkle_root, parity)) return false;
+    m_deferred->tap_tweaks.Add(output, internal, merkle_root, parity);
     m_deferred->checks.push_back({id, DeferredSignatureChecks::Kind::TAP_TWEAK, uint32_t(m_deferred->tap_tweaks.size() - 1)});
     return true;
 }

@@ -395,6 +395,15 @@ BOOST_AUTO_TEST_CASE(key_schnorr_tweak_smoke_test)
     secp256k1_context_destroy(secp256k1_context_sign);
 }
 
+//! Return 32 bytes that are not the x coordinate of a curve point.
+static uint256 RandomNonPointX(FastRandomContext& rng)
+{
+    while (true) {
+        const uint256 x{rng.rand256()};
+        if (!XOnlyPubKey{x}.IsFullyValid()) return x;
+    }
+}
+
 BOOST_AUTO_TEST_CASE(ecdsa_batch)
 {
     // More checks than one group of batch verification holds, with a partial final group.
@@ -406,8 +415,16 @@ BOOST_AUTO_TEST_CASE(ecdsa_batch)
         std::vector<unsigned char> sig;
         BOOST_REQUIRE(key.Sign(hash, sig));
         const uint256 checked_hash{i % 5 ? hash : m_rng.rand256()};
-        BOOST_CHECK(batch.Add(key.GetPubKey(), checked_hash, sig));
-        expected.push_back(key.GetPubKey().Verify(checked_hash, sig));
+        // Keys of a valid size that do not parse fail when the batch is verified.
+        CPubKey pubkey{key.GetPubKey()};
+        if (i % 7 == 3) {
+            std::vector<unsigned char> bytes{0x02};
+            const uint256 x{RandomNonPointX(m_rng)};
+            bytes.insert(bytes.end(), x.begin(), x.end());
+            pubkey.Set(bytes.begin(), bytes.end());
+        }
+        BOOST_CHECK(batch.Add(pubkey, checked_hash, sig));
+        expected.push_back(pubkey.Verify(checked_hash, sig));
     }
     BOOST_CHECK(!batch.Add(GenerateRandomKey().GetPubKey(), m_rng.rand256(), {}));
     BOOST_CHECK_EQUAL(batch.size(), expected.size());
@@ -419,6 +436,48 @@ BOOST_AUTO_TEST_CASE(ecdsa_batch)
     batch.clear();
     batch.Verify(results);
     BOOST_CHECK(results.empty());
+}
+
+BOOST_AUTO_TEST_CASE(schnorr_and_tap_tweak_batches)
+{
+    // More checks than one group of batch verification holds, with a partial final group, and some keys that do not
+    // parse.
+    SchnorrBatch schnorr;
+    TapTweakBatch tap_tweaks;
+    std::vector<unsigned char> expected_schnorr, expected_tap_tweaks;
+    for (int i{0}; i < 37; ++i) {
+        const CKey key{GenerateRandomKey()};
+        const uint256 hash{m_rng.rand256()};
+        std::vector<unsigned char> sig(64);
+        BOOST_REQUIRE(key.SignSchnorr(hash, sig, nullptr, m_rng.rand256()));
+        XOnlyPubKey pubkey{key.GetPubKey()};
+        if (i % 7 == 3) pubkey = XOnlyPubKey{RandomNonPointX(m_rng)};
+        const uint256 checked_hash{i % 5 ? hash : m_rng.rand256()};
+        schnorr.Add(pubkey, checked_hash, sig);
+        expected_schnorr.push_back(pubkey.VerifySchnorr(checked_hash, sig));
+
+        const uint256 merkle_root{m_rng.rand256()};
+        const auto tweaked{XOnlyPubKey{key.GetPubKey()}.CreateTapTweak(&merkle_root)};
+        BOOST_REQUIRE(tweaked);
+        const bool parity{i % 6 == 1 ? !tweaked->second : tweaked->second};
+        tap_tweaks.Add(tweaked->first, pubkey, merkle_root, parity);
+        expected_tap_tweaks.push_back(tweaked->first.CheckTapTweak(pubkey, merkle_root, parity));
+    }
+    BOOST_CHECK(std::ranges::count(expected_schnorr, 1) > 0 && std::ranges::count(expected_schnorr, 0) > 0);
+    BOOST_CHECK(std::ranges::count(expected_tap_tweaks, 1) > 0 && std::ranges::count(expected_tap_tweaks, 0) > 0);
+
+    std::vector<unsigned char> results;
+    schnorr.Verify(results);
+    BOOST_CHECK_EQUAL_COLLECTIONS(results.begin(), results.end(), expected_schnorr.begin(), expected_schnorr.end());
+    tap_tweaks.Verify(results);
+    BOOST_CHECK_EQUAL_COLLECTIONS(results.begin(), results.end(), expected_tap_tweaks.begin(), expected_tap_tweaks.end());
+
+    // A batch in which no key parses.
+    schnorr.clear();
+    for (int i{0}; i < 9; ++i) schnorr.Add(XOnlyPubKey{RandomNonPointX(m_rng)}, m_rng.rand256(), std::vector<unsigned char>(64));
+    schnorr.Verify(results);
+    BOOST_CHECK_EQUAL(results.size(), 9U);
+    BOOST_CHECK_EQUAL(std::ranges::count(results, 0), 9);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

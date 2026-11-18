@@ -298,6 +298,9 @@ void BlockManager::PruneOneBlockFile(const int fileNumber)
 
     m_blockfile_info.at(fileNumber) = CBlockFileInfo{};
     m_dirty_fileinfo.insert(fileNumber);
+    // No index entry refers to the file any more, so there is nothing left to sync.
+    m_unsynced_block_files.erase(fileNumber);
+    m_unsynced_undo_files.erase(fileNumber);
 }
 
 void BlockManager::FindFilesToPruneManual(
@@ -538,11 +541,53 @@ void BlockManager::WriteBlockIndexDB()
     std::vector<const CBlockIndex*> vBlocks;
     vBlocks.reserve(m_dirty_blockindex.size());
     for (std::set<CBlockIndex*>::iterator it = m_dirty_blockindex.begin(); it != m_dirty_blockindex.end();) {
+        // The index never records bytes that a crash could still lose.
+        Assume(DURABILITY_TABLE.Next(DataDurability(**it), DurabilityEvent::Record));
+        Assume(DURABILITY_TABLE.Next(UndoDurability(**it), DurabilityEvent::Record));
         vBlocks.push_back(*it);
         m_dirty_blockindex.erase(it++);
     }
     int max_blockfile{this->MaxBlockfileNum()};
     m_block_tree_db->WriteBatchSync(vFiles, max_blockfile, vBlocks);
+}
+
+DurabilityState BlockManager::DataDurability(const CBlockIndex& block) const
+{
+    AssertLockHeld(::cs_main);
+    if (!(block.nStatus & BLOCK_HAVE_DATA)) return DurabilityState::Absent;
+    return m_unsynced_block_files.contains(block.nFile) ? DurabilityState::Unsynced : DurabilityState::Synced;
+}
+
+DurabilityState BlockManager::UndoDurability(const CBlockIndex& block) const
+{
+    AssertLockHeld(::cs_main);
+    if (!(block.nStatus & BLOCK_HAVE_UNDO)) return DurabilityState::Absent;
+    return m_unsynced_undo_files.contains(block.nFile) ? DurabilityState::Unsynced : DurabilityState::Synced;
+}
+
+bool BlockManager::SyncWrittenFiles()
+{
+    AssertLockHeld(::cs_main);
+    // A sync that failed is not tried again: a second fsync of the same file can
+    // report success although the pages of the first were dropped. A flush that failed
+    // before its fsync (the file could not be opened or truncated) is treated the same:
+    // FlatFileSeq::Flush() does not say which it was, and failing is the safe side.
+    if (m_sync_failed) return false;
+    bool success{true};
+    // Iterate over copies: a successful sync takes the file out of its set.
+    for (const int file : std::set<int>{m_unsynced_block_files}) {
+        if (m_block_file_seq.Flush(FlatFilePos(file, m_blockfile_info.at(file).nSize), /*finalize=*/false)) {
+            m_unsynced_block_files.erase(file);
+        } else {
+            m_sync_failed = true;
+            m_opts.notifications.flushError(_("Flushing block file to disk failed. This is likely the result of an I/O error."));
+            success = false;
+        }
+    }
+    for (const int file : std::set<int>{m_unsynced_undo_files}) {
+        if (!FlushUndoFile(file, /*finalize=*/false)) success = false;
+    }
+    return success;
 }
 
 bool BlockManager::LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)
@@ -749,11 +794,14 @@ bool BlockManager::ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index
 
 bool BlockManager::FlushUndoFile(int block_file, bool finalize)
 {
+    AssertLockHeld(::cs_main);
     FlatFilePos undo_pos_old(block_file, m_blockfile_info[block_file].nUndoSize);
     if (!m_undo_file_seq.Flush(undo_pos_old, finalize)) {
+        m_sync_failed = true;
         m_opts.notifications.flushError(_("Flushing undo file to disk failed. This is likely the result of an I/O error."));
         return false;
     }
+    m_unsynced_undo_files.erase(block_file);
     return true;
 }
 
@@ -773,8 +821,11 @@ bool BlockManager::FlushBlockFile(int blockfile_num, bool fFinalize, bool finali
 
     FlatFilePos block_pos_old(blockfile_num, m_blockfile_info[blockfile_num].nSize);
     if (!m_block_file_seq.Flush(block_pos_old, fFinalize)) {
+        m_sync_failed = true;
         m_opts.notifications.flushError(_("Flushing block file to disk failed. This is likely the result of an I/O error."));
         success = false;
+    } else {
+        m_unsynced_block_files.erase(blockfile_num);
     }
     // we do not always flush the undo file, as the chain tip may be lagging behind the incoming blocks,
     // e.g. during IBD or a sync after a node going offline
@@ -928,6 +979,8 @@ FlatFilePos BlockManager::FindNextBlockPos(uint64_t nAddSize, unsigned int nHeig
         m_opts.notifications.fatalError(_("Disk space is too low!"));
         return {};
     }
+    // The position is claimed: the file holds bytes its last sync did not cover.
+    m_unsynced_block_files.insert(nFile);
     if (bytes_allocated != 0 && IsPruneMode()) {
         m_check_for_pruning = true;
     }
@@ -971,6 +1024,8 @@ bool BlockManager::FindUndoPos(BlockValidationState& state, int nFile, FlatFileP
     if (out_of_space) {
         return FatalError(m_opts.notifications, state, _("Disk space is too low!"));
     }
+    // The position is claimed: the file holds bytes its last sync did not cover.
+    m_unsynced_undo_files.insert(nFile);
     if (bytes_allocated != 0 && IsPruneMode()) {
         m_check_for_pruning = true;
     }

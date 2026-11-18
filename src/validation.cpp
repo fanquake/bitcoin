@@ -2861,6 +2861,13 @@ bool Chainstate::FlushStateToDisk(
             LogDebug(BCLog::COINDB, "Writing chainstate to disk: flush mode=%s, prune=%d, large=%d, critical=%d, periodic=%d",
                      FlushStateModeNames[size_t(mode)], fFlushForPrune, fCacheLarge, fCacheCritical, fPeriodicWrite);
 
+            // The order of the write-out, see node::FlushPhase. Each step is announced before it runs.
+            node::FlushPhase phase{node::FlushPhase::Start};
+            const auto step{[&phase](node::FlushStep next_step) {
+                const auto next{node::FLUSH_TABLE.Next(phase, next_step)};
+                if (Assume(next)) phase = *next;
+            }};
+
             // Ensure we can write block index
             if (!CheckDiskSpace(m_blockman.m_opts.blocks_dir)) {
                 return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
@@ -2868,9 +2875,12 @@ bool Chainstate::FlushStateToDisk(
             {
                 LOG_TIME_MILLIS_WITH_CATEGORY("write block and undo data to disk", BCLog::BENCH);
 
-                // First make sure all block and undo data is flushed to disk.
-                if (!m_blockman.FlushChainstateBlockFile(m_chain.Height())) {
-                    // FlushChainstateBlockFile() already reported the specific error through flushError()
+                // First make sure all block and undo data is flushed to disk: the file this
+                // chainstate writes to, then every other file written to since its last sync
+                // (an undo file whose block file was left behind, the other chainstate's file).
+                step(node::FlushStep::SyncFiles);
+                if (!m_blockman.FlushChainstateBlockFile(m_chain.Height()) || !m_blockman.SyncWrittenFiles()) {
+                    // The specific error was already reported through flushError()
                     return state.Error("Failed to flush block or undo file");
                 }
             }
@@ -2879,12 +2889,14 @@ bool Chainstate::FlushStateToDisk(
             {
                 LOG_TIME_MILLIS_WITH_CATEGORY("write block index to disk", BCLog::BENCH);
 
+                step(node::FlushStep::WriteIndex);
                 m_blockman.WriteBlockIndexDB();
             }
             // Finally remove any pruned files
             if (fFlushForPrune) {
                 LOG_TIME_MILLIS_WITH_CATEGORY("unlink pruned files", BCLog::BENCH);
 
+                step(node::FlushStep::Unlink);
                 m_blockman.UnlinkPrunedFiles(setFilesToPrune);
             }
 
@@ -2898,6 +2910,7 @@ bool Chainstate::FlushStateToDisk(
                     return FatalError(m_chainman.GetNotifications(), state, _("Disk space is too low!"));
                 }
                 // Flush the chainstate (which may refer to block index entries).
+                step(node::FlushStep::WriteCoins);
                 empty_cache ? CoinsTip().Flush() : CoinsTip().Sync();
                 m_last_flushed_block = m_blockman.LookupBlockIndex(CoinsTip().GetBestBlock());
                 full_flush_completed = true;

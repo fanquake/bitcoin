@@ -48,6 +48,7 @@ add_executable(test_bitcoin
   denialofservice_tests.cpp
   descriptor_tests.cpp
   disconnected_transactions.cpp
+  durability_machine_tests.cpp
   fees_util_tests.cpp
   feefrac_tests.cpp
   feerounder_tests.cpp

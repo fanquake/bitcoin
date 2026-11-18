@@ -192,9 +192,10 @@ static int secp256k1_ecdsa_sig_serialize(unsigned char *sig, size_t *size, const
     return 1;
 }
 
-static int secp256k1_ecdsa_sig_verify(const secp256k1_scalar *sigr, const secp256k1_scalar *sigs, const secp256k1_ge *pubkey, const secp256k1_scalar *message) {
+/* This function requires a valid inverse of a nonzero signature s value. */
+static int secp256k1_ecdsa_sig_verify_with_sigs_inverse(const secp256k1_scalar *sigr, const secp256k1_scalar *sigs_inverse, const secp256k1_ge *pubkey, const secp256k1_scalar *message) {
     unsigned char c[32];
-    secp256k1_scalar sn, u1, u2;
+    secp256k1_scalar u1, u2;
 #if !defined(EXHAUSTIVE_TEST_ORDER)
     int range;
     secp256k1_fe xr;
@@ -202,13 +203,12 @@ static int secp256k1_ecdsa_sig_verify(const secp256k1_scalar *sigr, const secp25
     secp256k1_gej pubkeyj;
     secp256k1_gej pr;
 
-    if (secp256k1_scalar_is_zero(sigr) || secp256k1_scalar_is_zero(sigs)) {
+    if (secp256k1_scalar_is_zero(sigr)) {
         return 0;
     }
 
-    secp256k1_scalar_inverse_var(&sn, sigs);
-    secp256k1_scalar_mul(&u1, &sn, message);
-    secp256k1_scalar_mul(&u2, &sn, sigr);
+    secp256k1_scalar_mul(&u1, sigs_inverse, message);
+    secp256k1_scalar_mul(&u2, sigs_inverse, sigr);
     secp256k1_gej_set_ge(&pubkeyj, pubkey);
     secp256k1_ecmult(&pr, &pubkeyj, &u2, &u1);
     if (secp256k1_gej_is_infinity(&pr)) {
@@ -238,37 +238,74 @@ static int secp256k1_ecdsa_sig_verify(const secp256k1_scalar *sigr, const secp25
     (void)range;
 #endif
 
-    /** We now have the recomputed R point in pr, and its claimed x coordinate (modulo n)
-     *  in xr. Naively, we would extract the x coordinate from pr (requiring a inversion modulo p),
-     *  compute the remainder modulo n, and compare it to xr. However:
+    /** We now have the recomputed R point in pr, and its claimed x coordinate (modulo n) in xr.
+     *  Naively, we would extract pr's x-coordinate X(pr) (requiring an inversion modulo p), and
+     *  check whether the congruence xr === X(pr) (mod n) holds. However, we can do better:
      *
-     *        xr == X(pr) mod n
-     *    <=> exists h. (xr + h * n < p && xr + h * n == X(pr))
-     *    [Since 2 * n > p, h can only be 0 or 1]
-     *    <=> (xr == X(pr)) || (xr + n < p && xr + n == X(pr))
-     *    [In Jacobian coordinates, X(pr) is pr.x / pr.z^2 mod p]
-     *    <=> (xr == pr.x / pr.z^2 mod p) || (xr + n < p && xr + n == pr.x / pr.z^2 mod p)
-     *    [Multiplying both sides of the equations by pr.z^2 mod p]
-     *    <=> (xr * pr.z^2 mod p == pr.x) || (xr + n < p && (xr + n) * pr.z^2 mod p == pr.x)
+     *        xr === X(pr) (mod n)
+     *   <=>  exists h. xr + h * n == X(pr)
+     *   [Since 2 * n > p, h can only be 0 or 1:]
+     *   <=>  xr == X(pr)  ||  xr + n == X(pr)
+     *   [Since X(pr) < p, the second equality implies xr + n < p:]
+     *   <=>  xr == X(pr)  ||  (xr + n < p  &&  xr + n == X(pr))
+     *   [Both sides of each equality are in [0, p), so it is equivalent to consider the
+     *    congruences modulo p instead:]
+     *   <=>  xr === X(pr) (mod p)  ||  (xr + n < p  &&  xr + n === X(pr) (mod p))
+     *   [In Jacobian coordinates, X(pr) is pr.x / pr.z^2:]
+     *   <=>  xr === pr.x / pr.z^2 (mod p))  ||  (xr + n < p  &&  xr + n === pr.x / pr.z^2 (mod p))
+     *   [Multiplying both sides of the congruences by pr.z^2 (which is nonzero modulo p because
+     *    the point pr is not infinity) gives:]
+     *   <=>  xr * pr.z^2 === pr.x (mod p)  ||  (xr + n < p  &&  (xr + n) * pr.z^2 === pr.x (mod p))
      *
      *  Thus, we can avoid the inversion, but we have to check both cases separately.
-     *  secp256k1_gej_eq_x implements the (xr * pr.z^2 mod p == pr.x) test.
+     *  secp256k1_gej_eq_x implements the (xr * pr.z^2 === pr.x (mod p)) test.
      */
     if (secp256k1_gej_eq_x_var(&xr, &pr)) {
-        /* xr * pr.z^2 mod p == pr.x, so the signature is valid. */
+        /* xr * pr.z^2 === pr.x (mod p), so the signature is valid. */
         return 1;
     }
     if (secp256k1_fe_cmp_var(&xr, &secp256k1_ecdsa_const_p_minus_order) >= 0) {
-        /* xr + n >= p, so we can skip testing the second case. */
+        /* xr + n >= p, so the second case cannot hold. */
         return 0;
     }
     secp256k1_fe_add(&xr, &secp256k1_ecdsa_const_order_as_fe);
     if (secp256k1_gej_eq_x_var(&xr, &pr)) {
-        /* (xr + n) * pr.z^2 mod p == pr.x, so the signature is valid. */
+        /* (xr + n) * pr.z^2 === pr.x (mod p), so the signature is valid. */
         return 1;
     }
     return 0;
 #endif
+}
+
+static int secp256k1_ecdsa_sig_verify(const secp256k1_scalar *sigr, const secp256k1_scalar *sigs, const secp256k1_ge *pubkey, const secp256k1_scalar *message) {
+    secp256k1_scalar sigs_inv;
+    if (secp256k1_scalar_is_zero(sigr) || secp256k1_scalar_is_zero(sigs)) {
+        return 0;
+    }
+    secp256k1_scalar_inverse_var(&sigs_inv, sigs);
+    return secp256k1_ecdsa_sig_verify_with_sigs_inverse(sigr, &sigs_inv, pubkey, message);
+}
+
+/* Compute the inverse of each nonzero input using a single inversion. The
+ * inverse corresponding to a zero input is unspecified. */
+static void secp256k1_ecdsa_sig_inverse_var_many(secp256k1_scalar *r, const secp256k1_scalar *a, size_t len) {
+    secp256k1_scalar acc;
+    secp256k1_scalar acc_inv;
+    secp256k1_scalar one;
+    size_t i;
+
+    secp256k1_scalar_set_int(&one, 1);
+    acc = one;
+    for (i = 0; i < len; i++) {
+        r[i] = acc;
+        secp256k1_scalar_mul(&acc, &acc, secp256k1_scalar_is_zero(&a[i]) ? &one : &a[i]);
+    }
+    secp256k1_scalar_inverse_var(&acc_inv, &acc);
+    for (i = len; i > 0; i--) {
+        secp256k1_scalar prefix = r[i - 1];
+        secp256k1_scalar_mul(&r[i - 1], &acc_inv, &prefix);
+        secp256k1_scalar_mul(&acc_inv, &acc_inv, secp256k1_scalar_is_zero(&a[i - 1]) ? &one : &a[i - 1]);
+    }
 }
 
 static int secp256k1_ecdsa_sig_sign(const secp256k1_ecmult_gen_context *ecmult_gen_ctx, secp256k1_scalar *sigr, secp256k1_scalar *sigs, const secp256k1_scalar *seckey, const secp256k1_scalar *message, const secp256k1_scalar *nonce, int *recid) {

@@ -57,6 +57,7 @@ endif()
 add_library(secp256k1_precomputed OBJECT EXCLUDE_FROM_ALL
   precomputed_ecmult.c
   precomputed_ecmult_gen.c
+  precomputed_ecdsa_ifma.c
 )
 
 # Add objects explicitly rather than linking to the object libs to keep them

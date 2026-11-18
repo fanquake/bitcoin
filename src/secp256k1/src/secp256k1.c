@@ -38,6 +38,12 @@
 #include "selftest.h"
 #include "hsort_impl.h"
 
+#include "ecdsa_ifma_config.h"
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+#include "ecdsa_ifma.h"
+#endif
+
 #ifdef SECP256K1_NO_BUILD
 # error "secp256k1.h processed without SECP256K1_BUILD defined while building secp256k1.c"
 #endif
@@ -263,12 +269,18 @@ static void secp256k1_pubkey_save(secp256k1_pubkey* pubkey, secp256k1_ge* ge) {
 
 int secp256k1_ec_pubkey_parse(const secp256k1_context* ctx, secp256k1_pubkey* pubkey, const unsigned char *input, size_t inputlen) {
     secp256k1_ge Q;
+    int is_pubkey_valid;
 
     VERIFY_CHECK(ctx != NULL);
     ARG_CHECK(pubkey != NULL);
     memset(pubkey, 0, sizeof(*pubkey));
     ARG_CHECK(input != NULL);
-    if (!secp256k1_ge_parse(&Q, input, inputlen)) {
+    switch (inputlen) {
+        case 33: is_pubkey_valid = secp256k1_ge_parse33(&Q, input); break;
+        case 65: is_pubkey_valid = secp256k1_ge_parse_with_hybrid65(&Q, input); break;
+        default: is_pubkey_valid = 0;
+    }
+    if (!is_pubkey_valid) {
         return 0;
     }
     if (!secp256k1_ge_is_in_correct_subgroup(&Q)) {
@@ -388,6 +400,16 @@ static void secp256k1_ecdsa_signature_save(secp256k1_ecdsa_signature* sig, const
     }
 }
 
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+#include "ecdsa_ifma_impl.h"
+
+static int secp256k1_ecdsa_ifma_available(void) {
+    return __builtin_cpu_supports("avx512f") &&
+        __builtin_cpu_supports("avx512dq") &&
+        __builtin_cpu_supports("avx512ifma");
+}
+#endif
+
 int secp256k1_ecdsa_signature_parse_der(const secp256k1_context* ctx, secp256k1_ecdsa_signature* sig, const unsigned char *input, size_t inputlen) {
     secp256k1_scalar r, s;
 
@@ -484,6 +506,57 @@ int secp256k1_ecdsa_verify(const secp256k1_context* ctx, const secp256k1_ecdsa_s
             secp256k1_pubkey_load(ctx, &q, pubkey) &&
             secp256k1_ecdsa_sig_verify(&r, &s, &q, &m));
 }
+
+#define SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE 64
+
+static int secp256k1_ecdsa_verify_many_portable(const secp256k1_context* ctx, unsigned char *results, const secp256k1_ecdsa_signature *sigs, const unsigned char *msghashes32, const secp256k1_pubkey *pubkeys, size_t n_sigs) {
+    secp256k1_scalar sigr[SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE];
+    secp256k1_scalar sigs_value[SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE];
+    secp256k1_scalar sigs_inverse[SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE];
+    size_t tile_start;
+
+    for (tile_start = 0; tile_start < n_sigs; tile_start += SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE) {
+        size_t tile_size = n_sigs - tile_start;
+        size_t i;
+        if (tile_size > SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE) {
+            tile_size = SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE;
+        }
+        for (i = 0; i < tile_size; i++) {
+            secp256k1_ecdsa_signature_load(ctx, &sigr[i], &sigs_value[i], &sigs[tile_start + i]);
+        }
+        secp256k1_ecdsa_sig_inverse_var_many(sigs_inverse, sigs_value, tile_size);
+        for (i = 0; i < tile_size; i++) {
+            const size_t index = tile_start + i;
+            secp256k1_ge q;
+            secp256k1_scalar m;
+            secp256k1_scalar_set_b32(&m, &msghashes32[32 * index], NULL);
+            results[index] = (unsigned char)(!secp256k1_scalar_is_zero(&sigs_value[i]) &&
+                !secp256k1_scalar_is_high(&sigs_value[i]) &&
+                secp256k1_pubkey_load(ctx, &q, &pubkeys[index]) &&
+                secp256k1_ecdsa_sig_verify_with_sigs_inverse(&sigr[i], &sigs_inverse[i], &q, &m));
+        }
+    }
+    return 1;
+}
+
+int secp256k1_ecdsa_verify_many(const secp256k1_context* ctx, unsigned char *results, const secp256k1_ecdsa_signature *sigs, const unsigned char *msghashes32, const secp256k1_pubkey *pubkeys, size_t n_sigs) {
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(results != NULL);
+    ARG_CHECK(sigs != NULL);
+    ARG_CHECK(msghashes32 != NULL);
+    ARG_CHECK(pubkeys != NULL);
+    ARG_CHECK(n_sigs > 0);
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+    if (n_sigs >= SECP256K1_ECDSA_IFMA_LANES && secp256k1_ecdsa_ifma_available()) {
+        secp256k1_ecdsa_ifma_verify_many(ctx, results, sigs, msghashes32, pubkeys, n_sigs);
+        return 1;
+    }
+#endif
+    return secp256k1_ecdsa_verify_many_portable(ctx, results, sigs, msghashes32, pubkeys, n_sigs);
+}
+
+#undef SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE
 
 static SECP256K1_INLINE void buffer_append(unsigned char *buf, unsigned int *offset, const void *data, unsigned int len) {
     memcpy(buf + *offset, data, len);

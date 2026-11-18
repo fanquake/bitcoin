@@ -372,7 +372,7 @@ private:
     PrecomputedTransactionData *txdata;
     SignatureCache* m_signature_cache;
 
-    std::optional<std::pair<ScriptError, std::string>> Execute(DeferredECDSAChecks* deferred);
+    std::optional<std::pair<ScriptError, std::string>> Execute(DeferredSignatureChecks* deferred);
 
 public:
     CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, SignatureCache& signature_cache, unsigned int nInIn, script_verify_flags flags, bool cacheIn, PrecomputedTransactionData* txdataIn) :
@@ -404,7 +404,7 @@ public:
 class ScriptCheckBatch
 {
     std::vector<CScriptCheck> m_checks;
-    DeferredECDSAChecks m_deferred;
+    DeferredSignatureChecks m_deferred;
     std::vector<size_t> m_deferred_ends;
     std::vector<std::optional<std::pair<ScriptError, std::string>>> m_results;
     std::vector<unsigned char> m_valid;

@@ -2264,9 +2264,9 @@ std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Run()
     m_results.clear();
     for (CScriptCheck& check : m_checks) {
         m_results.push_back(check.Execute(&m_deferred));
-        m_deferred_ends.push_back(m_deferred.batch.size());
+        m_deferred_ends.push_back(m_deferred.checks.size());
     }
-    m_deferred.batch.Verify(m_valid);
+    m_deferred.Verify(m_valid);
 
     size_t begin{0};
     size_t unresolved{0};
@@ -2274,8 +2274,11 @@ std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Run()
         const size_t end{m_deferred_ends[i]};
         const bool all_valid{std::all_of(m_valid.begin() + begin, m_valid.begin() + end, [](unsigned char v) { return v; })};
         for (size_t j{begin}; j < end; ++j) {
-            if (m_valid[j] && m_checks[i].cacheStore) m_checks[i].m_signature_cache->Set(m_deferred.cache_entries[j]);
-            if (!all_valid) m_deferred.verified.emplace(m_deferred.cache_entries[j], m_valid[j]);
+            const auto& deferred{m_deferred.checks[j]};
+            if (m_valid[j] && m_checks[i].cacheStore && deferred.kind != DeferredSignatureChecks::Kind::TAP_TWEAK) {
+                m_checks[i].m_signature_cache->Set(deferred.id);
+            }
+            if (!all_valid) m_deferred.verified.emplace(deferred.id, m_valid[j]);
         }
         if (!all_valid) {
             if (unresolved != i) m_checks[unresolved] = std::move(m_checks[i]);
@@ -2300,7 +2303,7 @@ std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Finish()
     return std::nullopt;
 }
 
-std::optional<std::pair<ScriptError, std::string>> CScriptCheck::Execute(DeferredECDSAChecks* deferred)
+std::optional<std::pair<ScriptError, std::string>> CScriptCheck::Execute(DeferredSignatureChecks* deferred)
 {
     const CScript &scriptSig = ptxTo->vin[nIn].scriptSig;
     const CScriptWitness *witness = &ptxTo->vin[nIn].scriptWitness;

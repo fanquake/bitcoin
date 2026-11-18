@@ -63,18 +63,28 @@ public:
     void Set(const uint256& entry);
 };
 
-/** ECDSA signature checks deferred by CachingTransactionSignatureChecker, with their signature cache entries. */
-struct DeferredECDSAChecks {
-    ECDSABatch batch;
-    std::vector<uint256> cache_entries;
-    /** Outcomes of checks verified earlier, by signature cache entry, reported instead of being deferred again. */
+/** Signature and Taproot commitment checks deferred by CachingTransactionSignatureChecker. */
+struct DeferredSignatureChecks {
+    enum class Kind : uint8_t { ECDSA, SCHNORR, TAP_TWEAK };
+    struct Check {
+        //! Identifies the check: its signature cache entry, or for a Taproot commitment a hash of its inputs.
+        uint256 id;
+        Kind kind;
+        //! Position in the batch of its kind.
+        uint32_t index;
+    };
+
+    ECDSABatch ecdsa;
+    SchnorrBatch schnorr;
+    TapTweakBatch tap_tweaks;
+    //! Every deferred check, in the order they were added.
+    std::vector<Check> checks;
+    /** Outcomes of checks verified earlier, by id, reported instead of being deferred again. */
     std::unordered_map<uint256, bool, SaltedUint256Hasher> verified;
 
-    void clear()
-    {
-        batch.clear();
-        cache_entries.clear();
-    }
+    void clear();
+    /** Verify every deferred check. Element i of results is whether checks[i] succeeded. */
+    void Verify(std::vector<unsigned char>& results);
 };
 
 class CachingTransactionSignatureChecker : public TransactionSignatureChecker
@@ -82,16 +92,17 @@ class CachingTransactionSignatureChecker : public TransactionSignatureChecker
 private:
     bool store;
     SignatureCache& m_signature_cache;
-    /** If set, ECDSA checks that miss the signature cache and its verified outcomes are added to it instead of being
-     *  verified, and reported as successful. A script's outcome then only holds if every check it deferred turns out
-     *  to be valid. */
-    DeferredECDSAChecks* m_deferred;
+    /** If set, signature checks that miss the signature cache, and Taproot commitment checks, are looked up in its
+     *  verified outcomes, or else added to it instead of being verified and reported as successful. A script's
+     *  outcome then only holds if every check it deferred turns out to be valid. */
+    DeferredSignatureChecks* m_deferred;
 
 public:
-    CachingTransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, bool storeIn, SignatureCache& signature_cache, PrecomputedTransactionData& txdataIn, DeferredECDSAChecks* deferred = nullptr) : TransactionSignatureChecker(txToIn, nInIn, amountIn, txdataIn, MissingDataBehavior::ASSERT_FAIL), store(storeIn), m_signature_cache(signature_cache), m_deferred(deferred) {}
+    CachingTransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, bool storeIn, SignatureCache& signature_cache, PrecomputedTransactionData& txdataIn, DeferredSignatureChecks* deferred = nullptr) : TransactionSignatureChecker(txToIn, nInIn, amountIn, txdataIn, MissingDataBehavior::ASSERT_FAIL), store(storeIn), m_signature_cache(signature_cache), m_deferred(deferred) {}
 
     bool VerifyECDSASignature(const std::vector<unsigned char>& vchSig, const CPubKey& vchPubKey, const uint256& sighash) const override;
     bool VerifySchnorrSignature(std::span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash) const override;
+    bool CheckTapTweak(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity) const override;
 };
 
 #endif // BITCOIN_SCRIPT_SIGCACHE_H

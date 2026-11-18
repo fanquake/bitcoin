@@ -6,6 +6,7 @@
 #include <script/sigcache.h>
 
 #include <crypto/sha256.h>
+#include <hash.h>
 #include <pubkey.h>
 #include <random.h>
 #include <script/interpreter.h>
@@ -68,8 +69,8 @@ bool CachingTransactionSignatureChecker::VerifyECDSASignature(const std::vector<
         return true;
     if (m_deferred) {
         if (const auto it{m_deferred->verified.find(entry)}; it != m_deferred->verified.end()) return it->second;
-        if (!m_deferred->batch.Add(pubkey, sighash, vchSig)) return false;
-        m_deferred->cache_entries.push_back(entry);
+        if (!m_deferred->ecdsa.Add(pubkey, sighash, vchSig)) return false;
+        m_deferred->checks.push_back({entry, DeferredSignatureChecks::Kind::ECDSA, uint32_t(m_deferred->ecdsa.size() - 1)});
         return true;
     }
     if (!TransactionSignatureChecker::VerifyECDSASignature(vchSig, pubkey, sighash))
@@ -84,7 +85,48 @@ bool CachingTransactionSignatureChecker::VerifySchnorrSignature(std::span<const 
     uint256 entry;
     m_signature_cache.ComputeEntrySchnorr(entry, sighash, sig, pubkey);
     if (m_signature_cache.Get(entry, !store)) return true;
+    if (m_deferred) {
+        if (const auto it{m_deferred->verified.find(entry)}; it != m_deferred->verified.end()) return it->second;
+        if (!m_deferred->schnorr.Add(pubkey, sighash, sig)) return false;
+        m_deferred->checks.push_back({entry, DeferredSignatureChecks::Kind::SCHNORR, uint32_t(m_deferred->schnorr.size() - 1)});
+        return true;
+    }
     if (!TransactionSignatureChecker::VerifySchnorrSignature(sig, pubkey, sighash)) return false;
     if (store) m_signature_cache.Set(entry);
     return true;
+}
+
+bool CachingTransactionSignatureChecker::CheckTapTweak(const XOnlyPubKey& output, const XOnlyPubKey& internal, const uint256& merkle_root, bool parity) const
+{
+    if (!m_deferred) return TransactionSignatureChecker::CheckTapTweak(output, internal, merkle_root, parity);
+    static const HashWriter HASHER_DEFERRED_TAP_TWEAK{TaggedHash("Bitcoin Core deferred TapTweak check")};
+    const uint256 id{(HashWriter{HASHER_DEFERRED_TAP_TWEAK} << output << internal << merkle_root << parity).GetSHA256()};
+    if (const auto it{m_deferred->verified.find(id)}; it != m_deferred->verified.end()) return it->second;
+    if (!m_deferred->tap_tweaks.Add(output, internal, merkle_root, parity)) return false;
+    m_deferred->checks.push_back({id, DeferredSignatureChecks::Kind::TAP_TWEAK, uint32_t(m_deferred->tap_tweaks.size() - 1)});
+    return true;
+}
+
+void DeferredSignatureChecks::clear()
+{
+    ecdsa.clear();
+    schnorr.clear();
+    tap_tweaks.clear();
+    checks.clear();
+}
+
+void DeferredSignatureChecks::Verify(std::vector<unsigned char>& results)
+{
+    thread_local std::vector<unsigned char> ecdsa_results, schnorr_results, tap_tweak_results;
+    ecdsa.Verify(ecdsa_results);
+    schnorr.Verify(schnorr_results);
+    tap_tweaks.Verify(tap_tweak_results);
+    results.resize(checks.size());
+    for (size_t i{0}; i < checks.size(); ++i) {
+        switch (checks[i].kind) {
+        case Kind::ECDSA: results[i] = ecdsa_results[checks[i].index]; break;
+        case Kind::SCHNORR: results[i] = schnorr_results[checks[i].index]; break;
+        case Kind::TAP_TWEAK: results[i] = tap_tweak_results[checks[i].index]; break;
+        }
+    }
 }

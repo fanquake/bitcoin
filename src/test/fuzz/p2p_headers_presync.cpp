@@ -38,6 +38,7 @@ public:
         // now, avoid it influencing the global RNG, and initialize it with a
         // constant instead.
         peerman_opts.deterministic_rng = true;
+        peerman_opts.blocks_on_message_handler = true;
         // No txs are relayed. Disable irrelevant and possibly
         // non-deterministic code paths.
         peerman_opts.ignore_incoming_txs = true;

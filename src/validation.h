@@ -21,6 +21,7 @@
 #include <kernel/cs_main.h> // IWYU pragma: export
 #include <node/blockcache.h>
 #include <node/blockstorage.h>
+#include <node/handoff_machine.h>
 #include <node/sync_mode.h>
 #include <node/tip_snapshot.h>
 #include <policy/feerate.h>
@@ -536,20 +537,14 @@ struct DeploymentFlags {
  * it waits for by itself.
  *
  *  O1  The only half-processed state a block can be seen in is "stored, not
- *      yet activated", and calling ActivateBestChain() closes it.
- *      ProcessNewBlock() opens it; ProcessGetBlockData() and the GETBLOCKS
- *      handler in net_processing close it before they answer.
- *      In flight: a block handed to the connector is in that state until
- *      the connector has activated it. Wait: WaitForPendingBlocks(), and
- *      before it the wait for the receive tasks left from initial block
- *      download (PeerManagerImpl::WaitForPendingBlocks()), made by the
- *      handlers of the messages that are judged against the tip
- *      (GETHEADERS, TX, CMPCTBLOCK, BLOCKTXN and BLOCK), and before an
- *      orphan is considered again. The wait is not made in initial
- *      block download, where no transaction is accepted and blocks are
- *      stored beside each other on purpose. Outside it the two handlers
- *      activate as before; in it the connector does and they answer from
- *      what is connected.
+ *      yet activated", from ProcessNewBlock() until the connector has
+ *      activated it. Wait: WaitForPendingBlocks(), after
+ *      PeerManagerImpl::WaitForPendingBlocks(), before the handler of a
+ *      message that is judged against the tip (node/message_tip_rule.h) and
+ *      before an orphan is considered again. Not in initial block download,
+ *      where no transaction is accepted: there ProcessGetBlockData() and
+ *      the GETBLOCKS handler answer from what is connected, outside it they
+ *      activate before they answer.
  *  O2  When AcceptBlock() returns for a new block, its data, its position
  *      and BLOCK_VALID_TRANSACTIONS are recorded together (asserted there),
  *      in one hold of cs_main after the write (FinishAcceptBlock()). Until
@@ -1479,19 +1474,12 @@ private:
     std::atomic<uint64_t> m_window_conflicts{0};
     std::atomic<uint64_t> m_window_retries{0};
 
-    //! The connector thread (see SignalConnector()). Signals are counted; the thread records the count it
-    //! has attempted, and a waiter waits for its count to be reached.
+    //! The connector thread (see SignalConnector()). Where each block handed to it stands is one machine
+    //! (node/handoff_machine.h); a waiter keeps the ticket of a block and waits for a state of it.
     std::thread m_connector_thread;
     mutable Mutex m_connector_mutex;
     std::condition_variable m_connector_cv;
-    uint64_t m_connector_signals GUARDED_BY(m_connector_mutex){0};
-    uint64_t m_connector_done GUARDED_BY(m_connector_mutex){0};
-    //! As m_connector_signals and m_connector_done, for the active chainstate alone: the signals of blocks it
-    //! may connect (not those at or below a snapshot's base, the historical chainstate's), and the count its
-    //! activation has attempted, set before the historical chainstate's activation (WaitForPendingBlocks()).
-    uint64_t m_connector_active_signals GUARDED_BY(m_connector_mutex){0};
-    uint64_t m_connector_active_done GUARDED_BY(m_connector_mutex){0};
-    bool m_connector_stop GUARDED_BY(m_connector_mutex){false};
+    node::ConnectorHandOffs m_connector_handoffs GUARDED_BY(m_connector_mutex);
     //! Whether the connector takes blocks (util/lifecycle.h): Running from construction, with its thread
     //! started by the first block; Draining while StopConnector() waits for the pass that is running;
     //! Stopped for good after.
@@ -1864,37 +1852,34 @@ public:
      * one at or below a snapshot's base (WaitForPendingBlocks()).
      */
     void SignalConnector(std::shared_ptr<const CBlock> block = nullptr, bool for_active = true) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
-    //! The number of activations signalled so far, and whether every one up to such a number has been attempted.
-    //! A ping is answered once the activations signalled before it are (ProcessMessages()), so that a peer never
-    //! sees a view older than the blocks it has already sent, which is also what the functional tests rely on.
-    uint64_t ConnectorSignals() const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    //! The ticket of the block handed to the connector last, and whether every block up to a ticket's is Done
+    //! (node/handoff_machine.h). A ping is answered once the blocks handed over before it are
+    //! (ProcessMessages()), so that a peer never sees a view older than the blocks it has already sent.
+    node::HandOffTicket LatestHandOff() const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    bool HandOffsDone(const node::HandOffTicket& ticket) const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
     /**
-     * Wait until the connector has connected the blocks handed to it so far (the active chainstate's
-     * activation), so that a transaction accepted afterwards is judged against them, as when the thread that
-     * accepted a block also connected it: the mempool is closed to a transaction while a block before it is
-     * pending. Called by the message handler before it takes cs_main for a peer's transaction, which may spend
-     * the outputs of a block the same or another peer sent just before. Not by BroadcastTransaction(): its
-     * callers may hold a wallet's lock, which the scheduler needs to drain the validation queue the connector
-     * waits for (LimitValidationInterfaceQueue()), and they have no order with a peer's block anyway. Holding
-     * g_msgproc_mutex while waiting is safe: only the message handler thread takes it. Not in initial block
-     * download, where a pass runs on and no transaction follows a block in order: `mode` is the caller's
-     * copy, read where its operation started, and the wait is made or not by it alone.
+     * Wait until the blocks handed to the connector so far that the active chainstate may connect are
+     * DoneActive (node/handoff_machine.h), or the connector is stopped (precondition O1). Called by the
+     * message handler before it takes cs_main for a peer's transaction and before it judges a compact
+     * block's distance from the tip. Not by BroadcastTransaction(): its callers may hold a wallet's lock,
+     * which the scheduler needs to drain the validation queue the connector waits for
+     * (LimitValidationInterfaceQueue()). Holding g_msgproc_mutex while waiting is safe: only the message
+     * handler thread takes it. Not in initial block download: `mode` is the caller's copy, read where its
+     * operation started.
      */
     void WaitForPendingBlocks(node::SyncMode mode) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex) LOCKS_EXCLUDED(::cs_main);
     /**
      * Whether the historical chainstate's activation is to give way: the node is out of initial block
-     * download and a block the active chainstate may connect was handed to the connector and is not attempted
-     * yet. Out of initial block download the message handler waits for that block (WaitForPendingBlocks()),
-     * and the historical chainstate's backlog may be long. In initial block download nobody waits, and
-     * giving way to every block handed over would starve the historical chainstate. Once true it stays true
-     * until the connector has attempted the block: the end of initial block download is final, and only the
-     * connector attempts.
+     * download (`mode`, the copy of the caller's step) and a block the active chainstate may connect was
+     * handed to the connector and is not taken yet, which the message handler waits for
+     * (WaitForPendingBlocks()). In initial block download nobody waits, and giving way to every block
+     * would starve the historical chainstate. Once true it stays true until the connector takes.
      */
     bool YieldHistoricalActivation(node::SyncMode mode) const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
-    bool ConnectorReached(uint64_t signals) const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
-    //! Whether the connector thread has signalled activations it has not attempted yet. Blocks accepted but not
-    //! yet connected move the active tip once it runs; callers that measure from the tip may wait for that.
-    bool ConnectorBusy() const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    //! Whether a block handed to the connector is not Done yet (Queued, Taken or DoneActive). Blocks accepted
+    //! but not yet connected move the active tip once it runs; callers that measure from the tip may wait for
+    //! that.
+    bool AnyHandOffPending() const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
     //! Stop the connector thread and wait for it: its current pass ends at the next publication once the
     //! node is interrupted, the window drained. Called at shutdown before the chainstate is flushed and
     //! its views are reset, and again, idempotently, by the destructor. The connector does not start

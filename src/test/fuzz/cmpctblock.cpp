@@ -145,6 +145,7 @@ FUZZ_TARGET(cmpctblock, .init = initialize_cmpctblock)
                                      mempool, *setup->m_node.warnings,
                                      PeerManager::Options{
                                          .deterministic_rng = true,
+                                         .blocks_on_message_handler = true,
                                      });
     connman.SetMsgProc(peerman.get());
 

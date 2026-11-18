@@ -2140,7 +2140,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         // before activating genesis. This wakeup lets the wait observe the
         // shutdown request.
         WITH_LOCK(kernel_notifications.m_tip_block_mutex, kernel_notifications.m_tip_block_cv.notify_all());
-        WITH_LOCK(::cs_main, chainman.UpdateIBDStatus());
+        {
+            LOCK(::cs_main);
+            chainman.UpdateIBDStatus();
+            chainman.PublishTip();
+        }
         if (args.GetBoolArg("-stopafterblockimport", DEFAULT_STOPAFTERBLOCKIMPORT)) {
             LogInfo("Stopping after block import");
             if (!(Assert(node.shutdown_request))()) {

@@ -318,21 +318,21 @@ public:
         else
             return {};
     }
+    // The three below each read one fact of the published tip and need nothing to agree with it.
     int getNumBlocks() override
     {
-        LOCK(::cs_main);
-        return chainman().ActiveChain().Height();
+        return chainman().PublishedTip().height;
     }
     uint256 getBestBlockHash() override
     {
-        const CBlockIndex* tip = WITH_LOCK(::cs_main, return chainman().ActiveChain().Tip());
-        return tip ? tip->GetBlockHash() : chainman().GetParams().GenesisBlock().GetHash();
+        const node::TipSnapshot tip{chainman().PublishedTip()};
+        return tip.HasTip() ? tip.hash : chainman().GetParams().GenesisBlock().GetHash();
     }
     int64_t getLastBlockTime() override
     {
-        LOCK(::cs_main);
-        if (chainman().ActiveChain().Tip()) {
-            return chainman().ActiveChain().Tip()->GetBlockTime();
+        const node::TipSnapshot tip{chainman().PublishedTip()};
+        if (tip.HasTip()) {
+            return tip.time;
         }
         return chainman().GetParams().GenesisBlock().GetBlockTime(); // Genesis block's time of current network
     }
@@ -558,7 +558,8 @@ public:
     explicit ChainImpl(NodeContext& node) : m_node(node) {}
     std::optional<int> getHeight() override
     {
-        const int height{WITH_LOCK(::cs_main, return chainman().ActiveChain().Height())};
+        // Fact read: the published tip's height. Condition: none.
+        const int height{chainman().PublishedTip().height};
         return height >= 0 ? std::optional{height} : std::nullopt;
     }
     uint256 getBlockHash(int height) override

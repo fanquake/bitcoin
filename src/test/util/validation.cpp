@@ -53,6 +53,7 @@ void TestChainstateManager::ResetIbd()
 {
     m_cached_is_ibd = true;
     assert(IsInitialBlockDownload());
+    WITH_LOCK(::cs_main, PublishTip());
 }
 
 void TestChainstateManager::JumpOutOfIbd()
@@ -60,6 +61,7 @@ void TestChainstateManager::JumpOutOfIbd()
     Assert(IsInitialBlockDownload());
     m_cached_is_ibd = false;
     Assert(!IsInitialBlockDownload());
+    WITH_LOCK(::cs_main, PublishTip());
 }
 
 void ValidationInterfaceTest::BlockConnected(

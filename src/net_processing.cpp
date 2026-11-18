@@ -1443,7 +1443,10 @@ int64_t PeerManagerImpl::ApproximateBestBlockDepth() const
 
 bool PeerManagerImpl::CanDirectFetch()
 {
-    return m_chainman.ActiveChain().Tip()->Time() > NodeClock::now() - m_chainparams.GetConsensus().PowTargetSpacing() * 20;
+    // The tip's time from the published snapshot, no lock needed; the callers hold cs_main for their own reads.
+    const node::TipSnapshot tip{m_chainman.PublishedTip()};
+    Assert(tip.HasTip());
+    return NodeSeconds{std::chrono::seconds{tip.time}} > NodeClock::now() - m_chainparams.GetConsensus().PowTargetSpacing() * 20;
 }
 
 static bool PeerHasHeader(CNodeState *state, const CBlockIndex *pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
@@ -2879,12 +2882,13 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
 arith_uint256 PeerManagerImpl::GetAntiDoSWorkThreshold()
 {
     arith_uint256 near_chaintip_work = 0;
-    LOCK(cs_main);
-    if (m_chainman.ActiveChain().Tip() != nullptr) {
-        const CBlockIndex *tip = m_chainman.ActiveChain().Tip();
+    // Facts read: the tip's work and bits, from one block. Condition: none; the threshold is a
+    // bound on what is worth storing and a tip one block older gives a bound as good.
+    const node::TipSnapshot tip{m_chainman.PublishedTip()};
+    if (tip.HasTip()) {
         // Use a 144 block buffer, so that we'll accept headers that fork from
         // near our tip.
-        near_chaintip_work = tip->nChainWork - std::min<arith_uint256>(144*GetBlockProof(*tip), tip->nChainWork);
+        near_chaintip_work = tip.chain_work - std::min<arith_uint256>(144 * GetBitsProof(tip.bits), tip.chain_work);
     }
     return std::max(near_chaintip_work, m_chainman.MinimumChainWork());
 }
@@ -4586,16 +4590,17 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
 
         FlatFilePos block_pos{};
         {
-            LOCK(cs_main);
-
-            const CBlockIndex* pindex = m_chainman.m_blockman.LookupBlockIndex(req.blockhash);
-            if (!pindex || !(pindex->nStatus & BLOCK_HAVE_DATA)) {
+            // Facts read: the block's entry (data present, height, position), in one copy, and the
+            // tip's height. Condition for using the position after the copy: a block this
+            // near the tip is not pruned.
+            const auto facts{WITH_LOCK(cs_main, return m_chainman.m_blockman.LookupBlockFacts(req.blockhash))};
+            if (!facts || !facts->HaveData()) {
                 LogDebug(BCLog::NET, "Peer %d sent us a getblocktxn for a block we don't have\n", pfrom.GetId());
                 return;
             }
 
-            if (pindex->nHeight >= m_chainman.ActiveChain().Height() - MAX_BLOCKTXN_DEPTH) {
-                block_pos = pindex->GetBlockPos();
+            if (facts->height >= m_chainman.PublishedTip().height - MAX_BLOCKTXN_DEPTH) {
+                block_pos = facts->data_pos;
             }
         }
 

@@ -471,6 +471,30 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_ec_pubkey_parse(
     size_t inputlen
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
+/** Parse many variable-length public keys, as secp256k1_ec_pubkey_parse does
+ *  for one.
+ *
+ *  Returns: 1: all arguments were valid
+ *           0: invalid argument
+ *  Args:      ctx:       pointer to a context object.
+ *  Out:       results:   pointer to an array of n bytes. Each byte is set to 1
+ *                        if the corresponding public key could be parsed, or 0
+ *                        otherwise.
+ *             pubkeys:   pointer to an array of n public key objects. Each is
+ *                        set to the parsed key, or zeroed if parsing failed.
+ *  In:        inputs:    pointer to an array of n pointers to serialized keys.
+ *             inputlens: pointer to an array of n input lengths.
+ *             n:         number of keys. Must be greater than 0.
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_ec_pubkey_parse_many(
+    const secp256k1_context *ctx,
+    unsigned char *results,
+    secp256k1_pubkey *pubkeys,
+    const unsigned char *const *inputs,
+    const size_t *inputlens,
+    size_t n
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
 /** Serialize a pubkey object into a serialized byte sequence.
  *
  *  Returns: 1 always.

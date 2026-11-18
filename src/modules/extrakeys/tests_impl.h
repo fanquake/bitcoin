@@ -549,10 +549,68 @@ static void test_xonly_pubkey_tweak_check_many(void) {
     CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, &tweaked32[0][0], parities, internal, &tweaks32[0][0], 0));
 }
 
+/* Check that secp256k1_xonly_pubkey_parse_many agrees with secp256k1_xonly_pubkey_parse. */
+static void test_xonly_pubkey_parse_many_compare(const unsigned char *inputs32, size_t n) {
+    unsigned char results[64];
+    secp256k1_xonly_pubkey pubkeys[64];
+    size_t i;
+    CHECK(secp256k1_xonly_pubkey_parse_many(CTX, results, pubkeys, inputs32, n));
+    for (i = 0; i < n; i++) {
+        secp256k1_xonly_pubkey expected;
+        CHECK(results[i] == secp256k1_xonly_pubkey_parse(CTX, &expected, &inputs32[32 * i]));
+        CHECK(secp256k1_memcmp_var(&pubkeys[i], &expected, sizeof(expected)) == 0);
+    }
+}
+
+static void test_xonly_pubkey_parse_many(void) {
+    enum { N = 37 };
+    unsigned char inputs32[N][32];
+    unsigned char results[N];
+    secp256k1_xonly_pubkey pubkeys[N];
+    int round;
+    size_t i;
+
+    for (round = 0; round < COUNT; round++) {
+        for (i = 0; i < N; i++) {
+            unsigned char sk[32];
+            secp256k1_pubkey pk;
+            secp256k1_xonly_pubkey xonly;
+            switch (testrand_int(4)) {
+            case 0: case 1:
+                testutil_random_scalar_order_b32(sk);
+                CHECK(secp256k1_ec_pubkey_create(CTX, &pk, sk));
+                CHECK(secp256k1_xonly_pubkey_from_pubkey(CTX, &xonly, NULL, &pk));
+                CHECK(secp256k1_xonly_pubkey_serialize(CTX, inputs32[i], &xonly));
+                break;
+            case 2:
+                /* Random x, which has a point about half the time. */
+                testrand256(inputs32[i]);
+                break;
+            default:
+                /* x at or above p. */
+                memset(inputs32[i], 0xff, 32);
+                inputs32[i][31] = (unsigned char)(0x2f + testrand_bits(4));
+                inputs32[i][27] = 0xfe + testrand_bits(1);
+                break;
+            }
+        }
+        for (i = 1; i <= 20; i++) {
+            test_xonly_pubkey_parse_many_compare(&inputs32[0][0], i);
+        }
+        test_xonly_pubkey_parse_many_compare(&inputs32[0][0], N);
+    }
+
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_parse_many(CTX, NULL, pubkeys, &inputs32[0][0], N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_parse_many(CTX, results, NULL, &inputs32[0][0], N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_parse_many(CTX, results, pubkeys, NULL, N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_parse_many(CTX, results, pubkeys, &inputs32[0][0], 0));
+}
+
 /* --- Test registry --- */
 static const struct tf_test_entry tests_extrakeys[] = {
     /* xonly key test cases */
     CASE1(test_xonly_pubkey),
+    CASE1(test_xonly_pubkey_parse_many),
     CASE1(test_xonly_pubkey_tweak),
     CASE1(test_xonly_pubkey_tweak_check),
     CASE1(test_xonly_pubkey_tweak_check_many),

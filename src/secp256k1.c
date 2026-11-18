@@ -558,6 +558,77 @@ int secp256k1_ecdsa_verify_many(const secp256k1_context* ctx, unsigned char *res
 
 #undef SECP256K1_ECDSA_VERIFY_MANY_TILE_SIZE
 
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+/* Parse count (at most eight) compressed keys, whose inputs are 33 bytes long,
+ * with the square roots computed in the IFMA lanes. */
+static void secp256k1_ec_pubkey_ifma_parse33_8(unsigned char *results, secp256k1_pubkey *pubkeys, const unsigned char *const *inputs, const size_t *indices, size_t count) {
+    secp256k1_fe x[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge q[SECP256K1_ECDSA_IFMA_LANES];
+    int odd[SECP256K1_ECDSA_IFMA_LANES];
+    int ok[SECP256K1_ECDSA_IFMA_LANES];
+    int on_curve[SECP256K1_ECDSA_IFMA_LANES];
+    size_t lane;
+
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        const unsigned char *in = inputs[indices[lane < count ? lane : 0]];
+        ok[lane] = (in[0] == SECP256K1_TAG_PUBKEY_EVEN || in[0] == SECP256K1_TAG_PUBKEY_ODD) && secp256k1_fe_set_b32_limit(&x[lane], &in[1]);
+        if (!ok[lane]) {
+            secp256k1_fe_set_int(&x[lane], 1);
+        }
+        odd[lane] = in[0] == SECP256K1_TAG_PUBKEY_ODD;
+    }
+    secp256k1_ecdsa_ifma_ge_set_xo8_var(q, on_curve, x, odd);
+    for (lane = 0; lane < count; lane++) {
+        size_t i = indices[lane];
+        results[i] = ok[lane] && on_curve[lane] && secp256k1_ge_is_in_correct_subgroup(&q[lane]);
+        if (results[i]) {
+            secp256k1_pubkey_save(&pubkeys[i], &q[lane]);
+        } else {
+            memset(&pubkeys[i], 0, sizeof(pubkeys[i]));
+        }
+    }
+}
+#endif
+
+int secp256k1_ec_pubkey_parse_many(const secp256k1_context* ctx, unsigned char *results, secp256k1_pubkey *pubkeys, const unsigned char *const *inputs, const size_t *inputlens, size_t n) {
+    size_t i;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(results != NULL);
+    ARG_CHECK(pubkeys != NULL);
+    ARG_CHECK(inputs != NULL);
+    ARG_CHECK(inputlens != NULL);
+    ARG_CHECK(n > 0);
+    for (i = 0; i < n; i++) {
+        ARG_CHECK(inputs[i] != NULL);
+    }
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+    if (n >= SECP256K1_ECDSA_IFMA_LANES && secp256k1_ecdsa_ifma_available()) {
+        size_t indices[SECP256K1_ECDSA_IFMA_LANES];
+        size_t count = 0;
+        for (i = 0; i < n; i++) {
+            if (inputlens[i] != 33) {
+                results[i] = (unsigned char)secp256k1_ec_pubkey_parse(ctx, &pubkeys[i], inputs[i], inputlens[i]);
+                continue;
+            }
+            indices[count++] = i;
+            if (count == SECP256K1_ECDSA_IFMA_LANES) {
+                secp256k1_ec_pubkey_ifma_parse33_8(results, pubkeys, inputs, indices, count);
+                count = 0;
+            }
+        }
+        if (count > 0) {
+            secp256k1_ec_pubkey_ifma_parse33_8(results, pubkeys, inputs, indices, count);
+        }
+        return 1;
+    }
+#endif
+    for (i = 0; i < n; i++) {
+        results[i] = (unsigned char)secp256k1_ec_pubkey_parse(ctx, &pubkeys[i], inputs[i], inputlens[i]);
+    }
+    return 1;
+}
+
 static SECP256K1_INLINE void buffer_append(unsigned char *buf, unsigned int *offset, const void *data, unsigned int len) {
     memcpy(buf + *offset, data, len);
     *offset += len;

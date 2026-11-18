@@ -161,6 +161,57 @@ int secp256k1_xonly_pubkey_tweak_add_check(const secp256k1_context* ctx, const u
 }
 
 #ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+/* Parse count (at most eight) keys, with the square roots computed in the IFMA lanes. */
+static void secp256k1_xonly_pubkey_ifma_parse8(unsigned char *results, secp256k1_xonly_pubkey *pubkeys, const unsigned char *inputs32, size_t count) {
+    static const int even[SECP256K1_ECDSA_IFMA_LANES] = {0};
+    secp256k1_fe x[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge pk[SECP256K1_ECDSA_IFMA_LANES];
+    int ok[SECP256K1_ECDSA_IFMA_LANES];
+    int on_curve[SECP256K1_ECDSA_IFMA_LANES];
+    size_t lane;
+
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        ok[lane] = secp256k1_fe_set_b32_limit(&x[lane], &inputs32[32 * (lane < count ? lane : 0)]);
+        if (!ok[lane]) {
+            secp256k1_fe_set_int(&x[lane], 1);
+        }
+    }
+    secp256k1_ecdsa_ifma_ge_set_xo8_var(pk, on_curve, x, even);
+    for (lane = 0; lane < count; lane++) {
+        results[lane] = ok[lane] && on_curve[lane] && secp256k1_ge_is_in_correct_subgroup(&pk[lane]);
+        if (results[lane]) {
+            secp256k1_xonly_pubkey_save(&pubkeys[lane], &pk[lane]);
+        } else {
+            memset(&pubkeys[lane], 0, sizeof(pubkeys[lane]));
+        }
+    }
+}
+#endif
+
+int secp256k1_xonly_pubkey_parse_many(const secp256k1_context* ctx, unsigned char *results, secp256k1_xonly_pubkey *pubkeys, const unsigned char *inputs32, size_t n) {
+    size_t i;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(results != NULL);
+    ARG_CHECK(pubkeys != NULL);
+    ARG_CHECK(inputs32 != NULL);
+    ARG_CHECK(n > 0);
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+    if (n >= SECP256K1_ECDSA_IFMA_LANES && secp256k1_ecdsa_ifma_available()) {
+        for (i = 0; i < n; i += SECP256K1_ECDSA_IFMA_LANES) {
+            size_t count = n - i < SECP256K1_ECDSA_IFMA_LANES ? n - i : SECP256K1_ECDSA_IFMA_LANES;
+            secp256k1_xonly_pubkey_ifma_parse8(&results[i], &pubkeys[i], &inputs32[32 * i], count);
+        }
+        return 1;
+    }
+#endif
+    for (i = 0; i < n; i++) {
+        results[i] = (unsigned char)secp256k1_xonly_pubkey_parse(ctx, &pubkeys[i], &inputs32[32 * i]);
+    }
+    return 1;
+}
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
 /* Check count (at most eight) tweaked keys in the IFMA lanes, computing
  * internal + tweak*G as 1*internal + tweak*G. A lane at infinity, from an
  * exceptional addition or an infinite sum, is checked again with

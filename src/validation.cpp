@@ -45,6 +45,7 @@
 #include <random.h>
 #include <script/script.h>
 #include <script/sigcache.h>
+#include <script/solver.h>
 #include <signet.h>
 #include <tinyformat.h>
 #include <txdb.h>
@@ -2257,6 +2258,30 @@ void ScriptCheckBatch::Clear()
     m_deferred.verified.clear();
 }
 
+//! Script type a check runs, with multisig thresholds, for batch statistics.
+static std::string ScriptKind(const CTxOut& out, const CTxIn& in)
+{
+    CScript script{out.scriptPubKey};
+    std::string wrap;
+    if (script.IsPayToScriptHash()) {
+        std::vector<unsigned char> item, push;
+        opcodetype op;
+        auto pc{in.scriptSig.begin()};
+        while (in.scriptSig.GetOp(pc, op, item)) push = item;
+        script = CScript(push.begin(), push.end());
+        wrap = "p2sh-";
+    }
+    if (script.IsPayToWitnessScriptHash() && !in.scriptWitness.stack.empty()) {
+        const auto& item{in.scriptWitness.stack.back()};
+        script = CScript(item.begin(), item.end());
+        wrap += "p2wsh-";
+    }
+    std::vector<std::vector<unsigned char>> solutions;
+    const TxoutType type{Solver(script, solutions)};
+    if (type == TxoutType::MULTISIG) return strprintf("%s%d-of-%d", wrap, solutions.front()[0], solutions.back()[0]);
+    return wrap + GetTxnOutputType(type);
+}
+
 std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Run()
 {
     m_deferred.clear();
@@ -2267,6 +2292,29 @@ std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Run()
         m_deferred_ends.push_back(m_deferred.checks.size());
     }
     m_deferred.Verify(m_valid);
+
+    static std::atomic<uint64_t> g_rounds{0}, g_small_rounds{0}, g_small_round_sigs{0}, g_sigs{0}, g_invalid_sigs{0}, g_unresolved{0};
+    static Mutex g_kinds_mutex;
+    static std::map<std::string, uint64_t> g_kinds GUARDED_BY(g_kinds_mutex);
+    const size_t num_sigs{m_deferred.checks.size()};
+    g_sigs += num_sigs;
+    if (num_sigs < 8) {
+        ++g_small_rounds;
+        g_small_round_sigs += num_sigs;
+    }
+    g_invalid_sigs += std::count(m_valid.begin(), m_valid.end(), 0);
+    if (++g_rounds % 100000 == 0) {
+        std::vector<std::pair<uint64_t, std::string>> kinds;
+        {
+            LOCK(g_kinds_mutex);
+            for (const auto& [kind, count] : g_kinds) kinds.emplace_back(count, kind);
+        }
+        std::ranges::sort(kinds, std::greater{});
+        std::string top;
+        for (size_t k{0}; k < std::min<size_t>(kinds.size(), 10); ++k) top += strprintf(" %s=%u", kinds[k].second, kinds[k].first);
+        LogInfo("script rounds: %u (%u with fewer than 8 signatures, %u signatures), deferred signatures %u, invalid %u, unresolved checks %u:%s",
+                g_rounds.load(), g_small_rounds.load(), g_small_round_sigs.load(), g_sigs.load(), g_invalid_sigs.load(), g_unresolved.load(), top);
+    }
 
     size_t begin{0};
     size_t unresolved{0};
@@ -2281,6 +2329,11 @@ std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Run()
             if (!all_valid) m_deferred.verified.emplace(deferred.id, m_valid[j]);
         }
         if (!all_valid) {
+            ++g_unresolved;
+            {
+                LOCK(g_kinds_mutex);
+                ++g_kinds[ScriptKind(m_checks[i].m_tx_out, m_checks[i].ptxTo->vin[m_checks[i].nIn])];
+            }
             if (unresolved != i) m_checks[unresolved] = std::move(m_checks[i]);
             ++unresolved;
         } else if (m_results[i]) {

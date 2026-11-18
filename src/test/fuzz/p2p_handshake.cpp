@@ -60,6 +60,7 @@ FUZZ_TARGET(p2p_handshake, .init = ::initialize)
                                      PeerManager::Options{
                                          .reconcile_txs = true,
                                          .deterministic_rng = true,
+                                         .blocks_on_message_handler = true,
                                      });
     connman.SetMsgProc(node.peerman.get());
     connman.SetAddrman(*node.addrman);

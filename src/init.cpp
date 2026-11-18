@@ -340,6 +340,9 @@ void Shutdown(NodeContext& node)
     // using the other before destroying them.
     if (node.peerman && node.validation_signals) node.validation_signals->UnregisterValidationInterface(node.peerman.get());
     if (node.connman) node.connman->Stop();
+    // Blocks of peers still being processed on the connect pool are finished now that the message handler
+    // hands out no more, while the connector thread and everything else they rely on are still there.
+    if (node.peerman) node.peerman->FinishBlockTasks();
 
     if (node.tor_controller) {
         node.tor_controller->Join();

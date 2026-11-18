@@ -92,10 +92,15 @@ inline void AssertNoWaitLockHeld(const char* waiting_for, const char* file, int 
  *
  * The check knows the listed locks only: cs_main, the mempool's lock and a
  * loaded wallet's. Queued work takes others (another subscriber of the
- * signal queue its own), and a wait under one of those is not seen. A queue
- * that shares its thread with other work (the signal queue runs on the
- * scheduler's thread in the node) also waits for that work, and a lock such
- * work takes has to be listed to be covered.
+ * signal queue its own, net processing the transaction download's and a
+ * peer's misbehaviour lock from the connector's callbacks), and a wait under
+ * one of those is not seen. A queue that shares its thread with other work
+ * (the signal queue runs on the scheduler's thread in the node) also waits
+ * for that work, and a lock such work takes has to be listed to be covered.
+ *
+ * Not every wait carries the check: the connector waits for connect pool
+ * workers while it holds cs_main, see the free worker
+ * (ChainstateManager::LockTaskLimit() in validation.h).
  */
 #define NO_WAIT_LOCK(cs) RegisterNoWaitLock(#cs, &cs)
 #define AssertMayWait(waiting_for) AssertNoWaitLockHeld(waiting_for, __FILE__, __LINE__)

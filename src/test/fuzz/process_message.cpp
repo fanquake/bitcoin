@@ -95,6 +95,7 @@ FUZZ_TARGET(process_message, .init = initialize_process_message)
                                      PeerManager::Options{
                                          .reconcile_txs = true,
                                          .deterministic_rng = true,
+                                         .blocks_on_message_handler = true,
                                      });
 
     connman.SetMsgProc(node.peerman.get());

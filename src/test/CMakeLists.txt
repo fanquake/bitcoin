@@ -61,6 +61,7 @@ add_executable(test_bitcoin
   flatfile_tests.cpp
   fs_tests.cpp
   getarg_tests.cpp
+  handoff_machine_tests.cpp
   hash_tests.cpp
   headers_sync_chainwork_tests.cpp
   httpserver_tests.cpp
@@ -74,6 +75,7 @@ add_executable(test_bitcoin
   mempool_fee_estimator_tests.cpp
   merkle_tests.cpp
   merkleblock_tests.cpp
+  message_tip_rule_tests.cpp
   miner_tests.cpp
   miniminer_tests.cpp
   miniscript_tests.cpp

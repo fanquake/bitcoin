@@ -49,6 +49,7 @@ BOOST_FIXTURE_TEST_CASE(a_copy_outlives_the_latch, TestChain100Setup)
         // The latch says tip. The wait that was given the download's copy goes by the copy: it returns with
         // the activation still to be attempted.
         BOOST_REQUIRE(download.wait_for(60s) == std::future_status::ready);
+        BOOST_CHECK(chainman.AnyHandOffPending());
         // The wait that was given the tip's copy is still waiting. (A slow thread can make this pass, not fail.)
         BOOST_CHECK(tip.wait_for(100ms) == std::future_status::timeout);
     }

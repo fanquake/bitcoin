@@ -172,6 +172,30 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorrsig_verify(
     const secp256k1_xonly_pubkey *pubkey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(5);
 
+/** Verify multiple independent Schnorr signatures on 32-byte messages.
+ *
+ *  Returns: 1: all arguments were valid
+ *           0: invalid argument
+ *  Args:    ctx:     pointer to a context object
+ *  Out:     results: pointer to an array of n_sigs bytes. Each byte is set to 1
+ *                    if the corresponding signature is correct, or 0 otherwise.
+ *  In:      sigs64:  pointer to an array of n_sigs consecutive 64-byte signatures.
+ *           msgs32:  pointer to an array of n_sigs consecutive 32-byte messages.
+ *           pubkeys: pointer to an array of n_sigs x-only public keys.
+ *           n_sigs:  number of signatures to verify. Must be greater than 0.
+ *
+ *  This function has the same verification semantics as calling
+ *  secp256k1_schnorrsig_verify with msglen 32 for every input.
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorrsig_verify_many(
+    const secp256k1_context *ctx,
+    unsigned char *results,
+    const unsigned char *sigs64,
+    const unsigned char *msgs32,
+    const secp256k1_xonly_pubkey *pubkeys,
+    size_t n_sigs
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
 #ifdef __cplusplus
 }
 #endif

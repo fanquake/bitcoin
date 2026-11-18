@@ -253,4 +253,75 @@ int secp256k1_schnorrsig_verify(const secp256k1_context* ctx, const unsigned cha
            secp256k1_fe_equal(&rx, &r.x);
 }
 
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+/* Verify count (at most eight) signatures in the IFMA lanes. R = s*G - e*P has
+ * to be checked for an even y, so the lanes are converted to affine points. A
+ * lane at infinity, from an exceptional addition or an infinite R, is verified
+ * again with secp256k1_schnorrsig_verify; any other result is exact. */
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_schnorrsig_ifma_verify8(const secp256k1_context *ctx, unsigned char *results, const unsigned char *sigs64, const unsigned char *msgs32, const secp256k1_xonly_pubkey *pubkeys, size_t count) {
+    secp256k1_ecdsa_ifma_prepared8 p;
+    secp256k1_scalar s[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_scalar minus_e[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge pk[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge r[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_fe rx[SECP256K1_ECDSA_IFMA_LANES];
+    int eligible[SECP256K1_ECDSA_IFMA_LANES];
+    size_t lane;
+
+    memset(&p, 0, sizeof(p));
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        size_t at = lane < count ? lane : 0;
+        const unsigned char *sig64 = &sigs64[64 * at];
+        unsigned char buf[32];
+        int overflow;
+        eligible[lane] = secp256k1_fe_set_b32_limit(&rx[lane], &sig64[0]);
+        secp256k1_scalar_set_b32(&s[lane], &sig64[32], &overflow);
+        eligible[lane] &= !overflow;
+        if (!secp256k1_xonly_pubkey_load(ctx, &pk[lane], &pubkeys[at])) {
+            eligible[lane] = 0;
+            pk[lane] = secp256k1_ge_const_g;
+        }
+        secp256k1_fe_get_b32(buf, &pk[lane].x);
+        secp256k1_schnorrsig_challenge(&ctx->hash_ctx, &minus_e[lane], &sig64[0], &msgs32[32 * at], 32, buf);
+        secp256k1_scalar_negate(&minus_e[lane], &minus_e[lane]);
+    }
+    secp256k1_ecdsa_ifma_prepare_mult8(&p, s, minus_e, pk);
+    secp256k1_ecdsa_ifma_to_affine8(r, &p, secp256k1_ecdsa_ifma_mult8(&p));
+    for (lane = 0; lane < count; lane++) {
+        if (!eligible[lane]) {
+            results[lane] = 0;
+        } else if (secp256k1_ge_is_infinity(&r[lane])) {
+            results[lane] = (unsigned char)secp256k1_schnorrsig_verify(ctx, &sigs64[64 * lane], &msgs32[32 * lane], 32, &pubkeys[lane]);
+        } else {
+            secp256k1_fe_normalize_var(&r[lane].y);
+            results[lane] = (unsigned char)(!secp256k1_fe_is_odd(&r[lane].y) && secp256k1_fe_equal(&rx[lane], &r[lane].x));
+        }
+    }
+}
+#endif
+
+int secp256k1_schnorrsig_verify_many(const secp256k1_context* ctx, unsigned char *results, const unsigned char *sigs64, const unsigned char *msgs32, const secp256k1_xonly_pubkey *pubkeys, size_t n_sigs) {
+    size_t i;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(results != NULL);
+    ARG_CHECK(sigs64 != NULL);
+    ARG_CHECK(msgs32 != NULL);
+    ARG_CHECK(pubkeys != NULL);
+    ARG_CHECK(n_sigs > 0);
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+    if (n_sigs >= SECP256K1_ECDSA_IFMA_LANES && secp256k1_ecdsa_ifma_available()) {
+        for (i = 0; i < n_sigs; i += SECP256K1_ECDSA_IFMA_LANES) {
+            size_t count = n_sigs - i < SECP256K1_ECDSA_IFMA_LANES ? n_sigs - i : SECP256K1_ECDSA_IFMA_LANES;
+            secp256k1_schnorrsig_ifma_verify8(ctx, &results[i], &sigs64[64 * i], &msgs32[32 * i], &pubkeys[i], count);
+        }
+        return 1;
+    }
+#endif
+    for (i = 0; i < n_sigs; i++) {
+        results[i] = (unsigned char)secp256k1_schnorrsig_verify(ctx, &sigs64[64 * i], &msgs32[32 * i], 32, &pubkeys[i]);
+    }
+    return 1;
+}
+
 #endif

@@ -468,12 +468,94 @@ static void test_keypair_add(void) {
     }
 }
 
+/* Check that secp256k1_xonly_pubkey_tweak_add_check_many agrees with
+ * secp256k1_xonly_pubkey_tweak_add_check for n checks. */
+static void test_xonly_pubkey_tweak_check_many_compare(const unsigned char *tweaked32, const int *parities, const secp256k1_xonly_pubkey *internal, const unsigned char *tweaks32, size_t n) {
+    unsigned char results[64];
+    size_t i;
+    CHECK(secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, tweaked32, parities, internal, tweaks32, n));
+    for (i = 0; i < n; i++) {
+        CHECK(results[i] == secp256k1_xonly_pubkey_tweak_add_check(CTX, &tweaked32[32 * i], parities[i], &internal[i], &tweaks32[32 * i]));
+    }
+}
+
+static void test_xonly_pubkey_tweak_check_many(void) {
+    enum { N = 29 };
+    static const unsigned char n_bytes[32] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+        0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41
+    };
+    unsigned char tweaked32[N][32];
+    int parities[N];
+    secp256k1_xonly_pubkey internal[N];
+    unsigned char tweaks32[N][32];
+    unsigned char results[N];
+    size_t i;
+
+    for (i = 0; i < N; i++) {
+        unsigned char sk[32];
+        secp256k1_pubkey pk;
+        secp256k1_pubkey output;
+        secp256k1_xonly_pubkey output_xonly;
+        testutil_random_scalar_order_b32(sk);
+        testrand256(tweaks32[i]);
+        CHECK(secp256k1_ec_pubkey_create(CTX, &pk, sk));
+        CHECK(secp256k1_xonly_pubkey_from_pubkey(CTX, &internal[i], NULL, &pk));
+        CHECK(secp256k1_xonly_pubkey_tweak_add(CTX, &output, &internal[i], tweaks32[i]));
+        CHECK(secp256k1_xonly_pubkey_from_pubkey(CTX, &output_xonly, &parities[i], &output));
+        CHECK(secp256k1_xonly_pubkey_serialize(CTX, tweaked32[i], &output_xonly));
+    }
+    CHECK(secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, &tweaked32[0][0], parities, internal, &tweaks32[0][0], N));
+    for (i = 0; i < N; i++) {
+        CHECK(results[i] == 1);
+    }
+    for (i = 1; i <= 17; i++) {
+        test_xonly_pubkey_tweak_check_many_compare(&tweaked32[0][0], parities, internal, &tweaks32[0][0], i);
+    }
+
+    /* Failing checks in many lane positions. */
+    for (i = 0; i < N; i += 4) {
+        tweaked32[i][testrand_bits(5)] ^= 1;
+    }
+    parities[1] = !parities[1];
+    parities[2] = 2;
+    memcpy(tweaks32[3], n_bytes, 32);
+    tweaks32[6][testrand_bits(5)] ^= 1;
+    internal[9] = internal[10];
+    memset(tweaked32[11], 0xff, 32);
+    {
+        /* A tweak that is minus the internal key's discrete logarithm sums to infinity. */
+        unsigned char sk[32];
+        secp256k1_scalar k;
+        secp256k1_pubkey pk;
+        int parity;
+        testutil_random_scalar_order_b32(sk);
+        CHECK(secp256k1_ec_pubkey_create(CTX, &pk, sk));
+        CHECK(secp256k1_xonly_pubkey_from_pubkey(CTX, &internal[13], &parity, &pk));
+        secp256k1_scalar_set_b32(&k, sk, NULL);
+        if (!parity) {
+            secp256k1_scalar_negate(&k, &k);
+        }
+        secp256k1_scalar_get_b32(tweaks32[13], &k);
+    }
+    test_xonly_pubkey_tweak_check_many_compare(&tweaked32[0][0], parities, internal, &tweaks32[0][0], N);
+    CHECK(secp256k1_xonly_pubkey_tweak_add_check(CTX, tweaked32[13], parities[13], &internal[13], tweaks32[13]) == 0);
+
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_tweak_add_check_many(CTX, NULL, &tweaked32[0][0], parities, internal, &tweaks32[0][0], N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, NULL, parities, internal, &tweaks32[0][0], N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, &tweaked32[0][0], NULL, internal, &tweaks32[0][0], N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, &tweaked32[0][0], parities, NULL, &tweaks32[0][0], N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, &tweaked32[0][0], parities, internal, NULL, N));
+    CHECK_ILLEGAL(CTX, secp256k1_xonly_pubkey_tweak_add_check_many(CTX, results, &tweaked32[0][0], parities, internal, &tweaks32[0][0], 0));
+}
+
 /* --- Test registry --- */
 static const struct tf_test_entry tests_extrakeys[] = {
     /* xonly key test cases */
     CASE1(test_xonly_pubkey),
     CASE1(test_xonly_pubkey_tweak),
     CASE1(test_xonly_pubkey_tweak_check),
+    CASE1(test_xonly_pubkey_tweak_check_many),
     CASE1(test_xonly_pubkey_tweak_recursive),
     CASE1(test_xonly_pubkey_comparison),
     /* keypair tests */

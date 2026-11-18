@@ -155,6 +155,33 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add_
     const unsigned char *tweak32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
 
+/** Check many tweaked public keys, as secp256k1_xonly_pubkey_tweak_add_check
+ *  does for one.
+ *
+ *  Returns: 1: all arguments were valid
+ *           0: invalid argument
+ *  Args:               ctx: pointer to a context object.
+ *  Out:            results: pointer to an array of n bytes. Each byte is set to 1
+ *                           if secp256k1_xonly_pubkey_tweak_add_check would
+ *                           return 1 for the corresponding inputs, or 0
+ *                           otherwise.
+ *  In:   tweaked_pubkeys32: pointer to an array of n consecutive serialized
+ *                           x-only public keys.
+ *      tweaked_pk_parities: pointer to an array of n parities.
+ *         internal_pubkeys: pointer to an array of n x-only public keys.
+ *                 tweaks32: pointer to an array of n consecutive 32-byte tweaks.
+ *                        n: number of checks. Must be greater than 0.
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add_check_many(
+    const secp256k1_context *ctx,
+    unsigned char *results,
+    const unsigned char *tweaked_pubkeys32,
+    const int *tweaked_pk_parities,
+    const secp256k1_xonly_pubkey *internal_pubkeys,
+    const unsigned char *tweaks32,
+    size_t n
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6);
+
 /** Compute the keypair for a valid secret key.
  *
  *  See the documentation of `secp256k1_ec_seckey_verify` for more information

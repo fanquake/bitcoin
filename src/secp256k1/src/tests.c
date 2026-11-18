@@ -6740,12 +6740,157 @@ static void run_ecdsa_verify_many(void) {
         CHECK(results[i] == secp256k1_ecdsa_verify(STATIC_CTX, &sigs[i], msghashes32[i], &pubkeys[i]));
     }
 
+    /* Reject many signatures at once, across every lane position. */
+    for (i = 0; i < N_SIGS; i += 3) {
+        msghashes32[i][31] ^= 1;
+    }
+    CHECK(secp256k1_ecdsa_verify_many(CTX, results, sigs, &msghashes32[0][0], pubkeys, N_SIGS));
+    for (i = 0; i < N_SIGS; i++) {
+        CHECK(results[i] == secp256k1_ecdsa_verify(CTX, &sigs[i], msghashes32[i], &pubkeys[i]));
+    }
+
     CHECK_ILLEGAL(CTX, secp256k1_ecdsa_verify_many(CTX, NULL, sigs, &msghashes32[0][0], pubkeys, N_SIGS));
     CHECK_ILLEGAL(CTX, secp256k1_ecdsa_verify_many(CTX, results, NULL, &msghashes32[0][0], pubkeys, N_SIGS));
     CHECK_ILLEGAL(CTX, secp256k1_ecdsa_verify_many(CTX, results, sigs, NULL, pubkeys, N_SIGS));
     CHECK_ILLEGAL(CTX, secp256k1_ecdsa_verify_many(CTX, results, sigs, &msghashes32[0][0], NULL, N_SIGS));
     CHECK_ILLEGAL(CTX, secp256k1_ecdsa_verify_many(CTX, results, sigs, &msghashes32[0][0], pubkeys, 0));
 }
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+/* The IFMA operations need a target attribute, so the tests run them through
+ * these helpers, only after checking that the CPU supports them. */
+SECP256K1_ECDSA_IFMA_TARGET static void test_ecdsa_ifma_fe8_ops(secp256k1_fe *prod, const secp256k1_fe *a, const secp256k1_fe *b) {
+    secp256k1_ecdsa_ifma_fe8 va = secp256k1_ecdsa_ifma_fe8_pack(a);
+    secp256k1_ecdsa_ifma_fe8 vb = secp256k1_ecdsa_ifma_fe8_pack(b);
+    /* Multiply by results of other operations, not only by packed inputs. */
+    secp256k1_ecdsa_ifma_fe8 diff = secp256k1_ecdsa_ifma_fe8_sub(secp256k1_ecdsa_ifma_fe8_mul(va, vb), secp256k1_ecdsa_ifma_fe8_sqr(vb));
+    secp256k1_ecdsa_ifma_fe8 vprod = secp256k1_ecdsa_ifma_fe8_mul(secp256k1_ecdsa_ifma_fe8_add(diff, va), diff);
+    int lane;
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        secp256k1_ecdsa_ifma_fe8_get_lane(&prod[lane], &vprod, lane);
+    }
+}
+
+SECP256K1_ECDSA_IFMA_TARGET static void test_ecdsa_ifma_mult8_ops(secp256k1_ge *r, const secp256k1_scalar *u1, const secp256k1_scalar *u2, const secp256k1_ge *q) {
+    secp256k1_ecdsa_ifma_prepared8 p;
+    memset(&p, 0, sizeof(p));
+    secp256k1_ecdsa_ifma_prepare_mult8(&p, u1, u2, q);
+    secp256k1_ecdsa_ifma_to_affine8(r, &p, secp256k1_ecdsa_ifma_mult8(&p));
+}
+
+/* Compare the IFMA field operations with the scalar ones. Test inputs with long
+ * runs of set bits, which make limbs carry into a 53rd bit. */
+static void run_ecdsa_ifma_fe8(void) {
+    enum { N_EDGES = 24 };
+    secp256k1_fe edges[N_EDGES];
+    int i;
+    int lane;
+    if (!secp256k1_ecdsa_ifma_available()) {
+        return;
+    }
+    /* 2^k - 1 and p - 2^k, for k on both sides of the limb boundaries. */
+    for (i = 0; i < N_EDGES; i++) {
+        static const int ks[N_EDGES / 2] = {0, 1, 32, 51, 52, 53, 104, 155, 156, 207, 208, 255};
+        unsigned char b32[32];
+        secp256k1_fe one;
+        int k = ks[i / 2];
+        memset(b32, 0, sizeof(b32));
+        b32[31 - k / 8] = (unsigned char)(1 << (k % 8));
+        CHECK(secp256k1_fe_set_b32_limit(&edges[i], b32));
+        secp256k1_fe_set_int(&one, 1);
+        secp256k1_fe_negate(&one, &one, 1);
+        if (i % 2 == 0) {
+            secp256k1_fe_add(&edges[i], &one);
+        } else {
+            secp256k1_fe_negate(&edges[i], &edges[i], 1);
+        }
+        secp256k1_fe_normalize_var(&edges[i]);
+    }
+    for (i = 0; i < N_EDGES * N_EDGES + 64 * COUNT; i++) {
+        secp256k1_fe a[SECP256K1_ECDSA_IFMA_LANES];
+        secp256k1_fe b[SECP256K1_ECDSA_IFMA_LANES];
+        secp256k1_fe prod[SECP256K1_ECDSA_IFMA_LANES];
+        for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+            if (i < N_EDGES * N_EDGES) {
+                /* Every pair of edge values, in each lane position. */
+                a[lane] = edges[i / N_EDGES];
+                b[lane] = edges[(i + lane) % N_EDGES];
+            } else {
+                testutil_random_fe_test(&a[lane]);
+                testutil_random_fe_test(&b[lane]);
+            }
+        }
+        test_ecdsa_ifma_fe8_ops(prod, a, b);
+        for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+            secp256k1_fe ab;
+            secp256k1_fe bb;
+            secp256k1_fe d;
+            secp256k1_fe expected;
+            secp256k1_fe actual = prod[lane];
+            secp256k1_fe_mul(&ab, &a[lane], &b[lane]);
+            secp256k1_fe_sqr(&bb, &b[lane]);
+            secp256k1_fe_negate(&bb, &bb, 1);
+            d = ab;
+            secp256k1_fe_add(&d, &bb);
+            expected = d;
+            secp256k1_fe_add(&expected, &a[lane]);
+            secp256k1_fe_mul(&expected, &expected, &d);
+            secp256k1_fe_normalize_var(&actual);
+            secp256k1_fe_normalize_var(&expected);
+            CHECK(secp256k1_fe_equal(&actual, &expected));
+        }
+    }
+}
+
+/* Compare the IFMA lanes' u1*G + u2*Q with secp256k1_ecmult, for random and edge scalars. */
+static void run_ecdsa_ifma_mult8(void) {
+    secp256k1_scalar edges[6];
+    secp256k1_scalar u1[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_scalar u2[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge q[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge r[SECP256K1_ECDSA_IFMA_LANES];
+    int lane;
+    int round;
+
+    if (!secp256k1_ecdsa_ifma_available()) {
+        return;
+    }
+    secp256k1_scalar_set_int(&edges[0], 0);
+    secp256k1_scalar_set_int(&edges[1], 1);
+    secp256k1_scalar_set_int(&edges[2], 2);
+    secp256k1_scalar_negate(&edges[3], &edges[1]);
+    edges[4] = secp256k1_const_lambda;
+    secp256k1_scalar_negate(&edges[5], &edges[4]);
+    for (round = 0; round < 2 + COUNT; round++) {
+        for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+            if (round == 0) {
+                u1[lane] = edges[lane % 6];
+                u2[lane] = edges[(lane + 1) % 6];
+            } else if (round == 1) {
+                testutil_random_scalar_order(&u1[lane]);
+                u2[lane] = edges[lane % 6];
+            } else {
+                testutil_random_scalar_order(&u1[lane]);
+                testutil_random_scalar_order(&u2[lane]);
+            }
+            testutil_random_ge_test(&q[lane]);
+        }
+        test_ecdsa_ifma_mult8_ops(r, u1, u2, q);
+        for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+            secp256k1_gej qj;
+            secp256k1_gej expected;
+            secp256k1_gej_set_ge(&qj, &q[lane]);
+            secp256k1_ecmult(&expected, &qj, &u2[lane], &u1[lane]);
+            if (!secp256k1_ge_is_infinity(&r[lane])) {
+                CHECK(secp256k1_gej_eq_ge_var(&expected, &r[lane]));
+            } else {
+                /* Infinity means an infinite result, or an exceptional addition, which tiny edge scalars can cause. */
+                CHECK(round == 0 || secp256k1_gej_is_infinity(&expected));
+            }
+        }
+    }
+}
+#endif
 
 /** Dummy nonce generation function that just uses a precomputed nonce, and fails if it is not accepted. Use only for testing. */
 static int precomputed_nonce_function(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
@@ -8347,6 +8492,10 @@ static const struct tf_test_entry tests_ecdsa[] = {
     CASE(ecdsa_der_parse_long_form),
     CASE(ecdsa_sign_verify),
     CASE(ecdsa_verify_many),
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+    CASE(ecdsa_ifma_fe8),
+    CASE(ecdsa_ifma_mult8),
+#endif
     CASE(ecdsa_end_to_end),
     CASE(ecdsa_edge_cases),
     CASE(ecdsa_wycheproof),

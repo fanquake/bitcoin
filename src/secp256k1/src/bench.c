@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
 
     /* Check for invalid user arguments */
     char* valid_args[] = {"ecdsa", "verify", "ecdsa_verify", "ecdsa_verify_many", "sign", "ecdsa_sign", "ecdh", "recover",
-                         "ecdsa_recover", "schnorrsig", "schnorrsig_verify", "schnorrsig_sign", "ec",
+                         "ecdsa_recover", "schnorrsig", "schnorrsig_verify", "schnorrsig_verify_many", "schnorrsig_sign", "ec",
                          "keygen", "ec_keygen", "ellswift", "encode", "ellswift_encode", "decode",
                          "ellswift_decode", "ellswift_keygen", "ellswift_ecdh", "silentpayments",
                          "silentpayments_scan_nomatch", "silentpayments_scan_worstcase"};
@@ -266,7 +266,7 @@ int main(int argc, char** argv) {
 #endif
 
 #ifndef ENABLE_MODULE_SCHNORRSIG
-    if (have_flag(argc, argv, "schnorrsig") || have_flag(argc, argv, "schnorrsig_sign") || have_flag(argc, argv, "schnorrsig_verify")) {
+    if (have_flag(argc, argv, "schnorrsig") || have_flag(argc, argv, "schnorrsig_sign") || have_flag(argc, argv, "schnorrsig_verify") || have_flag(argc, argv, "schnorrsig_verify_many")) {
         fprintf(stderr, "./bench: Schnorr signatures module not enabled.\n");
         fprintf(stderr, "See README.md for configuration instructions.\n\n");
         return EXIT_FAILURE;

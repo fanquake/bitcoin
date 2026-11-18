@@ -160,6 +160,73 @@ int secp256k1_xonly_pubkey_tweak_add_check(const secp256k1_context* ctx, const u
             && secp256k1_fe_is_odd(&pk.y) == tweaked_pk_parity;
 }
 
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+/* Check count (at most eight) tweaked keys in the IFMA lanes, computing
+ * internal + tweak*G as 1*internal + tweak*G. A lane at infinity, from an
+ * exceptional addition or an infinite sum, is checked again with
+ * secp256k1_xonly_pubkey_tweak_add_check; any other result is exact. */
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_xonly_pubkey_ifma_tweak_add_check8(const secp256k1_context *ctx, unsigned char *results, const unsigned char *tweaked_pubkeys32, const int *tweaked_pk_parities, const secp256k1_xonly_pubkey *internal_pubkeys, const unsigned char *tweaks32, size_t count) {
+    secp256k1_ecdsa_ifma_prepared8 p;
+    secp256k1_scalar tweak[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_scalar one[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge internal[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge sum[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_fe expected_x[SECP256K1_ECDSA_IFMA_LANES];
+    int eligible[SECP256K1_ECDSA_IFMA_LANES];
+    size_t lane;
+
+    memset(&p, 0, sizeof(p));
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        size_t at = lane < count ? lane : 0;
+        int overflow;
+        secp256k1_scalar_set_int(&one[lane], 1);
+        secp256k1_scalar_set_b32(&tweak[lane], &tweaks32[32 * at], &overflow);
+        eligible[lane] = !overflow && secp256k1_fe_set_b32_limit(&expected_x[lane], &tweaked_pubkeys32[32 * at]);
+        if (!secp256k1_xonly_pubkey_load(ctx, &internal[lane], &internal_pubkeys[at])) {
+            eligible[lane] = 0;
+            internal[lane] = secp256k1_ge_const_g;
+        }
+    }
+    secp256k1_ecdsa_ifma_prepare_mult8(&p, tweak, one, internal);
+    secp256k1_ecdsa_ifma_to_affine8(sum, &p, secp256k1_ecdsa_ifma_mult8(&p));
+    for (lane = 0; lane < count; lane++) {
+        if (!eligible[lane]) {
+            results[lane] = 0;
+        } else if (secp256k1_ge_is_infinity(&sum[lane])) {
+            results[lane] = (unsigned char)secp256k1_xonly_pubkey_tweak_add_check(ctx, &tweaked_pubkeys32[32 * lane], tweaked_pk_parities[lane], &internal_pubkeys[lane], &tweaks32[32 * lane]);
+        } else {
+            secp256k1_fe_normalize_var(&sum[lane].y);
+            results[lane] = (unsigned char)(secp256k1_fe_equal(&expected_x[lane], &sum[lane].x) && secp256k1_fe_is_odd(&sum[lane].y) == tweaked_pk_parities[lane]);
+        }
+    }
+}
+#endif
+
+int secp256k1_xonly_pubkey_tweak_add_check_many(const secp256k1_context* ctx, unsigned char *results, const unsigned char *tweaked_pubkeys32, const int *tweaked_pk_parities, const secp256k1_xonly_pubkey *internal_pubkeys, const unsigned char *tweaks32, size_t n) {
+    size_t i;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(results != NULL);
+    ARG_CHECK(tweaked_pubkeys32 != NULL);
+    ARG_CHECK(tweaked_pk_parities != NULL);
+    ARG_CHECK(internal_pubkeys != NULL);
+    ARG_CHECK(tweaks32 != NULL);
+    ARG_CHECK(n > 0);
+
+#ifdef SECP256K1_ECDSA_VERIFY_MANY_IFMA
+    if (n >= SECP256K1_ECDSA_IFMA_LANES && secp256k1_ecdsa_ifma_available()) {
+        for (i = 0; i < n; i += SECP256K1_ECDSA_IFMA_LANES) {
+            size_t count = n - i < SECP256K1_ECDSA_IFMA_LANES ? n - i : SECP256K1_ECDSA_IFMA_LANES;
+            secp256k1_xonly_pubkey_ifma_tweak_add_check8(ctx, &results[i], &tweaked_pubkeys32[32 * i], &tweaked_pk_parities[i], &internal_pubkeys[i], &tweaks32[32 * i], count);
+        }
+        return 1;
+    }
+#endif
+    for (i = 0; i < n; i++) {
+        results[i] = (unsigned char)secp256k1_xonly_pubkey_tweak_add_check(ctx, &tweaked_pubkeys32[32 * i], tweaked_pk_parities[i], &internal_pubkeys[i], &tweaks32[32 * i]);
+    }
+    return 1;
+}
+
 static void secp256k1_keypair_save(secp256k1_keypair *keypair, const secp256k1_scalar *sk, secp256k1_ge *pk) {
     secp256k1_scalar_get_b32(&keypair->data[0], sk);
     secp256k1_pubkey_save((secp256k1_pubkey *)&keypair->data[32], pk);

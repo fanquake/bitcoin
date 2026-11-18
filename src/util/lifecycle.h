@@ -35,6 +35,11 @@ namespace util {
  *    owner waits for while Draining;
  *  - a hook called from another thread (HookTarget): its owner disarms it
  *    and waits for a call that is running before it is destroyed.
+ *
+ * One thread stands outside the list: the coin store's thread that makes a
+ * node region ready ahead (CoinsStore::NodeRegion()) takes no work, only a
+ * flag under its own mutex, and the last store to be destroyed stops and
+ * joins it.
  */
 enum class LifeState : uint8_t {
     Stopped,

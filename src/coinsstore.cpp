@@ -7,17 +7,20 @@
 #include <logging.h>
 #include <memusage.h>
 #include <util/check.h>
+#include <util/threadnames.h>
 #include <util/threadpool.h>
 
 
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <condition_variable>
 #include <exception>
 #include <functional>
 #include <limits>
 #include <map>
 #include <stdexcept>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -42,6 +45,50 @@ void CoinsStore::ShardLock::lock()
     m_mutex.lock();
 }
 
+//! The region made ready ahead (NodeRegion()) and the thread that makes it. The thread is started with the
+//! first region asked for ahead and joined by the last store to be destroyed. Never destroyed itself, as
+//! the nodes' depots are not.
+struct CoinsStore::RegionAhead {
+    Mutex mutex;
+    std::condition_variable cv;
+    void* ready GUARDED_BY(mutex){nullptr};
+    bool wanted GUARDED_BY(mutex){false};
+    //! Set by the store that found itself the last, until it has joined the thread.
+    bool stop GUARDED_BY(mutex){false};
+    int stores GUARDED_BY(mutex){0};
+    std::thread thread GUARDED_BY(mutex);
+
+    void Run() EXCLUSIVE_LOCKS_REQUIRED(!mutex)
+    {
+        util::ThreadRename("coinsahead");
+        while (true) {
+            {
+                WAIT_LOCK(mutex, lock);
+                cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(mutex) { return stop || (wanted && !ready); });
+                if (stop) return;
+                wanted = false;
+            }
+            void* next{HintedRegion(NODE_REGION_BYTES)};
+            // Every small page, for where no huge page was to be had: the first touch of a huge page
+            // supplies all of it, and the touches after it cost nothing.
+            static constexpr size_t SMALL_PAGE_BYTES{4096};
+            for (size_t at{0}; at < NODE_REGION_BYTES; at += SMALL_PAGE_BYTES) static_cast<volatile std::byte*>(next)[at] = std::byte{0};
+            LOCK(mutex);
+            if (stop) {
+                FreeRegion(next);
+                return;
+            }
+            ready = next;
+        }
+    }
+};
+
+CoinsStore::RegionAhead& CoinsStore::RegionAheadState()
+{
+    static RegionAhead* const ahead{new RegionAhead};
+    return *ahead;
+}
+
 CoinsStore::CoinsStore(CCoinsView* base_view, size_t shards, bool deterministic)
     : CCoinsViewCache(base_view, deterministic), m_shards(std::max<size_t>(1, shards))
 {
@@ -49,9 +96,30 @@ CoinsStore::CoinsStore(CCoinsView* base_view, size_t shards, bool deterministic)
         LOCK(shard.mutex);
         Resized(shard); // whatever bucket array an empty map has
     }
+    RegionAhead& ahead{RegionAheadState()};
+    LOCK(ahead.mutex);
+    ++ahead.stores;
 }
 
-CoinsStore::~CoinsStore() = default;
+CoinsStore::~CoinsStore()
+{
+    RegionAhead& ahead{RegionAheadState()};
+    std::thread ending;
+    {
+        LOCK(ahead.mutex);
+        // Behind the last store nothing asks for a region ahead: its thread ends, and the region it had
+        // ready goes back. (A store destroyed while an earlier last one is still at this leaves it to that one.)
+        if (--ahead.stores != 0 || ahead.stop) return;
+        ahead.stop = true;
+        ending = std::move(ahead.thread);
+    }
+    ahead.cv.notify_all();
+    if (ending.joinable()) ending.join();
+    LOCK(ahead.mutex);
+    ahead.stop = false;
+    ahead.wanted = false;
+    if (void* unused{std::exchange(ahead.ready, nullptr)}) FreeRegion(unused);
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Entry bookkeeping
@@ -83,11 +151,42 @@ void* CoinsStore::HintedRegion(size_t bytes)
     return region;
 }
 
+void* CoinsStore::NodeRegion()
+{
+    if (NodeRegionBytes() < NODE_REGION_AHEAD_FROM) return HintedRegion(NODE_REGION_BYTES);
+    RegionAhead& ahead{RegionAheadState()};
+    void* region;
+    {
+        LOCK(ahead.mutex);
+        // Nodes outside the life of any store wait for their memory themselves.
+        if (ahead.stores == 0 || ahead.stop) return HintedRegion(NODE_REGION_BYTES);
+        if (!ahead.thread.joinable()) {
+            try {
+                ahead.thread = std::thread{[&ahead] { ahead.Run(); }};
+            } catch (const std::system_error& e) { // what std::thread throws when no thread can be started
+                // The caller is in the middle of a batch, under a shard's mutex: it waits for its region
+                // itself, and the next call tries the thread again.
+                LogWarning("Failed to start the coinsahead thread (%s)", e.what());
+                return HintedRegion(NODE_REGION_BYTES);
+            }
+        }
+        region = std::exchange(ahead.ready, nullptr);
+        ahead.wanted = true;
+    }
+    ahead.cv.notify_one();
+    return region ? region : HintedRegion(NODE_REGION_BYTES);
+}
+
 int64_t CoinsStore::NodeBytes()
 {
     // A node's own size, not what the general allocator would hold for it: nodes are carved back to
     // back from the depot's regions, with no header and no rounding between them.
     return static_cast<int64_t>(sizeof(Map::Cell));
+}
+
+size_t CoinsStore::RegionAheadBytes() const
+{
+    return SumTotals(&Totals::entries) * static_cast<size_t>(NodeBytes()) >= NODE_REGION_AHEAD_FROM ? NODE_REGION_BYTES : 0;
 }
 
 size_t CoinsStore::SpanOf(int height)
@@ -1261,10 +1360,8 @@ size_t CoinsStore::GetDirtyCount() const noexcept
 
 size_t CoinsStore::DynamicMemoryUsage() const
 {
-    // The maps' nodes at their size (NodeBytes()) and bucket arrays, the shards' arrays of dirty lists, and
-    // the coins: summed as they change (Totals), since the connector asks for every block
-    // it publishes and must neither queue behind an applier holding a shard nor read every shard.
-    return SumTotals(&Totals::bytes);
+    // The sum kept as the entries change (Totals), and the region held ahead of a large store's nodes.
+    return SumTotals(&Totals::bytes) + RegionAheadBytes();
 }
 
 int CoinsStore::BoundForBytes(size_t bytes, int tip_height) const
@@ -2061,7 +2158,7 @@ void CoinsStore::SanityCheck() const
         assert(count == clean_listed);
     }
     // The totals are the shards' figures summed. (The check is the owner's, made with no change under way.)
-    assert(DynamicMemoryUsage() == total_bytes);
+    assert(SumTotals(&Totals::bytes) == total_bytes);
     assert(GetCacheSize() == total_entries);
     assert(SumTotals(&Totals::dirty) == total_dirty);
     // A confirmed coin an open block spent is in the block's record, with what the database is owed for it.

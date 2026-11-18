@@ -319,6 +319,7 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
         }
         const BlockManager::Options blockman_opts{
             .chainparams = chainman_opts.chainparams,
+            .fast_prune = m_node.args->GetBoolArg("-fastprune", false), // from TestOpts::extra_args
             .blocks_dir = m_args.GetBlocksDirPath(),
             .notifications = chainman_opts.notifications,
             .block_tree_db_params = DBParams{

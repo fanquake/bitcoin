@@ -13,6 +13,7 @@
 #include <kernel/chainparams.h>
 #include <kernel/cs_main.h>
 #include <kernel/messagestartchars.h>
+#include <node/durability_machine.h>
 #include <primitives/block.h>
 #include <serialize.h>
 #include <streams.h>
@@ -210,7 +211,7 @@ private:
     [[nodiscard]] bool FlushBlockFile(int blockfile_num, bool fFinalize, bool finalize_undo) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /** Return false if undo file flushing fails. */
-    [[nodiscard]] bool FlushUndoFile(int block_file, bool finalize = false);
+    [[nodiscard]] bool FlushUndoFile(int block_file, bool finalize = false) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /**
      * Helper function performing various preparations before a block can be saved to disk:
@@ -313,6 +314,18 @@ protected:
     /** Dirty block file entries. */
     std::set<int> m_dirty_fileinfo;
 
+    /**
+     * Block files and undo files written to since their last successful sync.
+     * A file enters its set when a position in it is claimed and leaves it
+     * when it is synced or pruned. See node::DurabilityState.
+     */
+    std::set<int> m_unsynced_block_files GUARDED_BY(::cs_main);
+    std::set<int> m_unsynced_undo_files GUARDED_BY(::cs_main);
+    //! A flush of a block file or undo file failed: at the sync, before it (opening or
+    //! truncating the file) or after it (closing the file). Never reset: see
+    //! SyncWrittenFiles().
+    bool m_sync_failed GUARDED_BY(::cs_main){false};
+
 public:
     using Options = kernel::BlockManagerOpts;
     using ReadRawBlockResult = util::Expected<std::vector<std::byte>, ReadRawError>;
@@ -357,6 +370,18 @@ public:
     std::unique_ptr<BlockTreeDB> m_block_tree_db GUARDED_BY(::cs_main);
 
     void WriteBlockIndexDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /**
+     * Sync every block file and undo file written to since its last sync,
+     * so that the block index may be written. Returns false if a sync
+     * failed, now or at any earlier point since startup (SyncFailed()); the
+     * file then stays unsynced.
+     */
+    [[nodiscard]] bool SyncWrittenFiles() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    //! Durability of the block's data and of its undo data, see node::DurabilityState.
+    DurabilityState DataDurability(const CBlockIndex& block) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    DurabilityState UndoDurability(const CBlockIndex& block) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool LoadBlockIndexDB(const std::optional<uint256>& snapshot_blockhash)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 

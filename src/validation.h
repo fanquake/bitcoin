@@ -1063,6 +1063,11 @@ public:
     //! Destructs all objects related to accessing the UTXO set. A write-out run in flight lands first.
     void ResetCoinsViews() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    //! Wait for a write-out run in flight and, with -checkblockindex, check the coin store's entries, lists
+    //! and totals (CoinsStore::SanityCheck()). No block may be in connection. The node calls it before the
+    //! last flush of a shutdown, which empties the store, and ResetCoinsViews() calls it again.
+    void CheckCoinsStore() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     //! The coins database cache this chainstate was opened with or last assigned; the database keeps the cache
     //! it was opened with (ResizeCoinsCaches()).
     size_t m_coinsdb_cache_size_bytes{0};

@@ -221,6 +221,14 @@ const CBlockIndex* BlockManager::LookupBlockIndex(const uint256& hash) const
     return it == m_block_index.end() ? nullptr : &it->second;
 }
 
+std::optional<BlockFacts> BlockManager::LookupBlockFacts(const uint256& hash) const
+{
+    AssertLockHeld(cs_main);
+    const CBlockIndex* index{LookupBlockIndex(hash)};
+    if (!index) return std::nullopt;
+    return BlockFactsOf(*index);
+}
+
 CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block, CBlockIndex*& best_header)
 {
     AssertLockHeld(cs_main);

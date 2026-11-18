@@ -300,8 +300,8 @@ static RPCMethod getblockcount()
         [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
-    LOCK(cs_main);
-    return chainman.ActiveChain().Height();
+    // Fact read: the published tip's height. Condition: none.
+    return chainman.PublishedTip().height;
 },
     };
 }
@@ -321,8 +321,10 @@ static RPCMethod getbestblockhash()
         [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
-    LOCK(cs_main);
-    return chainman.ActiveChain().Tip()->GetBlockHash().GetHex();
+    // Fact read: the published tip's hash. Condition: a tip exists.
+    const node::TipSnapshot tip{chainman.PublishedTip()};
+    CHECK_NONFATAL(tip.HasTip());
+    return tip.hash.GetHex();
 },
     };
 }

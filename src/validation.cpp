@@ -3196,6 +3196,8 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
     }
 
     const auto store_before{BlockStoreStateOf(*pindexDelete, m_chain)};
+    // Before the tip and the initial block download latch change.
+    m_chainman.MarkTipChanged();
     m_chain.SetTip(*pindexDelete->pprev);
     CheckBlockStoreTransition(store_before, BlockStoreEvent::Disconnect, *pindexDelete, m_chain);
     m_chainman.UpdateIBDStatus();
@@ -3217,6 +3219,10 @@ struct ConnectedBlock {
 /**
  * Connect a new block to m_chain. block_to_connect is either nullptr or a pointer to a CBlock
  * corresponding to pindexNew, to bypass loading it again from disk.
+    //! With the block's position on disk and its size, if known: a worker reads neither from the index.
+    in.ctx.block_pos = pos;
+    in.ctx.known_bytes = block_bytes;
+    size_t block_bytes{in.ctx.known_bytes};
  *
  * The block is added to connected_blocks if connection succeeds.
  */
@@ -3295,6 +3301,8 @@ bool Chainstate::ConnectTip(
     }
     // Update m_chain & related variables.
     const auto store_before{BlockStoreStateOf(*pindexNew, m_chain)};
+    // Before the tip and the initial block download latch change.
+    m_chainman.MarkTipChanged();
     m_chain.SetTip(*pindexNew);
     CheckBlockStoreTransition(store_before, BlockStoreEvent::Connect, *pindexNew, m_chain);
     m_chainman.UpdateIBDStatus();
@@ -3514,7 +3522,59 @@ void ChainstateManager::UpdateIBDStatus()
     if (m_blockman.LoadingBlocks()) return;
     if (!CurrentChainstate().m_chain.IsTipRecent(MinimumChainWork(), m_options.max_tip_age)) return;
     LogInfo("Leaving InitialBlockDownload (latching to false)");
+    // Readers of PublishedTip() take cs_main from here until the next PublishTip().
+    m_tip_unpublished.store(true);
     m_cached_is_ibd.store(false, std::memory_order_relaxed);
+}
+
+node::TipSnapshot ChainstateManager::CurrentTipSnapshot() const
+{
+    AssertLockHeld(::cs_main);
+    node::TipSnapshot snapshot;
+    if (const CBlockIndex* tip{CurrentChainstate().m_chain.Tip()}) {
+        snapshot.hash = tip->GetBlockHash();
+        snapshot.height = tip->nHeight;
+        snapshot.chain_work = tip->nChainWork;
+        snapshot.time = tip->GetBlockTime();
+        snapshot.bits = tip->nBits;
+    }
+    snapshot.initial_block_download = IsInitialBlockDownload();
+    snapshot.sequence = m_tip_sequence;
+    return snapshot;
+}
+
+void ChainstateManager::PublishTip()
+{
+    AssertLockHeld(::cs_main);
+    Chainstate& chainstate{CurrentChainstate()};
+    if (const CBlockIndex* tip{chainstate.m_chain.Tip()}) {
+        // What is published is fully connected. The coins' best block is the
+        // tip; after a write-out that failed inside ConnectTip() it is the block that was
+        // being connected on top of it, and the node is stopping.
+        // After one that failed inside DisconnectTip() it is the tip's parent, which the tip
+        // has not moved to, and the node is stopping too.
+        Assume(tip->HaveNumChainTxs());
+        if (chainstate.CanFlushToDisk()) {
+            const uint256 best{chainstate.CoinsTip().GetBestBlock()};
+            const CBlockIndex* best_index{best == tip->GetBlockHash() ? tip : m_blockman.LookupBlockIndex(best)};
+            Assume(best_index && (best_index == tip || best_index == tip->pprev || best_index->pprev == tip));
+        }
+    }
+    node::TipSnapshot next{CurrentTipSnapshot()};
+    const node::TipSnapshot last{m_published_tip.Get()};
+    if (next.sequence == last.sequence && (next.hash != last.hash || next.initial_block_download != last.initial_block_download)) {
+        // Nothing moved a tip: the first publication, another chainstate became the current
+        // one, or initial block download ended. The value still gets a number of its own.
+        next.sequence = ++m_tip_sequence;
+    }
+    if (next.sequence != last.sequence) m_published_tip.Publish(next);
+    m_tip_unpublished.store(false);
+}
+
+TipPublisher::~TipPublisher()
+{
+    AssertLockHeld(::cs_main);
+    if (m_chainman.TipUnpublished()) m_chainman.PublishTip();
 }
 
 bool ChainstateManager::NotifyHeaderTip()
@@ -3584,6 +3644,9 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
 
         {
             LOCK(cs_main);
+            // Readers of the published tip see what this hold leaves behind, after its signals
+            // are queued and its notifications sent, and nothing in between.
+            const TipPublisher publish_at_end{m_chainman};
             {
             // Lock transaction pool for at least as long as it takes for connected_blocks to be consumed
             LOCK(MempoolMutex());
@@ -3797,6 +3860,7 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const
         if (m_chainman.m_options.signals) LimitValidationInterfaceQueue(*m_chainman.m_options.signals);
 
         LOCK(cs_main);
+        const TipPublisher publish_at_end{m_chainman};
         // Lock for as long as disconnectpool is in scope to make sure MaybeUpdateMempoolForReorg is
         // called after DisconnectTip without unlocking in between
         LOCK(MempoolMutex());
@@ -4818,8 +4882,10 @@ bool Chainstate::LoadChainTip()
     if (!pindex) {
         return false;
     }
+    m_chainman.MarkTipChanged();
     m_chain.SetTip(*pindex);
     m_chainman.UpdateIBDStatus();
+    m_chainman.PublishTip();
     m_last_flushed_block = pindex;
     tip = m_chain.Tip();
 
@@ -6275,6 +6341,8 @@ SnapshotCompletionResult ChainstateManager::MaybeValidateSnapshot(Chainstate& va
         validated_cs.SetTargetBlock(nullptr);
 
         unvalidated_cs.m_assumeutxo = Assumeutxo::INVALID;
+        // The validated chainstate is the current one from here on.
+        MarkTipChanged();
 
         auto rename_result = unvalidated_cs.InvalidateCoinsDBOnDisk();
         if (!rename_result) {
@@ -6442,6 +6510,7 @@ Chainstate& ChainstateManager::AddChainstate(std::unique_ptr<Chainstate> chainst
     // Set target block for historical chainstate to snapshot block.
     assert(!prev_chainstate.TargetBlockHash());
     prev_chainstate.SetTargetBlockHash(*Assert(chainstate->m_from_snapshot_blockhash));
+    MarkTipChanged();
     m_chainstates.push_back(std::move(chainstate));
     Chainstate& curr_chainstate{CurrentChainstate()};
     assert(&curr_chainstate == m_chainstates.back().get());
@@ -6451,6 +6520,8 @@ Chainstate& ChainstateManager::AddChainstate(std::unique_ptr<Chainstate> chainst
     assert(!prev_chainstate.m_mempool || prev_chainstate.m_mempool->size() == 0);
     assert(!curr_chainstate.m_mempool);
     std::swap(curr_chainstate.m_mempool, prev_chainstate.m_mempool);
+    // The current chainstate changed, and with it the tip.
+    PublishTip();
     return curr_chainstate;
 }
 
@@ -6513,11 +6584,14 @@ bool ChainstateManager::DeleteChainstate(Chainstate& chainstate)
                   fs::PathToString(db_path));
         return false;
     }
+    MarkTipChanged();
     std::unique_ptr<Chainstate> prev_chainstate{Assert(RemoveChainstate(chainstate))};
     Chainstate& curr_chainstate{CurrentChainstate()};
     assert(!prev_chainstate->m_mempool || prev_chainstate->m_mempool->size() == 0);
     assert(!curr_chainstate.m_mempool);
     std::swap(curr_chainstate.m_mempool, prev_chainstate->m_mempool);
+    // The current chainstate changed, and with it the tip.
+    PublishTip();
     return true;
 }
 

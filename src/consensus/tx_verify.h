@@ -28,6 +28,13 @@ namespace Consensus {
  * Preconditions: tx.IsCoinBase() is false.
  */
 [[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee);
+/**
+ * CheckTxInputs() without its first step, the look for a missing input: for a caller that has itself
+ * found every input of the transaction in `inputs` (CCoinsViewCache::HaveInputs()) and has not changed
+ * `inputs` since. An input that is missing all the same is an assertion failure.
+ * @param[out] txfee Set to the transaction fee if successful.
+ */
+[[nodiscard]] bool CheckAvailableTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee);
 } // namespace Consensus
 
 /** Auxiliary functions for transaction validation (ideally should not be exposed) */

@@ -47,9 +47,10 @@ For each thread a thread stack needs to be allocated. By default on Linux,
 threads take up 8MiB for the thread stack on a 64-bit system, and 4MiB in a
 32-bit system.
 
-- `-par=<n>` - the number of script verification threads, defaults to the number of cores in the system minus one.
+- `-par=<n>` - the number of script verification threads, defaults to the number of cores in the system minus one. During initial block download the scripts of the blocks validated in parallel are verified on the connect pool threads instead (`-prevoutfetchthreads`).
 - `-rpcthreads=<n>` - the number of threads used for processing RPC requests, defaults to `16`.
-- `-prevoutfetchthreads=<n>` - the number of threads used to fetch block input prevouts, defaults to `8`.
+- `-prevoutfetchthreads=<n>` - the number of connect pool threads, which validate blocks in parallel and process the blocks received from peers during initial block download, and fetch block input prevouts at the tip, defaults to the number of cores in the system, at least `2`. During initial block download up to twice as many blocks as there are threads are validated at a time (at most 64), and together they hold up to an eighth of the coins cache in memory (at least 32 MiB), whatever the number of threads. Blocks received from peers wait for a thread in memory, up to one fewer than the number of threads, so a lower value also reduces those. Undo data waiting to be written takes up to a further 64 MiB of its written size, and the connected blocks whose notifications wait for it up to an eighth of the coins cache in memory (at least 64 MiB), whatever the number of threads.
+- `-blockcache=<n>` - accepted blocks are kept in memory until they are connected, up to `<n>` MiB, defaults to `128`, or to the size of the coins cache where that is smaller (at least `32`), so a low `-dbcache` also reduces it. `-blockcache=0` disables it.
 
 ## Linux specific
 

@@ -52,7 +52,7 @@ enum class BlockStoreState {
 
 enum class BlockStoreEvent {
     DataStored, //!< ReceivedBlockTransactions(): the block was written and passed its checks.
-    Connect,    //!< ConnectTip(): the block became the tip.
+    Connect,    //!< PublishConnectTip(): the block became the tip.
     Disconnect, //!< DisconnectTip(): the block stopped being the tip.
     Fail,       //!< InvalidBlockFound(), InvalidateBlock(), SetBlockFailureFlags().
     Reconsider, //!< ResetBlockFailureFlags().

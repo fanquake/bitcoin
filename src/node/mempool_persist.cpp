@@ -76,6 +76,10 @@ bool LoadMempool(CTxMemPool& pool, const fs::path& load_path, Chainstate& active
         uint64_t txns_tried = 0;
         LogInfo("Loading %u mempool transactions from file...\n", total_txns_to_load);
         int next_tenth_to_report = 0;
+        // What the effects queue holds is waited for once, here and without cs_main, so that the first
+        // settle under the lock finds little left to wait for; the later ones find what the blocks
+        // connected meanwhile added.
+        if (active_chainstate.m_chainman.IsInitialBlockDownload()) active_chainstate.m_blockman.m_effects.WaitForIO();
         while (txns_tried < total_txns_to_load) {
             const int percentage_done(100.0 * txns_tried / total_txns_to_load);
             if (next_tenth_to_report < percentage_done / 10) {
@@ -102,7 +106,9 @@ bool LoadMempool(CTxMemPool& pool, const fs::path& load_path, Chainstate& active
             }
             if (nTime > TicksSinceEpoch<std::chrono::seconds>(now - pool.m_opts.expiry)) {
                 LOCK(cs_main);
-                const auto& accepted = AcceptToMemoryPool(active_chainstate, tx, nTime, /*bypass_limits=*/false, /*test_accept=*/false);
+                // Precondition O7 (validation.h): in initial block download the signals of the blocks
+                // connected so far are handed over before the transaction is announced.
+                const auto& accepted = SubmitToMemoryPool(active_chainstate, tx, nTime, /*bypass_limits=*/false, /*test_accept=*/false);
                 if (accepted.m_result_type == MempoolAcceptResult::ResultType::VALID) {
                     ++count;
                 } else {

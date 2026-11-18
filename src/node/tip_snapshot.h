@@ -19,10 +19,18 @@ namespace node {
  * ChainstateManager publishes a new value as the last step of a cs_main
  * hold that moved a tip, changed which chainstate is the current one or
  * ended initial block download: after the blocks are part of the chain,
- * their coins are in the tip view, their block index entries are complete,
- * and the hold's signals are queued and its notifications sent. A reader
- * therefore sees the tips cs_main would have shown it, the ones a hold
- * leaves behind, and none of the tips a reorganisation passes through.
+ * their coins are in the tip view, their block index entries are complete
+ * but for the position of undo data still being written, and the hold's
+ * signals are queued or, in initial block download, wait on the block
+ * manager's executor behind that write (BlockConnected and the
+ * UpdatedBlockTip after it). The notifications of a connected block are
+ * sent in its hold, but for ActiveTipChange where blocks are connected in a
+ * window: the step sends it once, in a hold after the one that published
+ * its last block. InvalidateBlock() publishes with every block it
+ * disconnects and sends its two notifications once, after the last and
+ * without cs_main. A reader therefore sees the tips cs_main would have
+ * shown it, the ones a hold leaves behind, and none of the tips a
+ * reorganisation passes through.
  * Loading the chain and activating a snapshot publish before their hold
  * ends, at a point after which it moves no tip. A reader copies the value
  * with ChainstateManager::PublishedTip() and holds no lock while using it;

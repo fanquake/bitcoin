@@ -263,6 +263,7 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
         case TxVerbosity::SHOW_DETAILS:
         case TxVerbosity::SHOW_DETAILS_AND_PREVOUT:
             CBlockUndo blockUndo;
+            blockman.SettleUndoWriteOf(blockindex); // a just-connected block's undo may be in flight
             const bool is_not_pruned{WITH_LOCK(::cs_main, return !blockman.IsBlockPruned(blockindex))};
             bool have_undo{is_not_pruned && WITH_LOCK(::cs_main, return blockindex.nStatus & BLOCK_HAVE_UNDO)};
             if (have_undo && !blockman.ReadBlockUndo(blockUndo, blockindex)) {
@@ -756,6 +757,7 @@ static CBlockUndo GetUndoChecked(BlockManager& blockman, const CBlockIndex& bloc
     // The Genesis block does not have undo data
     if (blockindex.nHeight == 0) return blockUndo;
 
+    blockman.SettleUndoWriteOf(blockindex); // a just-connected block's undo may be in flight
     {
         LOCK(cs_main);
         CheckBlockDataAvailability(blockman, blockindex, /*check_for_undo=*/true);
@@ -926,8 +928,9 @@ std::optional<int> GetPruneHeight(const BlockManager& blockman, const CChain& ch
     // If there are no blocks after the genesis block, or no blocks at all, nothing is pruned.
     if (!first_block || !chain_tip) return std::nullopt;
 
-    // If the chain tip is pruned, everything is pruned.
-    if ((chain_tip->nStatus & BLOCK_HAVE_MASK) != BLOCK_HAVE_MASK) return chain_tip->nHeight;
+    // If the chain tip is pruned, everything is pruned. A just-connected block's undo in flight counts as there
+    // (BlockManager::HasStatus()).
+    if (!blockman.HasStatus(*chain_tip, BLOCK_HAVE_MASK)) return chain_tip->nHeight;
 
     const auto& first_unpruned{blockman.GetFirstBlock(*chain_tip, /*status_mask=*/BLOCK_HAVE_MASK, first_block)};
     if (&first_unpruned == first_block) {
@@ -1015,19 +1018,24 @@ CoinStatsHashType ParseHashType(std::string_view hash_type_input)
  * Calculate statistics about the unspent transaction output set
  *
  * @param[in] index_requested Signals if the coinstatsindex should be used (when available).
+ * @param[in] cursor A cursor of the view taken in the hold of cs_main that wrote the cache out, for a caller
+ *                   that does not hold cs_main since (kernel::ComputeUTXOStats()). The best block is the
+ *                   cursor's then.
  */
 static std::optional<kernel::CCoinsStats> GetUTXOStats(const CCoinsViewDB& view, node::BlockManager& blockman,
                                                        kernel::CoinStatsHashType hash_type,
                                                        const std::function<void()>& interruption_point = {},
                                                        const CBlockIndex* pindex = nullptr,
-                                                       bool index_requested = true)
+                                                       bool index_requested = true,
+                                                       std::unique_ptr<CCoinsViewCursor> cursor = nullptr)
 {
+    const uint256 best_block{cursor ? cursor->GetBestBlock() : view.GetBestBlock()};
     // Use CoinStatsIndex if it is requested and available and a hash_type of Muhash or None was requested
     if ((hash_type == kernel::CoinStatsHashType::MUHASH || hash_type == kernel::CoinStatsHashType::NONE) && g_coin_stats_index && index_requested) {
         if (pindex) {
             return g_coin_stats_index->LookUpStats(*pindex);
         } else {
-            CBlockIndex& block_index = *CHECK_NONFATAL(WITH_LOCK(::cs_main, return blockman.LookupBlockIndex(view.GetBestBlock())));
+            CBlockIndex& block_index = *CHECK_NONFATAL(WITH_LOCK(::cs_main, return blockman.LookupBlockIndex(best_block)));
             return g_coin_stats_index->LookUpStats(block_index);
         }
     }
@@ -1036,9 +1044,9 @@ static std::optional<kernel::CCoinsStats> GetUTXOStats(const CCoinsViewDB& view,
     // pindex should either be null or equal to the view's best block. This is
     // because without the coinstats index we can only get coinstats about the
     // best block.
-    CHECK_NONFATAL(!pindex || pindex->GetBlockHash() == view.GetBestBlock());
+    CHECK_NONFATAL(!pindex || pindex->GetBlockHash() == best_block);
 
-    return kernel::ComputeUTXOStats(hash_type, view, blockman, interruption_point);
+    return kernel::ComputeUTXOStats(hash_type, view, blockman, interruption_point, std::move(cursor));
 }
 
 static RPCMethod gettxoutsetinfo()
@@ -1105,7 +1113,15 @@ static RPCMethod gettxoutsetinfo()
     NodeContext& node = EnsureAnyNodeContext(request.context);
     ChainstateManager& chainman = EnsureChainman(node);
     Chainstate& active_chainstate = chainman.ActiveChainstate();
-    active_chainstate.ForceFlushStateToDisk(/*wipe_cache=*/false);
+    // The cursor is taken in the hold of cs_main that writes the cache out, as scantxoutset and
+    // dumptxoutset take theirs: the database has a best block there, and in a later hold a write-out run
+    // that is not the last of its write-out may have left it without one.
+    std::unique_ptr<CCoinsViewCursor> cursor;
+    {
+        LOCK(::cs_main);
+        active_chainstate.ForceFlushStateToDisk(/*wipe_cache=*/false);
+        cursor = active_chainstate.CoinsDB().Cursor();
+    }
 
     const CCoinsViewDB& coins_view{WITH_LOCK(::cs_main, return active_chainstate.CoinsDB())};
     BlockManager& blockman{active_chainstate.m_blockman};
@@ -1138,7 +1154,7 @@ static RPCMethod gettxoutsetinfo()
         }
     }
 
-    const std::optional<CCoinsStats> maybe_stats = GetUTXOStats(coins_view, blockman, hash_type, node.rpc_interruption_point, pindex, index_requested);
+    const std::optional<CCoinsStats> maybe_stats = GetUTXOStats(coins_view, blockman, hash_type, node.rpc_interruption_point, pindex, index_requested, std::move(cursor));
     if (maybe_stats.has_value()) {
         const CCoinsStats& stats = maybe_stats.value();
         ret.pushKV("height", stats.nHeight);
@@ -3588,7 +3604,7 @@ const std::vector<RPCResult> RPCHelpForChainstate{
     {RPCResult::Type::NUM, "difficulty", "difficulty of the tip"},
     {RPCResult::Type::NUM, "verificationprogress", "progress towards the network tip"},
     {RPCResult::Type::STR_HEX, "snapshot_blockhash", /*optional=*/true, "the base block of the snapshot this chainstate is based on, if any"},
-    {RPCResult::Type::NUM, "coins_db_cache_bytes", "size of the coinsdb cache"},
+    {RPCResult::Type::NUM, "coins_db_cache_bytes", "share of the coinsdb cache assigned to this chainstate; the database keeps the cache size it was opened with"},
     {RPCResult::Type::NUM, "coins_tip_cache_bytes", "size of the coinstip cache"},
     {RPCResult::Type::BOOL, "validated", "whether the chainstate is fully validated. True if all blocks in the chainstate were validated, false if the chain is based on a snapshot and the snapshot has not yet been validated."},
 };

@@ -41,11 +41,13 @@
 #include <util/translation.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <compare>
 #include <cstddef>
 #include <cstdio>
 #include <exception>
+#include <deque>
 #include <map>
 #include <optional>
 #include <ostream>
@@ -89,17 +91,28 @@ bool BlockTreeDB::ReadLastBlockFile(int& nFile)
     return Read(DB_LAST_BLOCK, nFile);
 }
 
+std::unique_ptr<CDBBatch> BlockTreeDB::PrepareBatch(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo)
+{
+    auto batch{std::make_unique<CDBBatch>(*this)};
+    for (const auto& [file, info] : fileInfo) {
+        batch->Write(std::make_pair(DB_BLOCK_FILES, file), *info);
+    }
+    batch->Write(DB_LAST_BLOCK, nLastFile);
+    for (const CBlockIndex* bi : blockinfo) {
+        batch->Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
+    }
+    return batch;
+}
+
+void BlockTreeDB::CommitBatch(CDBBatch& batch)
+{
+    WriteBatch(batch, true);
+}
+
 void BlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo)
 {
-    CDBBatch batch(*this);
-    for (const auto& [file, info] : fileInfo) {
-        batch.Write(std::make_pair(DB_BLOCK_FILES, file), *info);
-    }
-    batch.Write(DB_LAST_BLOCK, nLastFile);
-    for (const CBlockIndex* bi : blockinfo) {
-        batch.Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
-    }
-    WriteBatch(batch, true);
+    auto batch{PrepareBatch(fileInfo, nLastFile, blockinfo)};
+    CommitBatch(*batch);
 }
 
 void BlockTreeDB::WriteFlag(const std::string& name, bool fValue)
@@ -425,6 +438,28 @@ void BlockManager::FindFilesToPrune(
              min_block_to_prune, last_block_can_prune, count);
 }
 
+bool BlockManager::AtPruneTarget(const Chainstate& chain, ChainstateManager& chainman)
+{
+    AssertLockHeld(::cs_main);
+    const int num_chainstates{chainman.HistoricalChainstate() ? 2 : 1};
+    const auto target = std::max(
+        MIN_DISK_SPACE_FOR_BLOCK_FILES, GetPruneTarget() / num_chainstates);
+    if (chain.m_chain.Height() < 0 || target == 0) return false;
+    if (static_cast<uint64_t>(chain.m_chain.Height()) <= chainman.GetParams().PruneAfterHeight()) return false;
+    return CalculateCurrentUsage() + BLOCKFILE_CHUNK_SIZE + UNDOFILE_CHUNK_SIZE >= target;
+}
+
+bool BlockManager::HasBlockFileEndingWithin(int above, int upto) const
+{
+    AssertLockHeld(::cs_main);
+    for (int fileNumber = 0; fileNumber < this->MaxBlockfileNum(); fileNumber++) {
+        const auto& fileinfo = m_blockfile_info[fileNumber];
+        if (fileinfo.nSize == 0) continue;
+        if (int64_t{fileinfo.nHeightLast} > above && int64_t{fileinfo.nHeightLast} <= upto) return true;
+    }
+    return false;
+}
+
 void BlockManager::UpdatePruneLock(const std::string& name, const PruneLockInfo& lock_info) {
     AssertLockHeld(::cs_main);
     m_prune_locks[name] = lock_info;
@@ -544,23 +579,89 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
 void BlockManager::WriteBlockIndexDB()
 {
     AssertLockHeld(::cs_main);
+    // The batch takes the dirty entries: a commit that throws loses them, and no later write may record a state
+    // that leaves them out (m_index_batch_lost), as for a run's batch.
+    const IndexBatch batch{PrepareBlockIndexBatch()};
+    try {
+        CommitBlockIndexBatch(batch);
+    } catch (const std::runtime_error&) {
+        m_index_batch_lost = true;
+        throw;
+    }
+}
+
+void BlockManager::CommitBlockIndexBatch(const IndexBatch& batch)
+{
+    LOCK(m_index_commit_mutex);
+    // Batches are committed in the order they were prepared: a synchronous index write settles the run in
+    // flight first, and a run commits its batch in its own effect, one run at a time. A batch holds the
+    // entries that were dirty when it was prepared and no longer are: one left out would lose them.
+    Assert(batch.generation > m_index_batch_committed);
+    // The index never records bytes that a crash could still lose: a batch that still owes a sync holds
+    // entries that are Unsynced (node/durability_machine.h).
+    Assert(batch.block_syncs.empty() && batch.undo_syncs.empty());
+    Assert(batch.db)->CommitBatch(*batch.batch);
+    m_index_batch_committed = batch.generation;
+}
+
+BlockManager::IndexBatch BlockManager::PrepareBlockIndexBatch()
+{
+    AssertLockHeld(::cs_main);
     std::vector<std::pair<int, const CBlockFileInfo*>> vFiles;
     vFiles.reserve(m_dirty_fileinfo.size());
     for (std::set<int>::iterator it = m_dirty_fileinfo.begin(); it != m_dirty_fileinfo.end();) {
         vFiles.emplace_back(*it, &m_blockfile_info[*it]);
         m_dirty_fileinfo.erase(it++);
     }
+    // A block whose undo write is queued is recorded with the undo data it is getting (its claimed position and
+    // BLOCK_HAVE_UNDO), so that the batch need not wait for the write. The batch is never committed before the
+    // write: a write-out run commits it on the executor behind the undo writes queued before it, fails without
+    // committing if one of them did, and first syncs every file the batch owes a sync (SyncBatchFiles()), the
+    // current undo file up to its claimed size among them. An older undo file a write completes is synced by
+    // that write's own effect (UndoFileFinishedBy()) or by an effect queued behind the write when its block
+    // file was left (FindNextBlockPos()). A synchronous write settles the queue and syncs every written file
+    // (SyncWrittenFiles()) before it prepares its batch, and owes none.
+    std::vector<FlatFilePos> block_syncs, undo_syncs;
+    for (const int file : m_unsynced_block_files) block_syncs.emplace_back(file, m_blockfile_info.at(file).nSize);
+    for (const int file : m_unsynced_undo_files) undo_syncs.emplace_back(file, m_blockfile_info.at(file).nUndoSize);
+    m_unsynced_block_files.clear();
+    m_unsynced_undo_files.clear();
+    std::deque<CDiskBlockIndex> pending;
     std::vector<const CBlockIndex*> vBlocks;
     vBlocks.reserve(m_dirty_blockindex.size());
     for (std::set<CBlockIndex*>::iterator it = m_dirty_blockindex.begin(); it != m_dirty_blockindex.end();) {
-        // The index never records bytes that a crash could still lose.
-        Assume(DURABILITY_TABLE.Next(DataDurability(**it), DurabilityEvent::Record));
-        Assume(DURABILITY_TABLE.Next(UndoDurability(**it), DurabilityEvent::Record));
-        vBlocks.push_back(*it);
+        if (const auto undo{m_undo_pending.find(*it)}; undo != m_undo_pending.end() && !((*it)->nStatus & BLOCK_HAVE_UNDO)) {
+            CDiskBlockIndex& recorded{pending.emplace_back(*it)};
+            recorded.nUndoPos = undo->second;
+            recorded.nStatus |= BLOCK_HAVE_UNDO;
+            vBlocks.push_back(&recorded);
+        } else {
+            vBlocks.push_back(*it);
+        }
         m_dirty_blockindex.erase(it++);
     }
     int max_blockfile{this->MaxBlockfileNum()};
-    m_block_tree_db->WriteBatchSync(vFiles, max_blockfile, vBlocks);
+    return IndexBatch{m_block_tree_db->PrepareBatch(vFiles, max_blockfile, vBlocks), ++m_index_batch_generation, m_block_tree_db.get(),
+                      std::move(block_syncs), std::move(undo_syncs)};
+}
+
+bool BlockManager::SyncBatchFiles(IndexBatch& batch)
+{
+    const auto sync{[&](const FlatFileSeq& seq, std::vector<FlatFilePos>& owed, const bilingual_str& error) {
+        while (!owed.empty()) {
+            // Not after a sync that failed anywhere, as in SyncWrittenFiles(): the file may be one of these.
+            if (m_sync_failed) return false;
+            if (!seq.Flush(owed.back(), /*finalize=*/false)) {
+                m_sync_failed = true;
+                m_opts.notifications.flushError(error);
+                return false;
+            }
+            owed.pop_back();
+        }
+        return true;
+    }};
+    return sync(m_block_file_seq, batch.block_syncs, _("Flushing block file to disk failed. This is likely the result of an I/O error.")) &&
+           sync(m_undo_file_seq, batch.undo_syncs, _("Flushing undo file to disk failed. This is likely the result of an I/O error."));
 }
 
 DurabilityState BlockManager::DataDurability(const CBlockIndex& block) const
@@ -692,8 +793,8 @@ const CBlockIndex& BlockManager::GetFirstBlock(const CBlockIndex& upper_block, u
 {
     AssertLockHeld(::cs_main);
     const CBlockIndex* last_block = &upper_block;
-    assert((last_block->nStatus & status_mask) == status_mask); // 'upper_block' must satisfy the status mask
-    while (last_block->pprev && ((last_block->pprev->nStatus & status_mask) == status_mask)) {
+    assert(HasStatus(*last_block, status_mask)); // 'upper_block' must satisfy the status mask
+    while (last_block->pprev && HasStatus(*last_block->pprev, status_mask)) {
         if (lower_block) {
             // Return if we reached the lower_block
             if (last_block == lower_block) return *lower_block;
@@ -771,7 +872,13 @@ CBlockFileInfo* BlockManager::GetBlockFileInfo(size_t n)
 
 bool BlockManager::ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index) const
 {
-    const FlatFilePos pos{WITH_LOCK(::cs_main, return index.GetUndoPos())};
+    FlatFilePos pos{WITH_LOCK(::cs_main, return index.GetUndoPos())};
+    if (pos.IsNull()) {
+        // The undo write of a recently connected block may still be in flight. A block with none queued
+        // (it has no undo data, or the data was pruned) waits for nothing.
+        if (WITH_LOCK(::cs_main, return m_undo_pending.contains(&index))) const_cast<BlockManager*>(this)->SettleUndoWrites();
+        pos = WITH_LOCK(::cs_main, return index.GetUndoPos());
+    }
 
     // Open history file to read
     AutoFile file{OpenUndoFile(pos, true)};
@@ -796,7 +903,7 @@ bool BlockManager::ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index
             LogError("Checksum mismatch at %s while reading block undo", pos.ToString());
             return false;
         }
-    } catch (const std::exception& e) {
+    } catch (const std::runtime_error& e) {
         LogError("Deserialize or I/O error - %s at %s while reading block undo", e.what(), pos.ToString());
         return false;
     }
@@ -813,7 +920,11 @@ bool BlockManager::FlushUndoFile(int block_file, bool finalize)
         m_opts.notifications.flushError(_("Flushing undo file to disk failed. This is likely the result of an I/O error."));
         return false;
     }
-    m_unsynced_undo_files.erase(block_file);
+    // An undo write that is claimed and queued has not reached the file: the sync did not cover it, and the
+    // file stays marked for the batch that records it (PrepareBlockIndexBatch()).
+    bool write_queued{false};
+    for (const auto& [block, bytes] : m_undo_pending) write_queued |= block->nFile == block_file;
+    if (!write_queued) m_unsynced_undo_files.erase(block_file);
     return true;
 }
 
@@ -979,10 +1090,30 @@ FlatFilePos BlockManager::FindNextBlockPos(uint64_t nAddSize, unsigned int nHeig
                  last_blockfile, m_blockfile_info[last_blockfile].ToString(), nFile, nHeight);
 
         // The file is trimmed, not synced. It stays marked unsynced (m_unsynced_block_files, its undo file in
-        // m_unsynced_undo_files), and whatever records its blocks in the block index syncs it first
-        // (SyncWrittenFiles()). A sync here would be made under cs_main, holding every block being stored behind
-        // it, for a durability nothing reads yet.
+        // m_unsynced_undo_files), and whatever records its blocks in the block index syncs it first: a write-out
+        // run's batch (PrepareBlockIndexBatch(), SyncBatchFiles()) or a synchronous write (SyncWrittenFiles());
+        // CommitBlockIndexBatch() asserts that a batch owes no sync. A sync here would be made under cs_main,
+        // holding every block being stored and the connector behind it, for a durability nothing reads yet.
         TrimBlockFile(last_blockfile, /*trim_undo=*/finalize_undo);
+        // The undo write of the file's last block may be claimed and queued but not completed, so that the undo
+        // height above is behind: that write finishes the undo file, and its claim, made while the cursor was
+        // still here, did not see it (UndoFileFinishedBy()). The file's sync is queued now, behind that write and
+        // ahead of any write-out run started later, whose block index batch records the write's undo data as
+        // present (PrepareBlockIndexBatch()).
+        if (!finalize_undo) {
+            const uint32_t last_height{m_blockfile_info[last_blockfile].nHeightLast};
+            if (std::ranges::any_of(m_undo_pending, [&](const auto& pending) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+                    return pending.first->nFile == last_blockfile && static_cast<uint32_t>(pending.first->nHeight) == last_height;
+                })) {
+                const FlatFilePos undo_end{last_blockfile, static_cast<unsigned int>(m_blockfile_info[last_blockfile].nUndoSize)};
+                m_effects.Enqueue(
+                    [this, undo_end]() -> bool {
+                        FinishUndoFile(undo_end);
+                        return true;
+                    },
+                    [](bool) {});
+            }
+        }
         // No undo data yet in the new file, so reset our undo-height tracking.
         m_blockfile_cursors[chain_type] = BlockfileCursor{nFile};
     }
@@ -1050,76 +1181,136 @@ bool BlockManager::FindUndoPos(BlockValidationState& state, int nFile, FlatFileP
     return true;
 }
 
-bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
+std::optional<FlatFilePos> BlockManager::ClaimUndoPos(BlockValidationState& state, CBlockIndex& block, uint32_t undo_size)
+{
+    AssertLockHeld(::cs_main);
+    FlatFilePos pos;
+    if (!FindUndoPos(state, block.nFile, pos, undo_size + UNDO_DATA_DISK_OVERHEAD)) {
+        LogError("FindUndoPos failed for %s while writing block undo", pos.ToString());
+        return std::nullopt;
+    }
+    m_undo_pending.insert_or_assign(&block, pos.nPos + STORAGE_HEADER_BYTES);
+    // The entry is to be written: a batch records the undo data a block is getting only with an entry it
+    // writes (PrepareBlockIndexBatch()), and nothing else marks a block whose validity does not rise when it
+    // is connected (one stored again after its files were pruned).
+    m_dirty_blockindex.insert(&block);
+    return pos;
+}
+
+bool BlockManager::WriteBlockUndoAt(const CBlockUndo& blockundo, const uint256& prev_block_hash, FlatFilePos pos)
+{
+    const auto blockundo_size{static_cast<uint32_t>(GetSerializeSize(blockundo))};
+    // Open history file to append
+    AutoFile file{OpenUndoFile(pos)};
+    if (file.IsNull()) {
+        LogError("OpenUndoFile failed for %s while writing block undo", pos.ToString());
+        m_opts.notifications.fatalError(_("Failed to write undo data."));
+        return false;
+    }
+    {
+        BufferedWriter fileout{file};
+
+        // Write index header
+        fileout << GetParams().MessageStart() << blockundo_size;
+        pos.nPos += STORAGE_HEADER_BYTES;
+        {
+            // Calculate checksum
+            HashWriter hasher{};
+            hasher << prev_block_hash << blockundo;
+            // Write undo data & checksum
+            fileout << blockundo << hasher.GetHash();
+        }
+        // BufferedWriter will flush pending data to file when fileout goes out of scope.
+    }
+
+    // Make sure that the file is closed before `FlushUndoFile` can be called for it.
+    if (file.fclose() != 0) {
+        LogError("Failed to close block undo file %s: %s", pos.ToString(), SysErrorString(errno));
+        m_opts.notifications.fatalError(_("Failed to close block undo file."));
+        return false;
+    }
+    return true;
+}
+
+std::optional<FlatFilePos> BlockManager::UndoFileFinishedBy(const CBlockIndex& block, const FlatFilePos& pos)
+{
+    AssertLockHeld(::cs_main);
+    const auto& cursor = *Assert(m_blockfile_cursors[BlockfileTypeForHeight(block.nHeight)]);
+    // rev files are written in block height order, whereas blk files are written as blocks come in (often out of order)
+    // we want to flush the rev (undo) file once we've written the last block, which is indicated by the last height
+    // in the block file info as below; note that this does not catch the case where the undo writes are keeping up
+    // with the block writes (usually when a synced up node is getting newly mined blocks) -- this case is caught in
+    // the FindNextBlockPos function
+    if (pos.nFile < cursor.file_num && static_cast<uint32_t>(block.nHeight) == m_blockfile_info[pos.nFile].nHeightLast) {
+        return FlatFilePos{pos.nFile, static_cast<unsigned int>(m_blockfile_info[pos.nFile].nUndoSize)};
+    }
+    return std::nullopt;
+}
+
+void BlockManager::FinishUndoFile(const FlatFilePos& undo_end)
+{
+    // Reported, not propagated: the undo data is written, the file may be left untrimmed. Remembered by the
+    // latch (SyncFailed()), not in the set of unsynced files, which is not touched here: no later sync of
+    // the file may stand in for this one.
+    if (!m_undo_file_seq.Flush(undo_end, /*finalize=*/true)) {
+        m_sync_failed = true;
+        m_opts.notifications.flushError(_("Flushing undo file to disk failed. This is likely the result of an I/O error."));
+        LogWarning("Failed to flush undo file %05i", undo_end.nFile);
+    }
+}
+
+void BlockManager::OnUndoWritten(CBlockIndex& block, const FlatFilePos& pos)
 {
     AssertLockHeld(::cs_main);
     const BlockfileType type = BlockfileTypeForHeight(block.nHeight);
     auto& cursor = *Assert(m_blockfile_cursors[type]);
+    // An undo file the write completed is trimmed and synced by the write itself where the claim saw that
+    // (UndoFileFinishedBy()), and where the block file was left only after the claim, by an effect queued
+    // behind the write when it was left (FindNextBlockPos()).
+    if (pos.nFile == cursor.file_num && block.nHeight > cursor.undo_height) {
+        cursor.undo_height = block.nHeight;
+    }
+    // update nUndoPos in block index
+    block.nUndoPos = pos.nPos;
+    block.nStatus |= BLOCK_HAVE_UNDO;
+    m_dirty_blockindex.insert(&block);
+}
+
+bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationState& state, CBlockIndex& block)
+{
+    AssertLockHeld(::cs_main);
 
     // Write undo information to disk
     if (block.GetUndoPos().IsNull()) {
-        FlatFilePos pos;
         const auto blockundo_size{static_cast<uint32_t>(GetSerializeSize(blockundo))};
-        if (!FindUndoPos(state, block.nFile, pos, blockundo_size + UNDO_DATA_DISK_OVERHEAD)) {
-            LogError("FindUndoPos failed for %s while writing block undo", pos.ToString());
-            return false;
-        }
-
-        // Open history file to append
-        AutoFile file{OpenUndoFile(pos)};
-        if (file.IsNull()) {
-            LogError("OpenUndoFile failed for %s while writing block undo", pos.ToString());
-            return FatalError(m_opts.notifications, state, _("Failed to write undo data."));
-        }
-        {
-            BufferedWriter fileout{file};
-
-            // Write index header
-            fileout << GetParams().MessageStart() << blockundo_size;
-            pos.nPos += STORAGE_HEADER_BYTES;
-            {
-                // Calculate checksum
-                HashWriter hasher{};
-                hasher << block.pprev->GetBlockHash() << blockundo;
-                // Write undo data & checksum
-                fileout << blockundo << hasher.GetHash();
-            }
-            // BufferedWriter will flush pending data to file when fileout goes out of scope.
-        }
-
-        // Make sure that the file is closed before we call `FlushUndoFile`.
-        if (file.fclose() != 0) {
-            LogError("Failed to close block undo file %s: %s", pos.ToString(), SysErrorString(errno));
-            return FatalError(m_opts.notifications, state, _("Failed to close block undo file."));
-        }
-
-        // rev files are written in block height order, whereas blk files are written as blocks come in (often out of order)
-        // we want to flush the rev (undo) file once we've written the last block, which is indicated by the last height
-        // in the block file info as below; note that this does not catch the case where the undo writes are keeping up
-        // with the block writes (usually when a synced up node is getting newly mined blocks) -- this case is caught in
-        // the FindNextBlockPos function
-        if (pos.nFile < cursor.file_num && static_cast<uint32_t>(block.nHeight) == m_blockfile_info[pos.nFile].nHeightLast) {
-            // Do not propagate the return code, a failed flush here should not
-            // be an indication for a failed write. If it were propagated here,
-            // the caller would assume the undo data not to be written, when in
-            // fact it is. Note though, that a failed flush might leave the data
-            // file untrimmed.
-            if (!FlushUndoFile(pos.nFile, true)) {
-                LogWarning("Failed to flush undo file %05i\n", pos.nFile);
-            }
-        } else if (pos.nFile == cursor.file_num && block.nHeight > cursor.undo_height) {
-            cursor.undo_height = block.nHeight;
-        }
-        // update nUndoPos in block index
-        block.nUndoPos = pos.nPos;
-        block.nStatus |= BLOCK_HAVE_UNDO;
-        m_dirty_blockindex.insert(&block);
+        const auto pos{ClaimUndoPos(state, block, blockundo_size)};
+        if (!pos) return false;
+        // Written here, not queued: the claim's pending mark (ClaimUndoPos()) is settled either way.
+        const auto finishes{UndoFileFinishedBy(block, *pos)};
+        const bool written{WriteBlockUndoAt(blockundo, block.pprev->GetBlockHash(), *pos)};
+        UndoWriteSettled(block);
+        if (!written) return state.Error("Failed to write undo data");
+        if (finishes) FinishUndoFile(*finishes);
+        OnUndoWritten(block, FlatFilePos{pos->nFile, pos->nPos + STORAGE_HEADER_BYTES});
     }
 
     return true;
 }
 
-bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const
+void BlockManager::SettleUndoWrites()
+{
+    m_effects.WaitForIO();
+    LOCK(::cs_main);
+    m_effects.ApplyCompletions();
+}
+
+void BlockManager::SettleUndoWriteOf(const CBlockIndex& block)
+{
+    AssertLockNotHeld(::cs_main);
+    if (WITH_LOCK(::cs_main, return m_undo_pending.contains(&block))) SettleUndoWrites();
+}
+
+bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash, size_t* bytes_read) const
 {
     block.SetNull();
 
@@ -1128,11 +1319,12 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
     if (!block_data) {
         return false;
     }
+    if (bytes_read) *bytes_read = block_data->size();
 
     try {
         // Read block
         SpanReader{*block_data} >> TX_WITH_WITNESS(block);
-    } catch (const std::exception& e) {
+    } catch (const std::runtime_error& e) {
         LogError("Deserialize or I/O error - %s at %s while reading block", e.what(), pos.ToString());
         return false;
     }
@@ -1242,7 +1434,7 @@ void BlockManager::UnpinBlockFile(int file)
     if (--it->second == 0) m_blockfiles_being_written.erase(it);
     // The write was made off the lock, after its position was claimed: a sync made in between did not
     // cover its bytes, also where the cursor left the file meanwhile and finalized it. The file is marked
-    // again, and whatever writes the block index next syncs it first (SyncWrittenFiles()).
+    // again, and whatever writes the block index next syncs it first (SyncWrittenFiles(), SyncBatchFiles()).
     m_unsynced_block_files.insert(file);
 }
 
@@ -1334,14 +1526,30 @@ static auto InitBlocksdirXorKey(const BlockManager::Options& opts)
     return Obfuscation{obfuscation};
 }
 
-BlockManager::BlockManager(const util::SignalInterrupt& interrupt, Options opts)
+BlockManager::~BlockManager()
+{
+    // Finish the queued I/O and record it in the block index before the index goes away: the executor stops
+    // only once no completion is left.
+    while (true) {
+        m_effects.WaitForIO();
+        if (!m_effects.HasPendingCompletions()) break;
+        LOCK(::cs_main);
+        m_effects.ApplyCompletions();
+    }
+    m_effects.Stop();
+}
+
+BlockManager::BlockManager(const util::SignalInterrupt& interrupt, Options opts, util::ByteLedger* ledger)
     : m_prune_mode{opts.prune_target > 0},
       m_obfuscation{InitBlocksdirXorKey(opts)},
       m_opts{std::move(opts)},
       m_block_file_seq{FlatFileSeq{m_opts.blocks_dir, "blk", m_opts.fast_prune ? 0x4000 /* 16kB */ : BLOCKFILE_CHUNK_SIZE}},
       m_undo_file_seq{FlatFileSeq{m_opts.blocks_dir, "rev", UNDOFILE_CHUNK_SIZE}},
-      m_interrupt{interrupt}
+      m_interrupt{interrupt},
+      m_ledger{ledger ? *ledger : m_own_ledger}
 {
+    m_ledger[util::ByteAccountId::UndoBacklog].SetLimit(MAX_UNDO_BACKLOG_BYTES);
+    m_effects.Start();
     m_block_tree_db = std::make_unique<BlockTreeDB>(m_opts.block_tree_db_params);
 
     if (m_opts.block_tree_db_params.wipe_data) {

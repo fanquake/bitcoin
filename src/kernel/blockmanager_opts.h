@@ -26,6 +26,8 @@ struct BlockManagerOpts {
     bool use_xor{DEFAULT_XOR_BLOCKSDIR};
     uint64_t prune_target{0};
     bool fast_prune{false};
+    //! Test only (-test=crash_before_undo_write): abort the process when the first undo write effect runs.
+    bool test_crash_before_undo_write{false};
     const fs::path blocks_dir;
     Notifications& notifications;
     DBParams block_tree_db_params;

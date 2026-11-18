@@ -98,6 +98,8 @@ public:
     bool IsTestChain() const { return m_chain_type != ChainType::MAIN; }
     /** If this chain allows time to be mocked */
     bool IsMockableChain() const { return m_is_mockable_chain; }
+    /** Test only (regtest -test=bip30_off): no block below height 1,983,702 is checked for BIP30, as on mainnet from BIP34's height on. */
+    bool Bip30Off() const { return m_bip30_off; }
     uint64_t PruneAfterHeight() const { return nPruneAfterHeight; }
     /** Minimum free space (in GiB) needed for data directory */
     uint64_t AssumedBlockchainSize() const { return m_assumed_blockchain_size; }
@@ -158,6 +160,7 @@ public:
         DeploymentOptions dep_opts{};
         bool fastprune{false};
         bool enforce_bip94{false};
+        bool bip30_off{false};
     };
 
     struct MainNetOptions {
@@ -197,6 +200,7 @@ protected:
     std::vector<uint8_t> vFixedSeeds;
     bool fDefaultConsistencyChecks;
     bool m_is_mockable_chain;
+    bool m_bip30_off{false};
     std::vector<AssumeutxoData> m_assumeutxo_data;
     ChainTxData chainTxData;
     HeadersSyncParams m_headers_sync_params;

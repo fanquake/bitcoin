@@ -20,9 +20,21 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <string>
 
 namespace node {
+int32_t DefaultPrevoutFetchThreads()
+{
+    return std::clamp<int32_t>(GetNumCores(), MIN_DEFAULT_PREVOUTFETCH_THREADS, MAX_PREVOUTFETCH_THREADS);
+}
+
+size_t DefaultBlockCacheBytes(size_t coins_cache_bytes)
+{
+    return std::clamp<size_t>(coins_cache_bytes, 32_MiB, DEFAULT_BLOCK_CACHE_BYTES);
+}
+
 util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManager::Options& opts)
 {
     if (auto value{args.GetIntArg("-checkblockindex")}) {
@@ -60,11 +72,32 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& args, ChainstateManage
     // Subtract 1 because the main thread counts towards the par threads.
     opts.worker_threads_num = script_threads - 1;
 
+    opts.test_write_out_every_block = HasTestOption(args, "write_out_every_block");
+
+    if (auto value{args.GetArg<int64_t>("-blockcache")}) {
+        if (*value < 0) {
+            return util::Error{Untranslated(strprintf("-blockcache must be non-negative (got %d). Use 0 to disable the block cache.", *value))};
+        }
+        // Capped at what a size_t counts in bytes, as -dbcache is.
+        opts.block_cache_bytes = static_cast<size_t>(std::min<uint64_t>(*value, std::numeric_limits<size_t>::max() >> 20)) << 20;
+    }
+
     if (auto value{args.GetArg<int32_t>("-prevoutfetchthreads")}) {
         if (*value < 0) {
-            return util::Error{Untranslated(strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 to disable parallel input fetching.", *value))};
+            return util::Error{Untranslated(strprintf("-prevoutfetchthreads must be non-negative (got %d). Use 0 for no connect pool threads.", *value))};
         }
         opts.prevoutfetch_threads_num = std::min(*value, MAX_PREVOUTFETCH_THREADS);
+    } else {
+        opts.prevoutfetch_threads_num = DefaultPrevoutFetchThreads();
+    }
+
+    if (args.IsArgNegated("-connectwindow")) {
+        opts.connect_window = 1; // -noconnectwindow: one block at a time
+    } else if (auto value{args.GetArg<int32_t>("-connectwindow")}) {
+        if (*value < 0) {
+            return util::Error{Untranslated(strprintf("-connectwindow must be non-negative (got %d). Use 0 for the default, 1 to validate one block at a time.", *value))};
+        }
+        opts.connect_window = std::min(*value, MAX_CONNECT_WINDOW);
     }
 
     if (auto max_size = args.GetIntArg("-maxsigcachesize")) {

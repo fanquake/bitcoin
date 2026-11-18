@@ -11,6 +11,7 @@
 #include <chain.h>
 #include <checkqueue.h>
 #include <coins.h>
+#include <coinsstore.h>
 #include <consensus/amount.h>
 #include <cuckoocache.h>
 #include <deploymentstatus.h>
@@ -18,7 +19,9 @@
 #include <kernel/chainparams.h>
 #include <kernel/chainstatemanager_opts.h>
 #include <kernel/cs_main.h> // IWYU pragma: export
+#include <node/blockcache.h>
 #include <node/blockstorage.h>
+#include <node/sync_mode.h>
 #include <node/tip_snapshot.h>
 #include <policy/feerate.h>
 #include <policy/packages.h>
@@ -35,13 +38,17 @@
 #include <util/check.h>
 #include <util/fs.h>
 #include <util/hasher.h>
+#include <util/byte_ledger.h>
+#include <util/lifecycle.h>
 #include <util/result.h>
 #include <util/time.h>
 #include <util/translation.h>
 #include <versionbits.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -51,10 +58,12 @@
 #include <shared_mutex>
 #include <span>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+class BlockBins;
 class Chainstate;
 class CTxMemPool;
 class ChainstateManager;
@@ -93,8 +102,10 @@ inline constexpr uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES{550_MiB};
 /** Maximum number of dedicated script-checking threads allowed */
 inline constexpr int MAX_SCRIPTCHECK_THREADS{15};
 
-/** Maximum number of dedicated threads allowed for prefetching block input prevouts */
-inline constexpr int32_t MAX_PREVOUTFETCH_THREADS{16};
+/** Maximum number of connect pool threads (-prevoutfetchthreads) */
+inline constexpr int32_t MAX_PREVOUTFETCH_THREADS{1024};
+//! The most blocks the connect window validates at once (-connectwindow).
+inline constexpr int MAX_CONNECT_WINDOW{64};
 
 /** Current sync state passed to tip changed callbacks. */
 enum class SynchronizationState {
@@ -275,6 +286,17 @@ struct PackageMempoolAcceptResult
  * @returns a MempoolAcceptResult indicating whether the transaction was accepted/rejected with reason.
  */
 MempoolAcceptResult AcceptToMemoryPool(Chainstate& active_chainstate, const CTransactionRef& tx,
+                                       int64_t accept_time, bool bypass_limits, bool test_accept)
+    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+/**
+ * AcceptToMemoryPool() for a transaction from outside validation: a peer's, an RPC's, the wallet's
+ * (ChainstateManager::ProcessTransaction()) or one of the mempool file (LoadMempool()). Unless it is only
+ * tested, the signals of the blocks connected so far are handed over first (precondition O7), so that it is
+ * announced after the blocks it builds on. A reorganisation's re-adds call AcceptToMemoryPool() directly,
+ * before the new blocks' signals.
+ */
+MempoolAcceptResult SubmitToMemoryPool(Chainstate& active_chainstate, const CTransactionRef& tx,
                                        int64_t accept_time, bool bypass_limits, bool test_accept)
     EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
@@ -506,16 +528,28 @@ struct DeploymentFlags {
 /**
  * Ordering preconditions.
  *
- * Processing one block at a time under cs_main gives the rest of the node
- * guarantees that no type or annotation states. They are listed here, and
- * the code that relies on one says so with its number. Where the condition
- * can be tested it is asserted (Assume, so that a debug build stops and a
- * release build goes on as before).
+ * Guarantees the rest of the node relies on that no type or annotation
+ * states. The code that relies on one names its number; where the condition
+ * can be tested it is asserted (Assume). Each entry says what holds it: the
+ * construction, a named call that waits until it holds, or a deferral. A
+ * call site that relies on a condition calls the wait; none reads the state
+ * it waits for by itself.
  *
  *  O1  The only half-processed state a block can be seen in is "stored, not
  *      yet activated", and calling ActivateBestChain() closes it.
  *      ProcessNewBlock() opens it; ProcessGetBlockData() and the GETBLOCKS
  *      handler in net_processing close it before they answer.
+ *      In flight: a block handed to the connector is in that state until
+ *      the connector has activated it. Wait: WaitForPendingBlocks(), and
+ *      before it the wait for the receive tasks left from initial block
+ *      download (PeerManagerImpl::WaitForPendingBlocks()), made by the
+ *      handlers of the messages that are judged against the tip
+ *      (GETHEADERS, TX, CMPCTBLOCK, BLOCKTXN and BLOCK), and before an
+ *      orphan is considered again. The wait is not made in initial
+ *      block download, where no transaction is accepted and blocks are
+ *      stored beside each other on purpose. Outside it the two handlers
+ *      activate as before; in it the connector does and they answer from
+ *      what is connected.
  *  O2  When AcceptBlock() returns for a new block, its data, its position
  *      and BLOCK_VALID_TRANSACTIONS are recorded together (asserted there),
  *      in one hold of cs_main after the write (FinishAcceptBlock()). Until
@@ -523,46 +557,69 @@ struct DeploymentFlags {
  *      reader of its data takes for stored; a second copy is dropped as a
  *      block already had (PrepareAcceptBlockHeader()), and submitblock
  *      answers "duplicate" for it.
- *  O3  BlockChecked is delivered under cs_main before the tip moves: the
- *      order of the statements in ConnectTip(), with O9's assertion above.
+ *  O3  BlockChecked is delivered under cs_main before the tip moves to the
+ *      block (PublishConnectTip()).
  *  O4  NewPoWValidBlock is delivered under cs_main before the block is
- *      written, and only for a block on top of the tip. Not asserted: both
- *      conditions are the control flow of AcceptBlock().
- *  O5  Message processing requests only blocks that are not stored, and
- *      a block is "received, not stored" only inside the handling of the
- *      one message that delivers it: BLOCK, or the BLOCKTXN or CMPCTBLOCK
- *      that completes a compact block (O13). Not asserted: the
- *      getblockfrompeer RPC checks and requests in two holds of cs_main
- *      and may request a stored block.
+ *      recorded as stored, and only for a block on top of the tip
+ *      (AcceptBlock(), not asserted). Deferral: a peer's request for the
+ *      announced block is asked again until the block is stored
+ *      (ProcessGetBlockData()).
+ *  O5  Message processing requests only blocks that are not stored. Not
+ *      asserted: getblockfrompeer checks and requests in two holds of
+ *      cs_main. A block is "received, not stored" inside the handling of
+ *      the message that delivers it (O13) and while its task runs on the
+ *      connect pool. Deferral: its request stays in flight until the block
+ *      is stored, and a second copy from the same peer is dropped while the
+ *      first one's task runs (HandOffBlock()). A peer that goes takes its
+ *      requests with it, and the block may be downloaded a second time.
  *  O6  The tip is the fully connected frontier: its coins are in the tip
  *      view and its transaction counts are known. Asserted in PublishTip(),
- *      with O8's condition for the coins, which covers a write-out that
- *      failed inside ConnectTip() or DisconnectTip().
+ *      where after a failed write-out the tip view's best block may be the
+ *      tip's parent (DisconnectTip()) or the block that was being connected
+ *      (PublishConnectTip()). Window blocks are connected ahead of the tip,
+ *      each on a view of its own.
  *  O7  Signals are queued under cs_main in the order of connection, and
- *      what they name is stored and connected. Asserted in part. That the
- *      block is stored and is the tip, or has left the chain, is checked
- *  O8  A flush never sees a half-applied block: the coins' best block is
- *      the tip, its parent (inside DisconnectTip(), which writes before the
- *      tip moves), or the one block on top of the tip that is being
- *      connected, or was when a write-out failed. Asserted in
- *      FlushStateToDisk().
- *  O9  Connection is strictly sequential: a block is connected on top of
- *      the tip, one ActivateBestChain() at a time. ConnectTip() asserts
- *      the first; the second is m_chainstate_mutex.
- *  O10 nSequenceId is assigned in arrival order, in
- *      ReceivedBlockTransactions() under cs_main.
+ *      what they name is stored and connected (checked in
+ *      PublishConnectTip() and DisconnectTip()). BlockDisconnected is
+ *      queued directly, BlockConnected behind the block's undo write, so
+ *      the callers of DisconnectTip() settle the latter before the first
+ *      disconnect (PlanConnectStep(), InvalidateBlock()). Wait:
+ *      BlockManager::SettleUndoWrites() under cs_main: outside initial
+ *      block download before the step that connected the block releases
+ *      cs_main, in it before a transaction is submitted to the mempool
+ *      (SubmitToMemoryPool(), ProcessNewPackage()).
+ *  O8  A flush never sees a half-applied block (asserted in
+ *      FlushStateToDisk()): the coins' best block is the tip, its parent
+ *      (inside DisconnectTip(), which writes before the tip moves), or the
+ *      one block on top of the tip that is being connected, or was when a
+ *      write-out failed. The write is made before the block becomes the
+ *      tip (PublishConnectTip()), and nothing can fail once it is; a step
+ *      that disconnected blocks writes at its end (FinishConnectStep()),
+ *      where a failure is the same fatal error. Wait:
+ *      Chainstate::SettleWriteOut() before another write-out run starts, a
+ *      flush goes on or the block index is written.
+ *  O9  Publication is strictly sequential: a block is published on top of
+ *      the tip (asserted in PublishConnectTip()), one ActivateBestChain()
+ *      at a time (m_chainstate_mutex).
+ *  O10 nSequenceId is assigned under cs_main in the order in which blocks
+ *      are recorded as stored (ReceivedBlockTransactions()), which may
+ *      differ from the order of arrival.
  *  O11 A file position copied under cs_main stays readable afterwards, or
- *      the reader handles the failed read (node::BlockFacts).
- *  O12 The block index invariants hold whenever cs_main is free.
- *      CheckBlockIndex() checks them.
+ *      the reader handles the failed read (node::BlockFacts). A connected
+ *      block's undo position is null until its queued write has run. Wait:
+ *      BlockManager::SettleUndoWriteOf() for a reader of one block's undo
+ *      data, SettleUndoWrites() before blocks are disconnected or verified.
+ *  O12 The block index invariants hold whenever cs_main is free
+ *      (CheckBlockIndex()).
  *  O13 Messages are processed on one thread, so a block request may be
  *      removed before the block is stored and no message asks for the
  *      block again in between. Asserted at the BLOCK message and in
- *      ProcessCompactBlockTxns().
+ *      ProcessCompactBlockTxns(); for a block on the connect pool see O5.
  *  O14 InvalidateBlock() tolerates blocks arriving between its lock drops,
  *      by going over the block index again at its end.
  *  O15 The tip does not move while a block template or proposal is
- *      checked: TestBlockValidity() runs under cs_main.
+ *      checked: TestBlockValidity() runs under cs_main, and the tip is
+ *      published under cs_main only.
  */
 
 /**
@@ -606,6 +663,13 @@ struct BlockValidationContext {
      * may be called without cs_main for as long as the block index lives.
      */
     std::function<int64_t(int)> median_time_past_at;
+    /**
+     * Whether a transaction whose inputs are not all in the view is deferred rather than a consensus
+     * failure. True only while blocks below this one are still being applied (the window is incomplete):
+     * the transaction's outputs are created, its other checks wait for FinishDeferredTransactions() once
+     * every lower block is in. With a complete window a missing input is "bad-txns-inputs-missingorspent".
+     */
+    bool defer_missing_inputs{false};
     //! Where the block is on disk, as the index recorded it when the block was planned, for a worker that
     //! reads the block itself. Null where the block is not read from there.
     FlatFilePos block_pos{};
@@ -617,12 +681,23 @@ struct BlockValidationContext {
 /** Outputs of the pure ConnectBlock() besides the mutated coins view.
  *  ConnectBlock() resets the object it is given before it fills it. */
 struct ConnectBlockResult {
-    //! Undo data for the connected block; partially filled when connection failed.
+    //! Undo data for the connected block; of no meaning when connection failed.
     CBlockUndo undo;
+    //! The serialized size of `undo`, when it was measured ahead of FinishConnectBlock() (a window block's
+    //! worker does, so that the connector thread need not walk the undo data).
+    std::optional<uint32_t> undo_size;
     int num_inputs{0};
     int64_t sigops_cost{0};
     //! True when the block failed CheckBlock() before any UTXO work was done.
     bool failed_in_check_block{false};
+    //! Indices into block.vtx of the transactions deferred because an input was not in the view yet
+    //! (BlockValidationContext::defer_missing_inputs); their undo slots are empty until
+    //! FinishDeferredTransactions() fills them. The block is not valid until that has run.
+    std::vector<uint32_t> deferred_txs;
+    //! The fees of the transactions checked so far; completed by FinishDeferredTransactions().
+    CAmount fees{0};
+    //! True when deferred transactions kept the coinbase amount check from running.
+    bool coinbase_check_deferred{false};
     //! Phase boundaries, for the caller's bench logging.
     SteadyClock::time_point time_start{};
     SteadyClock::time_point time_checked{};
@@ -653,27 +728,55 @@ struct ConnectBlockResult {
  * the script execution cache takes the results of the checks that run inline,
  * and the view's best block is left untouched.
  *
- * The caller needs exclusive use of `block` for the call: CheckBlock() records
- * its results in the block's mutable fields. The node's callers hold cs_main.
+ * On failure `state` holds the reason and the view may be partially updated.
+ * With `ctx.defer_missing_inputs` true is returned with the checks of the
+ * deferred transactions and the block's totals outstanding, and the block is
+ * valid only once FinishDeferredTransactions() has returned true as well.
+ *
+ * `block` may be shared with readers on other threads: the fields
+ * CheckBlock() records its results in are atomic (BlockCheckedFlag).
  */
 bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
                   CCoinsViewCache& view, CCheckQueue<CScriptCheck>* check_queue,
                   ValidationCache& validation_cache, bool just_check,
                   BlockValidationState& state, ConnectBlockResult& result);
 
-struct ConnectedBlock;
+/**
+ * Finish a block that deferred transactions, once every lower block's first pass is applied. A lower
+ * block's own continuation may still be pending; what it changes meanwhile is a store conflict, settled by
+ * connecting the block again alone. Checks each deferred transaction in full (inputs present and unspent,
+ * amounts, maturity, BIP68, sigops, scripts), spends its inputs into its undo slot, completes the fee total
+ * and the sigop count and runs the coinbase amount check. Pure in the same sense as ConnectBlock(). On
+ * failure `state` holds the reason; the view may be partially updated.
+ */
+bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContext& ctx,
+                                CCoinsViewCache& view, ValidationCache& validation_cache,
+                                BlockValidationState& state, ConnectBlockResult& result);
+
+struct ConnectStep;
+struct StagedConnect;
+struct WindowSync;
+namespace connect_phase {
+struct Validated;
+} // namespace connect_phase
 
 /**
  * Placed in a scope right after cs_main is locked, when the scope may move a
  * tip: publishes the tip (ChainstateManager::PublishTip()) as the last thing
  * before the lock is released, on every way out of the scope.
+ *
+ * Publishers nest, as holds of cs_main do: the outermost one publishes. A
+ * hold that outlives its scope (a step of ActivateBestChain() that keeps
+ * the lock across several scopes) carries a publisher of its own for as
+ * long as it lasts, so that no scope inside it publishes a tip the hold
+ * has not finished moving.
  */
 class TipPublisher
 {
     ChainstateManager& m_chainman;
 
 public:
-    explicit TipPublisher(ChainstateManager& chainman) : m_chainman{chainman} {}
+    explicit TipPublisher(ChainstateManager& chainman) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     ~TipPublisher();
     TipPublisher(const TipPublisher&) = delete;
     TipPublisher& operator=(const TipPublisher&) = delete;
@@ -694,8 +797,8 @@ enum class FlushStateMode: uint8_t {
  * to facilitate access to the UTXO set.
  *
  * This class consists of an arrangement of layered CCoinsView objects,
- * preferring to store and retrieve coins in memory via `m_cacheview` but
- * ultimately falling back on cache misses to the canonical store of UTXOs on
+ * preferring to store and retrieve coins in memory via the young tier, `m_store`,
+ * but ultimately falling back on misses to the canonical store of UTXOs on
  * disk, `m_dbview`.
  */
 class CoinsViews {
@@ -708,13 +811,19 @@ public:
     //! This view wraps access to the leveldb instance and handles read errors gracefully.
     CCoinsViewErrorCatcher m_catcherview GUARDED_BY(cs_main);
 
-    //! This is the top layer of the cache hierarchy - it keeps as many coins in memory as
-    //! can fit per the dbcache setting.
-    std::unique_ptr<CCoinsViewCache> m_cacheview GUARDED_BY(cs_main);
+    //! This is the top layer of the cache hierarchy: the young tier of the UTXO set, holding every coin
+    //! changed since it was last written out and as many clean coins as fit per the dbcache setting.
+    std::unique_ptr<CoinsStore> m_store GUARDED_BY(cs_main);
 
-    //! Reused CoinsViewOverlay layered on top of m_cacheview and passed to ConnectBlock().
-    //! Reset between calls and flushed only on success, so invalid blocks don't pollute the underlying cache.
-    std::unique_ptr<CoinsViewOverlay> m_connect_block_view GUARDED_BY(cs_main);
+    //! The views blocks are connected into, one per block in flight, each a BlockApplyView over m_store: a
+    //! block's changes reach the store once it is validated, under the block's identity, and are confirmed
+    //! or unwound by one status flip, so an invalid block never pollutes what readers see. The first is the
+    //! tip's (prefetch on the connect pool, the check queue); the others are the window's, each applied by
+    //! a connect pool worker.
+    std::vector<std::unique_ptr<BlockApplyView>> m_apply_views GUARDED_BY(cs_main);
+    BlockApplyView& TipView() EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return *m_apply_views.front(); }
+    //! A view with no block open, or nullptr when every view is in use.
+    BlockApplyView* FreeApplyView() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! This constructor initializes CCoinsViewDB and CCoinsViewErrorCatcher instances, but it
     //! *does not* create a CCoinsViewCache instance by default. This is done separately because the
@@ -724,8 +833,8 @@ public:
     //! All arguments forwarded onto CCoinsViewDB.
     CoinsViews(DBParams db_params, CoinsViewOptions options);
 
-    //! Initialize the CCoinsViewCache member.
-    void InitCache(int32_t prevoutfetch_threads) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Initialize the tier and `window` views over it, the connect pool shared by them.
+    void InitCache(util::NotNullSharedPtr<ThreadPool> connect_pool, int window) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 };
 
 enum class CoinsCacheSizeState
@@ -810,6 +919,12 @@ public:
     //! chainstate within deeply nested method calls.
     ChainstateManager& m_chainman;
 
+    //! Set while a reorganisation's step adds the transactions of the disconnected blocks back to the mempool
+    //! (FinishConnectStep()). Mempool acceptance then leaves the write-out check to the step: a flush between
+    //! two of those transactions could settle the effects queue and hand on the signals of the step's
+    //! connected blocks before the later transactions' (precondition O7).
+    bool m_readding_disconnected GUARDED_BY(::cs_main){false};
+
     explicit Chainstate(
         CTxMemPool* mempool,
         node::BlockManager& blockman,
@@ -845,7 +960,7 @@ public:
     bool CanFlushToDisk() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     {
         AssertLockHeld(::cs_main);
-        return m_coins_views && m_coins_views->m_cacheview;
+        return m_coins_views && m_coins_views->m_store;
     }
 
     //! The current chain of blockheaders we consult and build on.
@@ -918,7 +1033,15 @@ public:
     {
         AssertLockHeld(::cs_main);
         Assert(m_coins_views);
-        return *Assert(m_coins_views->m_cacheview);
+        return *Assert(m_coins_views->m_store);
+    }
+
+    //! @returns The same object as CoinsTip(), with the young tier's own interface (the lag write-out).
+    CoinsStore& CoinsStoreTip() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+    {
+        AssertLockHeld(::cs_main);
+        Assert(m_coins_views);
+        return *Assert(m_coins_views->m_store);
     }
 
     //! @returns A reference to the on-disk UTXO set database.
@@ -942,14 +1065,36 @@ public:
         return Assert(m_coins_views)->m_catcherview;
     }
 
-    //! Destructs all objects related to accessing the UTXO set.
-    void ResetCoinsViews() { m_coins_views.reset(); }
+    //! Destructs all objects related to accessing the UTXO set. A write-out run in flight lands first.
+    void ResetCoinsViews() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
-    //! The cache size of the on-disk coins view.
+    //! The coins database cache this chainstate was opened with or last assigned; the database keeps the cache
+    //! it was opened with (ResizeCoinsCaches()).
     size_t m_coinsdb_cache_size_bytes{0};
 
     //! The cache size of the in-memory coins view.
     size_t m_coinstip_cache_size_bytes{0};
+
+    /**
+     * Start a write-out run of the young tier: every change at or below `bound_height` goes to the coins
+     * database on the block manager's executor, behind the undo writes queued so far and together with the
+     * block-file sync and the block index write, so that the marker never names a tip whose data is not
+     * durable. The run streams from the tier a chunk at a time, each chunk clean as it lands. The completion
+     * (under cs_main) records the head the database now holds, evicts clean entries down to `evict_to`
+     * bytes if given, and notifies ChainStateFlushed. `final` drains the tier, and is forced while the
+     * written head is not on the active chain: after a disconnect only a whole write leaves the database
+     * at a block the marker can name. Returns false on a fatal error.
+     */
+    //! `mode` and `for_prune` are the flush's that starts the run, for the utxocache:flush tracepoint the run
+    //! fires when it lands.
+    bool StartWriteOutRun(BlockValidationState& state, int bound_height, bool final, std::optional<size_t> evict_to = {},
+                          FlushStateMode mode = FlushStateMode::NONE, bool for_prune = false) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    //! Wait for a write-out run in flight and every effect queued before now (the undo writes, and the
+    //! sync of an undo file that the last of them completed) and apply their completions. Nothing is
+    //! queued meanwhile: effects are queued under cs_main, which the caller holds. Precondition O8 with
+    //! blocks in flight: no run is half way when the caller goes on, and what a write of the block
+    //! index is about to record is on disk before it.
+    void SettleWriteOut() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! Resize the CoinsViews caches dynamically and flush state to disk.
     //! @returns true unless an error occurred during the flush.
@@ -985,9 +1130,13 @@ public:
      * nullptr or a pointer to a block that is already loaded (to avoid loading
      * it again from disk).
      *
-     * ActivateBestChain is split into steps (see ActivateBestChainStep) so that
-     * we avoid holding cs_main for an extended period of time; the length of this
-     * call may be quite long during reindexing or a substantial reorg.
+     * ActivateBestChain is split into steps (see PlanConnectStep), each block
+     * of a step passing through StageConnectTip, its validation and
+     * PublishConnectTip, so that cs_main is held per block, or in the window
+     * for the blocks that are ready together, rather than for an extended
+     * period (a reorganisation holds it from its first disconnect to the end
+     * of its step); the length of this call may be quite long during
+     * reindexing or a substantial reorg.
      *
      * May not be called with cs_main held. May not be called in a
      * validationinterface callback.
@@ -1083,13 +1232,75 @@ public:
     std::pair<int, int> GetPruneRange(int last_height_can_prune) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 protected:
-    bool ActivateBestChainStep(BlockValidationState& state, CBlockIndex& index_most_work, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, std::vector<ConnectedBlock>& connected_blocks) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
-    bool ConnectTip(
+    /**
+     * Begin a step towards step.target: disconnect the active blocks that are
+     * not on its chain. The blocks to connect are then handed out in batches
+     * by PlanNextBatch() and the step is closed by FinishConnectStep().
+     * @returns true unless a system error occurred
+     */
+    bool PlanConnectStep(BlockValidationState& state, ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    //! Place the next at most 32 blocks towards the target in step.batch. False when the target has been reached.
+    bool PlanNextBatch(ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Re-add disconnected transactions to the mempool and run the end-of-step checks. False, with `state`
+    //! set, if the chainstate write the step's publications left out failed (a system error).
+    [[nodiscard]] bool FinishConnectStep(BlockValidationState& state, ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+
+    /**
+     * Connecting a block happens in three parts:
+     *  - StageConnectTip(), under cs_main: open the block in a view of the
+     *    store and decide the node policy (BlockValidationContext). At the
+     *    tip the block is already read and the prefetch of the coins it
+     *    spends is started; in the window the block takes a free view, defers
+     *    the inputs lower blocks have not produced yet, and is read by its
+     *    worker.
+     *  - RunStagedConnect() at the tip: the pure ConnectBlock() into the view
+     *    with the check queue, under cs_main. RunConnectTask() in the window:
+     *    the same on a connect pool worker with its scripts inline and no lock
+     *    held; RunContinuation() finishes what the block deferred.
+     *  - PublishConnectTip(), under cs_main and the mempool lock: queue the
+     *    undo write, confirm the block in the store, update mempool and tip,
+     *    notify. Returns true unless a system error occurred, the block was
+     *    invalid (state says which), or a window block is to be connected
+     *    again alone (state valid).
+     * What exists of the block at each part is a type of its own
+     * (connect_phase, in validation.cpp); only a Validated is published.
+     */
+    void StageConnectTip(CBlockIndex* pindexNew, StagedConnect& staged, const FlatFilePos& pos, std::shared_ptr<const CBlock> block, size_t block_bytes) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void RunStagedConnect(StagedConnect& staged) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void RunConnectTask(StagedConnect& staged) noexcept;
+    //! A windowed block's worker has applied it: mark it so and run the continuations this makes possible.
+    void OnWindowBlockApplied(StagedConnect& staged);
+    //! Finish a window block's deferred transactions and apply the result; the block is marked finished.
+    void RunContinuation(StagedConnect& s, WindowSync& sync) noexcept;
+    bool PublishConnectTip(
         BlockValidationState& state,
-        CBlockIndex* pindexNew,
-        std::shared_ptr<const CBlock> block_to_connect,
-        std::vector<ConnectedBlock>& connected_blocks,
-        DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+        StagedConnect& staged,
+        connect_phase::Validated& validated,
+        const kernel::ChainstateRole& role,
+        DisconnectedBlockTransactions& disconnectpool,
+        bool reorg) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    //! Wait for the window's workers and take back every block still in flight, highest first.
+    void DrainWindow(ConnectStep& step) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /**
+     * The tip moved from `pindexFork` to `pindexNewTip`: UpdatedBlockTip through the effects executor
+     * (behind the blocks' BlockConnected signals) and the kernel's blockTip notification. Returns true when
+     * the latter asked to stop. Nothing is sent for a chainstate that is not the active one or when the two
+     * blocks are the same.
+     */
+    bool NotifyTipAdvanced(CBlockIndex* pindexNewTip, const CBlockIndex* pindexFork, bool still_in_ibd) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    /**
+     * The assumevalid decision for a block: nullptr when its scripts are not
+     * to be verified, otherwise the reason they are (logged once per change).
+     */
+    const char* ScriptCheckReason(const CBlockIndex& pindex) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /**
+     * The node side of ConnectBlock() after the pure core ran: fatal error on a
+     * mutated block, counters and bench logging, queueing the undo write and
+     * the validity raise (unless just_check), the tracepoint. Returns the
+     * final verdict. The undo data is moved out of result.
+     */
+    bool FinishConnectBlock(const CBlock& block, BlockValidationState& state, CBlockIndex* pindex, const char* script_check_reason, bool ok, ConnectBlockResult& result, bool just_check) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     CBlockIndex* FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -1130,6 +1341,15 @@ protected:
 
     NodeClock::time_point m_next_write{NodeClock::time_point::max()};
     const CBlockIndex* m_last_flushed_block GUARDED_BY(::cs_main){nullptr};
+    //! Set by the connect window around its periodic write: a write-out run started there is waited for
+    //! by the connector once it has released cs_main, not inside FlushStateToDisk().
+    bool m_defer_write_out_wait GUARDED_BY(::cs_main){false};
+    //! The write-out runs that failed (a fatal error is raised for each). What rests on a run having
+    //! landed, the removal of pruned files, compares it across the wait.
+    uint64_t m_write_out_runs_failed GUARDED_BY(::cs_main){0};
+    //! A block failed in the connect window: the next step connects it alone, which decides whether it is
+    //! invalid (PublishConnectTip()).
+    bool m_window_retry_serial GUARDED_BY(::cs_main){false};
 
     /**
      * In case of an invalid snapshot, rename the coins leveldb directory so
@@ -1192,6 +1412,9 @@ private:
     //! A cs_main hold has moved the tip of a chainstate, or changed which
     //! chainstate is the current one, and has not published yet.
     std::atomic_bool m_tip_unpublished{false};
+    //! The publishers alive (TipPublisher): the last one to go publishes.
+    int m_tip_publishers GUARDED_BY(::cs_main){0};
+    friend class TipPublisher;
     //! Builds the value for the current chainstate's tip as it is now.
     node::TipSnapshot CurrentTipSnapshot() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
@@ -1233,6 +1456,49 @@ private:
     //! (see PreparedBlock). A second arrival of such a block is treated
     //! as already stored, so it is written once.
     std::set<const CBlockIndex*> m_blocks_being_stored GUARDED_BY(::cs_main);
+
+public:
+    //! Whether another thread is writing the block to disk right now (it is indexed once the write is done).
+    bool IsBlockBeingStored(const CBlockIndex& index) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return m_blocks_being_stored.contains(&index); }
+    //! The memory blocks hold from their arrival until nothing of them is left to do, by holder
+    //! (util/byte_ledger.h). Declared before its holders.
+    util::ByteLedger m_bytes_in_flight;
+    //! Accepted blocks kept for the connect loop, so that one that arrived before its parent is connected from
+    //! the object received and checked rather than read from disk and deserialized again. Filled by
+    //! ProcessNewBlock() and the external block file loader, emptied by ActivateBestChain().
+    node::BlockCache m_block_cache;
+
+private:
+    //! The window's: blocks validated on a connect pool worker, transactions deferred to their block's
+    //! continuation because a lower block had not produced an input yet, the conflicts a store change met
+    //! (a spend or create a lower block took, a create BIP30 refused, a miss), and the blocks that failed in
+    //! the window and were connected again alone. Written by the connector thread and the pool's workers
+    //! (deferred transactions are counted where a block is applied), read at shutdown.
+    std::atomic<uint64_t> m_window_blocks{0};
+    std::atomic<uint64_t> m_window_deferred_txs{0};
+    std::atomic<uint64_t> m_window_conflicts{0};
+    std::atomic<uint64_t> m_window_retries{0};
+
+    //! The connector thread (see SignalConnector()). Signals are counted; the thread records the count it
+    //! has attempted, and a waiter waits for its count to be reached.
+    std::thread m_connector_thread;
+    mutable Mutex m_connector_mutex;
+    std::condition_variable m_connector_cv;
+    uint64_t m_connector_signals GUARDED_BY(m_connector_mutex){0};
+    uint64_t m_connector_done GUARDED_BY(m_connector_mutex){0};
+    //! As m_connector_signals and m_connector_done, for the active chainstate alone: the signals of blocks it
+    //! may connect (not those at or below a snapshot's base, the historical chainstate's), and the count its
+    //! activation has attempted, set before the historical chainstate's activation (WaitForPendingBlocks()).
+    uint64_t m_connector_active_signals GUARDED_BY(m_connector_mutex){0};
+    uint64_t m_connector_active_done GUARDED_BY(m_connector_mutex){0};
+    bool m_connector_stop GUARDED_BY(m_connector_mutex){false};
+    //! Whether the connector takes blocks (util/lifecycle.h): Running from construction, with its thread
+    //! started by the first block; Draining while StopConnector() waits for the pass that is running;
+    //! Stopped for good after.
+    util::Lifecycle m_connector_life GUARDED_BY(m_connector_mutex){util::LifeState::Running};
+    //! The block most recently accepted for the connector, for its next activation (SignalConnector()).
+    std::shared_ptr<const CBlock> m_connector_block GUARDED_BY(m_connector_mutex);
+    void ConnectorLoop() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
     //! Timers and counters used for benchmarking validation in both background
     //! and active chainstates.
@@ -1302,6 +1568,9 @@ public:
     //! A single BlockManager instance is shared across each constructed
     //! chainstate to avoid duplicating block metadata.
     node::BlockManager m_blockman;
+    //! What the validation interface's pre-sync hook reaches (AddPreSyncHook()): this manager's block
+    //! manager, disarmed when the manager goes, which may be before the signals or after them.
+    std::shared_ptr<util::HookTarget<node::BlockManager>> m_pre_sync_target;
 
     /** Determine the potential consensus script flags for blocks in a chain */
     static script_verify_flags GetAllConsensusScriptFlags(const Consensus::Params& params);
@@ -1513,6 +1782,9 @@ public:
     /** Check whether we are doing an initial block download (synchronizing from disk or network) */
     bool IsInitialBlockDownload() const noexcept;
 
+    /** The latch as the mode it selects, for an operation to read once where it starts (node/sync_mode.h). */
+    node::SyncMode SyncModeNow() const noexcept { return node::SyncModeOf(IsInitialBlockDownload()); }
+
     /** Guess verification progress (as a fraction between 0.0=genesis and 1.0=current tip).
     * This is also the case in the assumeutxo context, meaning that the progress reported for
     * the snapshot chainstate may suggest that all historical blocks have already been verified
@@ -1554,9 +1826,10 @@ public:
         std::multimap<uint256, FlatFilePos>* blocks_with_unknown_parent = nullptr);
 
     /**
-     * Process an incoming block. This only returns after the best known valid
-     * block is made active. Note that it does not, however, guarantee that the
-     * specific block passed to it has been checked for validity!
+     * Process an incoming block. Unless `activate_async` is set, this only returns
+     * after the best known valid block is made active. Note that it does not,
+     * however, guarantee that the specific block passed to it has been checked
+     * for validity!
      *
      * If you want to *possibly* get feedback on whether block is valid, you must
      * install a CValidationInterface (see validationinterface.h) - this will have
@@ -1575,9 +1848,58 @@ public:
      *                               block header is already present in block
      *                               index then this parameter has no effect)
      * @param[out]  new_block A boolean which is set to indicate if the block was first received via this call
+     * @param[in]   activate_async Return once the block is accepted and stored, and leave making the best
+     *                             chain active to the connector thread (SignalConnector()), which reports
+     *                             through the validation interface as a synchronous call does.
      * @returns     If the block was processed, independently of block validity
      */
-    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block) LOCKS_EXCLUDED(cs_main);
+    bool ProcessNewBlock(const std::shared_ptr<const CBlock>& block, bool force_processing, bool min_pow_checked, bool* new_block, bool activate_async = false) LOCKS_EXCLUDED(cs_main) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+
+    /**
+     * The connector thread runs ActivateBestChain() for the chainstates whenever it is signalled, so that the
+     * thread that accepted a block need not also connect it (ProcessNewBlock() with `activate_async`).
+     * `block`, the block just accepted, goes to the next activation as the block in hand, so that a new
+     * block at the tip is connected from memory and not read back. The thread is started on the first signal
+     * and stopped with this object. `for_active`: the block is one the active chainstate may connect, not
+     * one at or below a snapshot's base (WaitForPendingBlocks()).
+     */
+    void SignalConnector(std::shared_ptr<const CBlock> block = nullptr, bool for_active = true) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    //! The number of activations signalled so far, and whether every one up to such a number has been attempted.
+    //! A ping is answered once the activations signalled before it are (ProcessMessages()), so that a peer never
+    //! sees a view older than the blocks it has already sent, which is also what the functional tests rely on.
+    uint64_t ConnectorSignals() const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    /**
+     * Wait until the connector has connected the blocks handed to it so far (the active chainstate's
+     * activation), so that a transaction accepted afterwards is judged against them, as when the thread that
+     * accepted a block also connected it: the mempool is closed to a transaction while a block before it is
+     * pending. Called by the message handler before it takes cs_main for a peer's transaction, which may spend
+     * the outputs of a block the same or another peer sent just before. Not by BroadcastTransaction(): its
+     * callers may hold a wallet's lock, which the scheduler needs to drain the validation queue the connector
+     * waits for (LimitValidationInterfaceQueue()), and they have no order with a peer's block anyway. Holding
+     * g_msgproc_mutex while waiting is safe: only the message handler thread takes it. Not in initial block
+     * download, where a pass runs on and no transaction follows a block in order: `mode` is the caller's
+     * copy, read where its operation started, and the wait is made or not by it alone.
+     */
+    void WaitForPendingBlocks(node::SyncMode mode) EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex) LOCKS_EXCLUDED(::cs_main);
+    /**
+     * Whether the historical chainstate's activation is to give way: the node is out of initial block
+     * download and a block the active chainstate may connect was handed to the connector and is not attempted
+     * yet. Out of initial block download the message handler waits for that block (WaitForPendingBlocks()),
+     * and the historical chainstate's backlog may be long. In initial block download nobody waits, and
+     * giving way to every block handed over would starve the historical chainstate. Once true it stays true
+     * until the connector has attempted the block: the end of initial block download is final, and only the
+     * connector attempts.
+     */
+    bool YieldHistoricalActivation(node::SyncMode mode) const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    bool ConnectorReached(uint64_t signals) const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    //! Whether the connector thread has signalled activations it has not attempted yet. Blocks accepted but not
+    //! yet connected move the active tip once it runs; callers that measure from the tip may wait for that.
+    bool ConnectorBusy() const EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
+    //! Stop the connector thread and wait for it: its current pass ends at the next publication once the
+    //! node is interrupted, the window drained. Called at shutdown before the chainstate is flushed and
+    //! its views are reset, and again, idempotently, by the destructor. The connector does not start
+    //! again: a block handed over from here on is stored and not activated (SignalConnector()).
+    void StopConnector() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
     /**
      * Process incoming block headers.
@@ -1652,9 +1974,6 @@ public:
     bool CheckAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared) const;
     bool PrepareAcceptBlockStorage(const std::shared_ptr<const CBlock>& pblock, BlockValidationState& state, bool checks_ok, bool invalidate_on_check_block_failure, const FlatFilePos* dbp, bool* fNewBlock, PreparedBlock& prepared) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool FinishAcceptBlock(const CBlock& block, BlockValidationState& state, PreparedBlock& prepared, bool written) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-
-    //! Whether another thread is writing the block to disk right now (it is indexed once the write is done).
-    bool IsBlockBeingStored(const CBlockIndex& index) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return m_blocks_being_stored.contains(&index); }
 
     //! Block-index transition: the block's scripts were verified (or accepted
     //! under assumevalid), so it is BLOCK_VALID_SCRIPTS from now on.
@@ -1735,8 +2054,35 @@ public:
     std::optional<int> BlocksAheadOfTip() const LOCKS_EXCLUDED(::cs_main);
 
     CCheckQueue<CScriptCheck>& GetCheckQueue() { return m_script_check_queue; }
+    //! The connect pool: block appliers of the window and the blocks received from peers during initial
+    //! block download, input prefetchers at the tip (sized by -prevoutfetchthreads). Shared by every
+    //! chainstate's views.
+    const util::NotNullSharedPtr<ThreadPool> m_connect_pool;
+    /**
+     * The free worker. The connector waits for the connect pool's workers with cs_main held
+     * (Chainstate::DrainWindow()). The work it waits for, a block's validation, takes no cs_main, but it
+     * needs a worker, and the pool also runs tasks that wait for cs_main: the receive tasks of net
+     * processing (PeerManagerImpl::HandOffBlock()). Whoever gives the pool such a task keeps to
+     * LockTaskLimit(), one fewer than the workers, so at least one worker is in no such task and the waits
+     * end.
+     */
+    int LockTaskLimit() const;
+    //! The blocks each thread built in a task on the connect pool, back from their last holder (NewBlock()).
+    const std::unique_ptr<BlockBins> m_block_bins;
+    /**
+     * A block to be read or received, whose destruction runs on the connect pool instead of the thread that
+     * drops its last reference (for a connected block the scheduler, in its BlockConnected callback). The
+     * deleter deletes in place when the pool has no workers.
+     *
+     * A block built by a task on the pool (`on_pool`) goes back to the thread that built it, which frees
+     * it before it builds its next one. What is left with a thread that builds no more is freed by
+     * ActivateBestChain() outside initial block download.
+     */
+    std::shared_ptr<CBlock> NewBlock(bool on_pool = false) const;
+    //! How many blocks the window validates at once: -connectwindow, or twice the connect pool's worker count.
+    int ConnectWindow() const;
 
-    ~ChainstateManager();
+    ~ChainstateManager() EXCLUSIVE_LOCKS_REQUIRED(!m_connector_mutex);
 
     //! List of chainstates. Note: in general, it is not safe to delete
     //! Chainstate objects once they are added to this list because there is no

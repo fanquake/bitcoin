@@ -42,6 +42,7 @@ BOOST_AUTO_TEST_CASE(flush_table)
     BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::Unlink)); // no unlink while the index still refers to the file
     BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::WriteCoins)); // no coins ahead of the index
     BOOST_CHECK(!FLUSH_TABLE.Next(S::CoinsWritten, E::WriteCoins));
+    BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesUnlinked, E::WriteCoins)); // the unlink is the last step
 }
 
 // A block's bytes are Unsynced from the write until the next write-out, which syncs every file
@@ -234,7 +235,8 @@ std::shared_ptr<const CBlock> ChildBlock(const CBlockHeader& prev, int height, C
 
 // The case the cursor file's sync does not cover: undo data written into the undo file of
 // a block file the cursor has left. Only SyncWrittenFiles() makes it durable before the
-// index records it; without that call the write-out's check in WriteBlockIndexDB fails.
+// index records it; without that call the batch still owes the sync when it is committed,
+// which CommitBlockIndexBatch() asserts against.
 BOOST_FIXTURE_TEST_CASE(undo_in_a_left_file_is_synced, FastPruneChain100Setup)
 {
     auto& chainman{*Assert(m_node.chainman)};

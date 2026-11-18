@@ -12,6 +12,7 @@
 #include <script/sigcache.h>
 #include <txdb.h>
 #include <uint256.h>
+#include <util/byte_units.h>
 #include <util/time.h>
 
 #include <cstdint>
@@ -22,7 +23,10 @@ class CChainParams;
 class ValidationSignals;
 
 inline constexpr auto DEFAULT_MAX_TIP_AGE{24h};
+//! The connect pool's threads when nothing derives them from the machine. bitcoind does: see
+//! node::DefaultPrevoutFetchThreads().
 inline constexpr int32_t DEFAULT_PREVOUTFETCH_THREADS{8};
+inline constexpr size_t DEFAULT_BLOCK_CACHE_BYTES{128_MiB};
 
 namespace kernel {
 
@@ -47,8 +51,20 @@ struct ChainstateManagerOpts {
     ValidationSignals* signals{nullptr};
     //! Number of script check worker threads. Zero means no parallel verification.
     int worker_threads_num{0};
-    //! Number of worker threads used for prefetching block input prevouts. Zero means no parallel fetching.
+    //! Number of worker threads of the connect pool: they apply the blocks of the connect window during
+    //! initial block download and prefetch block input prevouts at the tip. Zero means no prefetch, and the
+    //! blocks of a connect window that was asked for are validated one after another.
     int32_t prevoutfetch_threads_num{DEFAULT_PREVOUTFETCH_THREADS};
+    //! Blocks validated at the same time during initial block download (-connectwindow). Zero means
+    //! twice as many as the connect pool has workers; one disables the window.
+    int connect_window{0};
+    //! Budget of the connect-side block cache (node::BlockCache), on top of the database and coins caches.
+    //! Zero disables it. A kernel user gets DEFAULT_BLOCK_CACHE_BYTES whatever its cache sizes; bitcoind
+    //! sets it from -blockcache.
+    size_t block_cache_bytes{DEFAULT_BLOCK_CACHE_BYTES};
+    //! Test only (-test=write_out_every_block): start a coins write-out run after every connected block,
+    //! two blocks behind the tip, so that the database carries its head marker for the whole run.
+    bool test_write_out_every_block{false};
     size_t script_execution_cache_bytes{DEFAULT_SCRIPT_EXECUTION_CACHE_BYTES};
     size_t signature_cache_bytes{DEFAULT_SIGNATURE_CACHE_BYTES};
 };

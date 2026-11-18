@@ -70,7 +70,15 @@ public:
     //! Wait until the weight of effects whose I/O has not run yet is at most `limit_bytes`. Safe with the requester's
     //! lock held, as WaitForIO(); called without it where it can be, so that the lock is free while it waits.
     void WaitForBacklogBelow(size_t limit_bytes) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
+    //! Wait until a completion is ready to be applied, until nothing is queued or running, or until `enough`
+    //! holds, whichever is first: for a requester that waits for what the completions release and applies
+    //! them itself (ApplyCompletions()) rather than leave them to the hook, which gives up where the
+    //! requester's lock is taken. `enough` is asked under the executor's mutex, after each effect's I/O and
+    //! after completions were applied, by any thread; it must not take the requester's lock. Called without
+    //! that lock.
+    void WaitForCompletionOr(const std::function<bool()>& enough) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
     //! Apply the completions of finished effects, in order. The caller holds whatever lock the completions need.
+    //! A thread in WaitForCompletionOr() is woken once some were applied.
     void ApplyCompletions() EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
 
     size_t PendingBytes() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);

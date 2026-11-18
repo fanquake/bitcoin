@@ -30,15 +30,24 @@ namespace node {
  * whose own bytes were synced reads as Unsynced again when a later block is
  * written into the same file. That errs on the safe side.
  *
- * A failed sync leaves the block Unsynced for the rest of the run; the flush
- * that wanted to record it, and every later one, reports the failure and
- * does not reach the index write.
+ * A sync that fails in a flush leaves the block Unsynced; one that fails in
+ * a write-out run does not, since the run took the file from the sets with
+ * its index batch. Either is remembered for the rest of the run: the flush
+ * or run that wanted to record the block, and every later one, reports the
+ * failure and does not reach the index write. A block then reads Synced
+ * although the failed sync may have lost pages, at once after a run and
+ * after a later flush of the file otherwise: what keeps the index from it
+ * is that memory, not the state.
  *
  * The guarantee is per run. Synced means synced since startup or recorded by
  * an earlier run under the same rule; a block index written by a version
  * without the rule is taken as it is, and so are the block files of a
  * reindex, which records blocks an earlier run wrote without a sync of
  * their files in this one.
+ *
+ * The node holds the guard at one site, before the index batch is committed
+ * (BlockManager::CommitBlockIndexBatch()): a batch that still owes a sync is
+ * not committed.
  */
 enum class DurabilityState {
     Absent,   //!< No bytes the index could refer to (never written, or pruned).
@@ -46,36 +55,25 @@ enum class DurabilityState {
     Synced,   //!< Written, and the file synced since.
 };
 
-enum class DurabilityEvent {
-    Write,  //!< A position was claimed and the bytes written.
-    Sync,   //!< The file was synced.
-    Record, //!< The block index database is written with this entry in it.
-    Prune,  //!< The file is given up.
-};
-
-inline constexpr auto DURABILITY_TABLE{util::MakeTransitionTable<DurabilityState, DurabilityEvent>({
-    {DurabilityState::Absent, DurabilityEvent::Write, DurabilityState::Unsynced},
-    {DurabilityState::Unsynced, DurabilityEvent::Sync, DurabilityState::Synced},
-    {DurabilityState::Synced, DurabilityEvent::Sync, DurabilityState::Synced},
-    {DurabilityState::Absent, DurabilityEvent::Record, DurabilityState::Absent},
-    {DurabilityState::Synced, DurabilityEvent::Record, DurabilityState::Synced},
-    {DurabilityState::Unsynced, DurabilityEvent::Prune, DurabilityState::Absent},
-    {DurabilityState::Synced, DurabilityEvent::Prune, DurabilityState::Absent},
-})};
-
 /**
  * The order of one write-out of the node's state (FlushStateToDisk()). Each
  * step may rely on what the steps before it made durable, and on nothing
  * else:
  *
  *   Start --SyncFiles--> FilesSynced --WriteIndex--> IndexWritten --WriteCoins--> CoinsWritten
- *                                                      |                              ^
- *                                                      +--Unlink--> FilesUnlinked ----+
- *                                                                      WriteCoins
+ *                                                      |                              |
+ *                                                      +--Unlink--> FilesUnlinked <---+
+ *                                                                                  Unlink
  *
  * - the block index is written only after the files it refers to are synced;
- * - pruned files are unlinked only after the index stopped referring to them;
- * - the coins are written only after the index holds the block they are at.
+ * - the coins are written only after the index holds the block they are at;
+ * - pruned files are unlinked last, only after the index stopped referring to them.
+ *
+ * A write-out run on the executor (Chainstate::StartWriteOutRun()) makes the first three
+ * steps in this order off the validation thread, behind one write that is not a step here: the
+ * coins that disconnects restored go to the database first. The caller that waited for the run
+ * records the three steps once it has ended; a run nobody waits for records none, and this
+ * table is not consulted while a run is under way.
  *
  * A step that fails ends the write-out where it stands; there is no edge out
  * of a failure, and the next write-out starts again from Start.
@@ -98,9 +96,9 @@ enum class FlushStep {
 inline constexpr auto FLUSH_TABLE{util::MakeTransitionTable<FlushPhase, FlushStep>({
     {FlushPhase::Start, FlushStep::SyncFiles, FlushPhase::FilesSynced},
     {FlushPhase::FilesSynced, FlushStep::WriteIndex, FlushPhase::IndexWritten},
-    {FlushPhase::IndexWritten, FlushStep::Unlink, FlushPhase::FilesUnlinked},
     {FlushPhase::IndexWritten, FlushStep::WriteCoins, FlushPhase::CoinsWritten},
-    {FlushPhase::FilesUnlinked, FlushStep::WriteCoins, FlushPhase::CoinsWritten},
+    {FlushPhase::IndexWritten, FlushStep::Unlink, FlushPhase::FilesUnlinked},
+    {FlushPhase::CoinsWritten, FlushStep::Unlink, FlushPhase::FilesUnlinked},
 })};
 } // namespace node
 

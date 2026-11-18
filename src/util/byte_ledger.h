@@ -31,11 +31,11 @@ namespace util {
  * its holder's.
  *
  * What the limits come to: the block cache's budget (-blockcache), an eighth
- * of the coins cache and 32 MiB at least for the connect window, and 64 MiB
- * of undo backlog. Beside that sum, with no limit in bytes: one block
- * message, and the block a task makes of it, for each connect pool
- * worker but one, the blocks pinned by
- * signals that wait for an undo write, and the free nodes of the coin
+ * of the coins cache and 32 MiB at least for the connect window, the same
+ * eighth and 64 MiB at least for the blocks pinned by signals that wait for
+ * an undo write, and 64 MiB of undo backlog. Beside that sum, with no limit
+ * in bytes: one block message, and the block a task makes of it, for each
+ * connect pool worker but one, and the free nodes of the coin
  * store's regions, which the coins cache has counted at its largest.
  */
 enum class ByteAccountId : uint8_t {
@@ -47,9 +47,10 @@ enum class ByteAccountId : uint8_t {
     //! Undo data queued for writing and not yet written, by its serialized size. Limit: a constant.
     UndoBacklog,
     //! Connected blocks kept by a signal that waits for its undo write: an estimate from the block's counts.
-    //! No limit in bytes, and the undo backlog's is none for it: that one counts serialized undo data, and
-    //! the blocks whose signals wait behind a full backlog are many times its size, of the order of a
-    //! gigabyte on a disk that keeps the backlog full.
+    //! Limit: a share of the coins cache, at which the activating thread waits before it publishes another
+    //! block. Not in a reorganisation's step, whose blocks' signals leave together at its end.
+    //! The undo backlog's limit does not bound it: that one counts serialized undo data, and the blocks whose
+    //! signals wait behind a full backlog are many times its size.
     PinnedBlocks,
 };
 

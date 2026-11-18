@@ -101,10 +101,16 @@ class ConnectWindowTest(BitcoinTestFramework):
         """Stop the node and check its shutdown summary: the window's counters are logged only if it was used.
         Returns the number of transactions deferred, which depends on the workers' timing and is reported,
         not required, since the state checks hold either way, and the number of blocks retried alone."""
-        expected = ["Connect window:"] if used else []
+        expected = ["Coin store checked"] + (["Connect window:"] if used else [])
         unexpected = [] if used else ["Connect window:"]
+        log_start = self.nodes[i].debug_log_size(mode="rb")
         with self.nodes[i].assert_debug_log(expected_msgs=expected, unexpected_msgs=unexpected):
             self.stop_node(i)
+        # The check saw the coins the node worked with: it runs before the last flush empties the store.
+        with open(self.nodes[i].debug_log_path, "rb") as log:
+            log.seek(log_start)
+            stopping = log.read().decode("utf-8", errors="replace")
+        assert max(int(n) for n in re.findall(r"Coin store checked, (\d+) entries", stopping)) > 0
         if not used:
             return 0, 0
         with open(self.nodes[i].debug_log_path, encoding="utf-8") as log:

@@ -378,6 +378,8 @@ void Shutdown(NodeContext& node)
         LOCK(cs_main);
         for (const auto& chainstate : node.chainman->m_chainstates) {
             if (chainstate->CanFlushToDisk()) {
+                // The store still holds what the node worked with; the flush empties it.
+                chainstate->CheckCoinsStore();
                 chainstate->ForceFlushStateToDisk();
             }
         }

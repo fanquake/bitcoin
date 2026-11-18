@@ -24,8 +24,10 @@ add_executable(test_bitcoin
   blockencodings_tests.cpp
   blockfilter_index_tests.cpp
   blockfilter_tests.cpp
+  blockindex_machine_tests.cpp
   blockmanager_tests.cpp
   blockpolicyestimator_tests.cpp
+  blockstore_machine_tests.cpp
   bloom_tests.cpp
   bswap_tests.cpp
   btcsignals_tests.cpp
@@ -131,6 +133,7 @@ add_executable(test_bitcoin
   util_check_tests.cpp
   util_not_null_tests.cpp
   util_expected_tests.cpp
+  util_machine_tests.cpp
   util_string_tests.cpp
   util_tests.cpp
   util_threadnames_tests.cpp

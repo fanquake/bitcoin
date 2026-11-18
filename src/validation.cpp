@@ -30,6 +30,7 @@
 #include <kernel/warning.h>
 #include <logging/timer.h>
 #include <node/blockstorage.h>
+#include <node/blockstore_machine.h>
 #include <node/utxo_snapshot.h>
 #include <policy/ephemeral_policy.h>
 #include <policy/policy.h>
@@ -87,9 +88,25 @@ using kernel::Notifications;
 using fsbridge::FopenFn;
 using node::BlockManager;
 using node::BlockMap;
+using node::BlockStoreEvent;
+using node::BlockStoreStateOf;
 using node::CBlockIndexHeightOnlyComparator;
 using node::CBlockIndexWorkComparator;
 using node::SnapshotMetadata;
+
+/**
+ * Check one transition of the block storage machine at the site that made it:
+ * the block was in state `before` relative to `chain`, `event` happened, and
+ * the block index must now hold the state the machine's table names.
+ */
+static void CheckBlockStoreTransition(std::optional<node::BlockStoreState> before, BlockStoreEvent event, const CBlockIndex& block, const CChain& chain) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+{
+    // A block the machine has no state for (a block of the chain marked failed, see CheckBlockIndex()) has
+    // no transition to check.
+    if (!before) return;
+    const auto after{BlockStoreStateOf(block, chain)};
+    Assume(after && node::BLOCK_STORE_TABLE.Allows(*before, event, *after));
+}
 
 /** Time window to wait between writing blocks/block index and chainstate to disk.
  *  Randomize writing time inside the window to prevent a situation where the
@@ -1982,7 +1999,9 @@ void Chainstate::InvalidBlockFound(CBlockIndex* pindex, const BlockValidationSta
 {
     AssertLockHeld(cs_main);
     if (state.GetResult() != BlockValidationResult::BLOCK_MUTATED) {
+        const auto before{BlockStoreStateOf(*pindex, m_chain)};
         pindex->nStatus |= BLOCK_FAILED_VALID;
+        CheckBlockStoreTransition(before, BlockStoreEvent::Fail, *pindex, m_chain);
         m_blockman.m_dirty_blockindex.insert(pindex);
         setBlockIndexCandidates.erase(pindex);
         InvalidChainFound(pindex);
@@ -2717,10 +2736,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
              Ticks<SecondsDouble>(m_chainman.time_undo),
              Ticks<MillisecondsDouble>(m_chainman.time_undo) / m_chainman.num_blocks_total);
 
-    if (!pindex->IsValid(BLOCK_VALID_SCRIPTS)) {
-        pindex->RaiseValidity(BLOCK_VALID_SCRIPTS);
-        m_blockman.m_dirty_blockindex.insert(pindex);
-    }
+    m_chainman.MarkBlockScriptsValid(*pindex);
 
     // add this block to the view's block chain
     view.SetBestBlock(pindex->GetBlockHash());
@@ -3059,7 +3075,9 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
         }
     }
 
+    const auto store_before{BlockStoreStateOf(*pindexDelete, m_chain)};
     m_chain.SetTip(*pindexDelete->pprev);
+    CheckBlockStoreTransition(store_before, BlockStoreEvent::Disconnect, *pindexDelete, m_chain);
     m_chainman.UpdateIBDStatus();
 
     UpdateTip(pindexDelete->pprev);
@@ -3156,7 +3174,9 @@ bool Chainstate::ConnectTip(
         disconnectpool.removeForBlock(block_to_connect->vtx);
     }
     // Update m_chain & related variables.
+    const auto store_before{BlockStoreStateOf(*pindexNew, m_chain)};
     m_chain.SetTip(*pindexNew);
+    CheckBlockStoreTransition(store_before, BlockStoreEvent::Connect, *pindexNew, m_chain);
     m_chainman.UpdateIBDStatus();
     // Not fired while IBD is active. removeForBlock() above still runs.
     if (m_mempool && m_chainman.m_options.signals && !m_chainman.IsInitialBlockDownload()) {
@@ -3223,25 +3243,7 @@ CBlockIndex* Chainstate::FindMostWorkChain()
             bool fFailedChain = pindexTest->nStatus & BLOCK_FAILED_VALID;
             bool fMissingData = !(pindexTest->nStatus & BLOCK_HAVE_DATA);
             if (fFailedChain || fMissingData) {
-                // Candidate chain is not usable (either invalid or missing data)
-                if (fFailedChain && (m_chainman.m_best_invalid == nullptr || pindexNew->nChainWork > m_chainman.m_best_invalid->nChainWork)) {
-                    m_chainman.m_best_invalid = pindexNew;
-                }
-                // Remove the entire chain from the set.
-                for (CBlockIndex *pindexFailed = pindexNew; pindexFailed != pindexTest; pindexFailed = pindexFailed->pprev) {
-                    // If we're missing data and not a descendant of an invalid block,
-                    // then add back to m_blocks_unlinked, so that if the block arrives in the future
-                    // we can try adding to setBlockIndexCandidates again.
-                    if (fMissingData && !fFailedChain) {
-                        // Avoid duplicate entries in m_blocks_unlinked. If the same entry is
-                        // processed twice in ReceivedBlockTransactions(), it may be re-added to
-                        // setBlockIndexCandidates with a modified nSequenceId, breaking ordering
-                        // guarantees and leading to undefined behavior.
-                        m_blockman.AddUnlinkedBlock(pindexFailed);
-                    }
-                    setBlockIndexCandidates.erase(pindexFailed);
-                }
-                setBlockIndexCandidates.erase(pindexTest);
+                DropUnusableCandidateChain(pindexNew, pindexTest, fFailedChain, fMissingData);
                 fInvalidAncestor = true;
                 break;
             }
@@ -3249,6 +3251,30 @@ CBlockIndex* Chainstate::FindMostWorkChain()
         if (!fInvalidAncestor)
             return pindexNew;
     } while(true);
+}
+
+void Chainstate::DropUnusableCandidateChain(CBlockIndex* top, CBlockIndex* unusable, bool failed, bool missing_data)
+{
+    AssertLockHeld(cs_main);
+    // Candidate chain is not usable (either invalid or missing data)
+    if (failed && (m_chainman.m_best_invalid == nullptr || top->nChainWork > m_chainman.m_best_invalid->nChainWork)) {
+        m_chainman.m_best_invalid = top;
+    }
+    // Remove the entire chain from the set.
+    for (CBlockIndex* pindexFailed = top; pindexFailed != unusable; pindexFailed = pindexFailed->pprev) {
+        // If we're missing data and not a descendant of an invalid block,
+        // then add back to m_blocks_unlinked, so that if the block arrives in the future
+        // we can try adding to setBlockIndexCandidates again.
+        if (missing_data && !failed) {
+            // Avoid duplicate entries in m_blocks_unlinked. If the same entry is
+            // processed twice in ReceivedBlockTransactions(), it may be re-added to
+            // setBlockIndexCandidates with a modified nSequenceId, breaking ordering
+            // guarantees and leading to undefined behavior.
+            m_blockman.AddUnlinkedBlock(pindexFailed);
+        }
+        setBlockIndexCandidates.erase(pindexFailed);
+    }
+    setBlockIndexCandidates.erase(unusable);
 }
 
 /** Delete all entries in setBlockIndexCandidates that are worse than the current tip. */
@@ -3677,7 +3703,9 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const
         // and be left unable to start as they have no tip candidates (as there
         // are no blocks that meet the "have data and are not invalid per
         // nStatus" criteria for inclusion in setBlockIndexCandidates).
+        const auto tip_before{BlockStoreStateOf(*disconnected_tip, m_chain)};
         disconnected_tip->nStatus |= BLOCK_FAILED_VALID;
+        CheckBlockStoreTransition(tip_before, BlockStoreEvent::Fail, *disconnected_tip, m_chain);
         m_blockman.m_dirty_blockindex.insert(disconnected_tip);
         setBlockIndexCandidates.erase(disconnected_tip);
         setBlockIndexCandidates.insert(new_tip);
@@ -3697,7 +3725,9 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const
             CBlockIndex* candidate{candidate_it->second};
             if (candidate->GetAncestor(disconnected_tip->nHeight) == disconnected_tip) {
                 // Children of failed blocks are marked as BLOCK_FAILED_VALID.
+                const auto candidate_before{BlockStoreStateOf(*candidate, m_chain)};
                 candidate->nStatus |= BLOCK_FAILED_VALID;
+                CheckBlockStoreTransition(candidate_before, BlockStoreEvent::Fail, *candidate, m_chain);
                 m_blockman.m_dirty_blockindex.insert(candidate);
                 // If invalidated, the block is irrelevant for setBlockIndexCandidates
                 // and for m_best_header and can be removed from the cache.
@@ -3733,7 +3763,9 @@ bool Chainstate::InvalidateBlock(BlockValidationState& state, CBlockIndex* const
 
         // Mark pindex as invalid if it never was in the main chain
         if (!pindex_was_in_chain && !(pindex->nStatus & BLOCK_FAILED_VALID)) {
+            const auto before{BlockStoreStateOf(*pindex, m_chain)};
             pindex->nStatus |= BLOCK_FAILED_VALID;
+            CheckBlockStoreTransition(before, BlockStoreEvent::Fail, *pindex, m_chain);
             m_blockman.m_dirty_blockindex.insert(pindex);
             setBlockIndexCandidates.erase(pindex);
         }
@@ -3783,7 +3815,9 @@ void Chainstate::SetBlockFailureFlags(CBlockIndex* invalid_block)
 
     for (auto& [_, block_index] : m_blockman.m_block_index) {
         if (invalid_block != &block_index && block_index.GetAncestor(invalid_block->nHeight) == invalid_block) {
+            const auto before{BlockStoreStateOf(block_index, m_chain)};
             block_index.nStatus |= BLOCK_FAILED_VALID;
+            CheckBlockStoreTransition(before, BlockStoreEvent::Fail, block_index, m_chain);
             m_blockman.m_dirty_blockindex.insert(&block_index);
         }
     }
@@ -3797,7 +3831,9 @@ void Chainstate::ResetBlockFailureFlags(CBlockIndex *pindex) {
     // Remove the invalidity flag from this block and all its descendants and ancestors.
     for (auto& [_, block_index] : m_blockman.m_block_index) {
         if ((block_index.nStatus & BLOCK_FAILED_VALID) && (block_index.GetAncestor(nHeight) == pindex || pindex->GetAncestor(block_index.nHeight) == &block_index)) {
+            const auto before{BlockStoreStateOf(block_index, m_chain)};
             block_index.nStatus &= ~BLOCK_FAILED_VALID;
+            CheckBlockStoreTransition(before, BlockStoreEvent::Reconsider, block_index, m_chain);
             m_blockman.m_dirty_blockindex.insert(&block_index);
             if (block_index.IsValid(BLOCK_VALID_TRANSACTIONS) && block_index.HaveNumChainTxs() && setBlockIndexCandidates.value_comp()(m_chain.Tip(), &block_index)) {
                 setBlockIndexCandidates.insert(&block_index);
@@ -3842,6 +3878,15 @@ void Chainstate::TryAddBlockIndexCandidate(CBlockIndex* pindex)
     }
 }
 
+void ChainstateManager::MarkBlockScriptsValid(CBlockIndex& block)
+{
+    AssertLockHeld(cs_main);
+    if (!block.IsValid(BLOCK_VALID_SCRIPTS)) {
+        block.RaiseValidity(BLOCK_VALID_SCRIPTS);
+        m_blockman.m_dirty_blockindex.insert(&block);
+    }
+}
+
 /** Mark a block as having its data received and checked (up to BLOCK_VALID_TRANSACTIONS). */
 void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockIndex* pindexNew, const FlatFilePos& pos)
 {
@@ -3859,10 +3904,16 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
             pindexNew->nHeight, pindexNew->m_chain_tx_count, prev_tx_sum(*pindexNew), CLIENT_NAME, FormatFullVersion(), CLIENT_BUGREPORT);
         pindexNew->m_chain_tx_count = 0;
     }
+    // The block has one state per chainstate; its data arriving is a transition in each.
+    std::vector<std::optional<node::BlockStoreState>> store_before;
+    for (const auto& cs : m_chainstates) store_before.push_back(BlockStoreStateOf(*pindexNew, cs->m_chain));
     pindexNew->nFile = pos.nFile;
     pindexNew->nDataPos = pos.nPos;
     pindexNew->nUndoPos = 0;
     pindexNew->nStatus |= BLOCK_HAVE_DATA;
+    for (size_t i{0}; i < m_chainstates.size(); ++i) {
+        CheckBlockStoreTransition(store_before[i], BlockStoreEvent::DataStored, *pindexNew, m_chainstates[i]->m_chain);
+    }
     if (DeploymentActiveAt(*pindexNew, *this, Consensus::DEPLOYMENT_SEGWIT)) {
         pindexNew->nStatus |= BLOCK_OPT_WITNESS;
     }
@@ -5340,6 +5391,11 @@ void ChainstateManager::CheckBlockIndex() const
             if (pindex->nStatus & BLOCK_HAVE_DATA) assert(pindex->nTx > 0);
         }
         if (pindex->nStatus & BLOCK_HAVE_UNDO) assert(pindex->nStatus & BLOCK_HAVE_DATA);
+        // The block storage machine has a state for the block relative to every chain but one:
+        // a block in a chain that is marked failed. Not checked here, because a crash between
+        // the index write and the coins write of an invalidateblock, or invalidating below a
+        // snapshot base while the other chainstate still holds the block, leaves such a block;
+        // its transitions are not checked either (CheckBlockStoreTransition()).
         if (snap_base && snap_base->GetAncestor(pindex->nHeight) == pindex) {
             // Assumed-valid blocks should connect to the main chain.
             assert((pindex->nStatus & BLOCK_VALID_MASK) >= BLOCK_VALID_TREE);

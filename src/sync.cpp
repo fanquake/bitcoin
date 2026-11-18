@@ -91,6 +91,8 @@ struct LockData {
     LockStacks m_lock_stacks GUARDED_BY(dd_mutex);
     LockOrders lockorders GUARDED_BY(dd_mutex);
     InvLockOrders invlockorders GUARDED_BY(dd_mutex);
+    //! Locks that work on another thread's queue may take, see NO_WAIT_LOCK.
+    std::map<void*, std::string> no_wait_locks GUARDED_BY(dd_mutex);
     StdMutex dd_mutex;
 };
 
@@ -300,10 +302,43 @@ void AssertLockNotHeldInternal(const char* pszName, const char* pszFile, int nLi
 template void AssertLockNotHeldInternal(const char*, const char*, int, Mutex*);
 template void AssertLockNotHeldInternal(const char*, const char*, int, RecursiveMutex*);
 
+void RegisterNoWaitLock(const char* name, void* cs)
+{
+    LockData& lockdata = GetLockData();
+    STDLOCK(lockdata.dd_mutex);
+    lockdata.no_wait_locks.insert_or_assign(cs, name);
+}
+
+void AssertNoWaitLockHeld(const char* waiting_for, const char* file, int line)
+{
+    std::string held;
+    {
+        LockData& lockdata = GetLockData();
+        STDLOCK(lockdata.dd_mutex);
+        const auto stack{lockdata.m_lock_stacks.find(std::this_thread::get_id())};
+        if (stack == lockdata.m_lock_stacks.end()) return;
+        for (const LockStackItem& i : stack->second) {
+            if (const auto it{lockdata.no_wait_locks.find(i.first)}; it != lockdata.no_wait_locks.end()) {
+                held = it->second;
+                break;
+            }
+        }
+    }
+    if (held.empty()) return;
+    const std::string message{strprintf("waiting for %s while holding %s", waiting_for, held)};
+    LogError("WAIT UNDER LOCK DETECTED: %s at %s:%i", message, file, line);
+    if (g_debug_lockorder_abort) {
+        tfm::format(std::cerr, "Assertion failed: %s at %s:%i; locks held:\n%s", message, file, line, LocksHeld());
+        abort();
+    }
+    throw std::logic_error(message);
+}
+
 void DeleteLock(void* cs)
 {
     LockData& lockdata = GetLockData();
     STDLOCK(lockdata.dd_mutex);
+    lockdata.no_wait_locks.erase(cs);
     const LockPair item = std::make_pair(cs, nullptr);
     LockOrders::iterator it = lockdata.lockorders.lower_bound(item);
     while (it != lockdata.lockorders.end() && it->first.first == cs) {

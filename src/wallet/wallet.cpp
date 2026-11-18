@@ -3077,6 +3077,8 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
     // be pending on the validation-side until lock release. Blocks that are connected while the
     // rescan is ongoing will not be processed in the rescan but with the block connected notifications,
     // so the wallet will only be completeley synced after the notifications delivery.
+    // From here on the wallet's signal callbacks take cs_wallet, so nothing may wait for them while holding it.
+    RegisterNoWaitLock("cs_wallet", &walletInstance->cs_wallet);
     walletInstance->m_chain_notifications_handler = walletInstance->chain().handleNotifications(walletInstance);
 
     // If rescan_required = true, rescan_height remains equal to 0

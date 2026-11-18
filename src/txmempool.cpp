@@ -176,6 +176,8 @@ static CTxMemPool::Options&& Flatten(CTxMemPool::Options&& opts, bilingual_str& 
 CTxMemPool::CTxMemPool(Options opts, bilingual_str& error)
     : m_opts{Flatten(std::move(opts), error)}
 {
+    // Signal callbacks take the mempool's lock, so nothing may wait for them while holding it.
+    NO_WAIT_LOCK(cs);
     m_txgraph = MakeTxGraph(
         /*max_cluster_count=*/m_opts.limits.cluster_count,
         /*max_cluster_size=*/m_opts.limits.cluster_size_vbytes * WITNESS_SCALE_FACTOR,

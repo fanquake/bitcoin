@@ -10,8 +10,11 @@
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
 #include <validation.h>
+#include <validationinterface.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(tip_snapshot_tests, TestChain100Setup)
 
@@ -147,6 +150,8 @@ BOOST_AUTO_TEST_CASE(tip_is_published_at_the_end_of_the_hold)
     signals.UnregisterValidationInterface(&inside);
 }
 
+    // A step that connects several blocks queues their BlockConnected signals after the
+    // last of them is connected. Each still carries the number its own block was connected
 BOOST_AUTO_TEST_CASE(block_facts_are_one_copy)
 {
     ChainstateManager& chainman{*Assert(m_node.chainman)};

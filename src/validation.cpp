@@ -2877,6 +2877,19 @@ static bool CheckBlockTransaction(const CTransaction& tx, const BlockValidationC
     return true;
 }
 
+//! Script checks run without a check queue are collected and run in batches of this many, so that their
+//! signatures are verified together.
+static constexpr size_t SCRIPT_CHECK_BATCH_SIZE{128};
+
+/** Run collected script checks of a block and clear them. */
+static bool RunScriptChecks(std::vector<CScriptCheck>& checks, BlockValidationState& state)
+{
+    const auto failure{CScriptCheck::RunBatch(checks)};
+    checks.clear();
+    if (!failure) return true;
+    return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, strprintf("block-script-verify-flag-failed (%s)", ScriptErrorString(failure->first)), failure->second);
+}
+
 /** Apply the effects of this block on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
  *  can fail if those validity checks fail (among other reasons). */
@@ -2960,6 +2973,7 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     std::vector<PrecomputedTransactionData> txsdata(block.vtx.size());
     std::optional<CCheckQueueControl<CScriptCheck>> control;
     if (check_queue && check_queue->HasThreads() && fScriptChecks) control.emplace(*check_queue);
+    std::vector<CScriptCheck> block_checks;
 
     std::vector<int> prevheights;
     //! This block's transaction ids in sorted order, built when the first transaction is deferred.
@@ -3044,11 +3058,12 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
             std::vector<CScriptCheck> vChecks;
             // In a block that may defer, the test above found every input (or the transaction was deferred).
             if (!CheckBlockTransaction(tx, ctx, view, flags, nLockTimeFlags, fScriptChecks, fCacheResults, txsdata[i], validation_cache,
-                                       control ? &vChecks : nullptr, prevheights, nFees, nSigOpsCost, state,
+                                       control ? &vChecks : &block_checks, prevheights, nFees, nSigOpsCost, state,
                                        /*inputs_found=*/ctx.defer_missing_inputs)) {
                 break;
             }
             if (control && fScriptChecks) control->Add(std::move(vChecks));
+            if (block_checks.size() >= SCRIPT_CHECK_BATCH_SIZE && !RunScriptChecks(block_checks, state)) break;
         } else {
             // A coinbase has legacy sigops only.
             if (!AddBlockSigOps(tx, view, flags, nSigOpsCost, state)) break;
@@ -3060,6 +3075,7 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
         }
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), ctx.height);
     }
+    if (state.IsValid() && !block_checks.empty()) RunScriptChecks(block_checks, state);
     result.time_connected = SteadyClock::now();
     result.fees = nFees;
 
@@ -3100,6 +3116,7 @@ bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContex
     std::vector<PrecomputedTransactionData> txsdata(result.deferred_txs.size());
 
     std::vector<int> prevheights;
+    std::vector<CScriptCheck> checks;
     for (size_t k{0}; k < result.deferred_txs.size() && state.IsValid(); ++k) {
         const uint32_t i{result.deferred_txs[k]};
         assert(i > 0 && i < block.vtx.size());
@@ -3107,9 +3124,10 @@ bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContex
 
         // The same checks as in order (CheckBlockTransaction()), now that the inputs are in.
         if (!CheckBlockTransaction(tx, ctx, view, flags, nLockTimeFlags, ctx.check_scripts, /*cache_results=*/false, txsdata[k],
-                                   validation_cache, /*checks=*/nullptr, prevheights, result.fees, result.sigops_cost, state)) {
+                                   validation_cache, &checks, prevheights, result.fees, result.sigops_cost, state)) {
             break;
         }
+        if (checks.size() >= SCRIPT_CHECK_BATCH_SIZE && !RunScriptChecks(checks, state)) break;
         // The outputs were created when the block was applied; only the inputs are spent now, into the
         // transaction's own undo slot.
         CTxUndo& txundo{result.undo.vtxundo.at(i - 1)};
@@ -3120,6 +3138,7 @@ bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContex
             assert(is_spent);
         }
     }
+    if (state.IsValid() && !checks.empty()) RunScriptChecks(checks, state);
     if (state.IsValid()) CheckCoinbaseAmount(block, ctx, result.fees, state);
     if (!state.IsValid()) return false;
     result.deferred_txs.clear();

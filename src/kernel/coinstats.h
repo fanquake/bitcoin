@@ -6,11 +6,13 @@
 #define BITCOIN_KERNEL_COINSTATS_H
 
 #include <arith_uint256.h>
+#include <coins.h>
 #include <consensus/amount.h>
 #include <uint256.h>
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 
 class CCoinsViewDB;
@@ -77,7 +79,16 @@ uint64_t GetBogoSize(const CScript& script_pub_key);
 void ApplyCoinHash(MuHash3072& muhash, const COutPoint& outpoint, const Coin& coin);
 void RemoveCoinHash(MuHash3072& muhash, const COutPoint& outpoint, const Coin& coin);
 
-std::optional<CCoinsStats> ComputeUTXOStats(CoinStatsHashType hash_type, const CCoinsViewDB& view, node::BlockManager& blockman, const std::function<void()>& interruption_point = {});
+/**
+ * @param[in] cursor  A cursor of `view` the caller took in the hold of cs_main in which it wrote the cache
+ *                    out (Chainstate::ForceFlushStateToDisk()). The database has a best block at the end of
+ *                    that hold and need not have one in a later hold, where a write-out run that is not the
+ *                    last of its write-out may have started. Without one the cursor is taken here: for a
+ *                    caller that holds cs_main since it wrote the cache out, or whose chainstate nothing
+ *                    else writes out.
+ * @returns nullopt for a database without a best block the index knows, or with a coin that cannot be read.
+ */
+std::optional<CCoinsStats> ComputeUTXOStats(CoinStatsHashType hash_type, const CCoinsViewDB& view, node::BlockManager& blockman, const std::function<void()>& interruption_point = {}, std::unique_ptr<CCoinsViewCursor> cursor = nullptr);
 } // namespace kernel
 
 #endif // BITCOIN_KERNEL_COINSTATS_H

@@ -16,10 +16,12 @@
 #include <util/log.h>
 #include <util/task_runner.h>
 
+#include <algorithm>
 #include <future>
 #include <memory>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 using kernel::ChainstateRole;
 
@@ -44,6 +46,10 @@ private:
     std::unordered_map<CValidationInterface*, std::list<ListEntry>::iterator> m_map GUARDED_BY(m_mutex);
 
 public:
+    Mutex m_pre_sync_mutex;
+    //! The pre-sync hooks (AddPreSyncHook()).
+    std::vector<std::shared_ptr<const std::function<bool()>>> m_pre_sync_hooks GUARDED_BY(m_pre_sync_mutex);
+
     std::unique_ptr<util::TaskRunnerInterface> m_task_runner;
 
     explicit ValidationSignalsImpl(std::unique_ptr<util::TaskRunnerInterface> task_runner)
@@ -143,11 +149,31 @@ void ValidationSignals::CallFunctionInValidationInterfaceQueue(std::function<voi
     m_internals->m_task_runner->insert(std::move(func));
 }
 
+void ValidationSignals::AddPreSyncHook(std::function<bool()> hook)
+{
+    LOCK(m_internals->m_pre_sync_mutex);
+    m_internals->m_pre_sync_hooks.push_back(std::make_shared<const std::function<bool()>>(std::move(hook)));
+}
+
 void ValidationSignals::SyncWithValidationInterfaceQueue()
 {
     AssertLockNotHeld(cs_main);
     // The callbacks waited for take cs_main, the mempool's and the wallets' locks.
     AssertMayWait("the validation signal queue");
+    {
+        // The hooks run on a copy of the list, without its mutex: a hook takes cs_main and waits for
+        // the executor, which the list's mutex is not held across. An owner that goes meanwhile disarms its
+        // hook itself (see AddPreSyncHook()); a hook whose owner is gone is dropped.
+        const auto hooks{WITH_LOCK(m_internals->m_pre_sync_mutex, return m_internals->m_pre_sync_hooks)};
+        std::vector<const std::function<bool()>*> gone;
+        for (const auto& hook : hooks) {
+            if (!(*hook)()) gone.push_back(hook.get());
+        }
+        if (!gone.empty()) {
+            LOCK(m_internals->m_pre_sync_mutex);
+            std::erase_if(m_internals->m_pre_sync_hooks, [&](const auto& hook) { return std::ranges::find(gone, hook.get()) != gone.end(); });
+        }
+    }
     // Block until the validation queue drains
     std::promise<void> promise;
     CallFunctionInValidationInterfaceQueue([&promise] {
@@ -180,8 +206,9 @@ void ValidationSignals::SyncWithValidationInterfaceQueue()
 
 void ValidationSignals::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) {
     // Dependencies exist that require UpdatedBlockTip events to be delivered in the order in which
-    // the chain actually updates. The caller invokes this signal in the same critical section
-    // where the chain is updated.
+    // the chain actually updates. The caller invokes this signal under cs_main in the order of the tips: in
+    // the critical section where the chain is updated, or, in initial block download, in a later one, from
+    // the queue of completions that keeps the blocks' order (Chainstate::NotifyTipAdvanced()).
     AssertLockHeld(cs_main);
 
     auto log_msg = LOG_MSG("%s: new block hash=%s fork block hash=%s (in IBD=%s)", __func__,

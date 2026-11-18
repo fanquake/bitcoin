@@ -37,6 +37,8 @@ public:
 struct TestBlockManager : public node::BlockManager {
     /** Test-only method to clear internal state for fuzzing */
     void CleanupForFuzzing();
+    /** Have the next block index write include `index` */
+    void MarkDirty(CBlockIndex* index) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { m_dirty_blockindex.insert(index); }
 };
 
 struct TestChainstateManager : public ChainstateManager {

@@ -14,6 +14,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <cstdlib>
+#include <optional>
 
 using kernel::ChainstateRole;
 
@@ -63,14 +64,13 @@ BOOST_FIXTURE_TEST_CASE(write_during_multiblock_activation, TestChain100Setup)
 {
     struct TestSubscriber final : CValidationInterface
     {
-        const CBlockIndex* m_tip{nullptr};
-        const CBlockIndex* m_flushed_at_block{nullptr};
-        void ChainStateFlushed(const ChainstateRole&, const CBlockLocator&) override
+        // The block the flush covered, from its locator. The tip notification leaves through the effects
+        // queue, behind the block's undo write, so the flush notification may arrive before the tip's;
+        // what matters is which block was flushed.
+        std::optional<uint256> m_flushed_block;
+        void ChainStateFlushed(const ChainstateRole&, const CBlockLocator& locator) override
         {
-            m_flushed_at_block = m_tip;
-        }
-        void UpdatedBlockTip(const CBlockIndex* block_index, const CBlockIndex*, bool) override {
-            m_tip = block_index;
+            m_flushed_block = locator.vHave.front();
         }
     };
 
@@ -107,7 +107,8 @@ BOOST_FIXTURE_TEST_CASE(write_during_multiblock_activation, TestChain100Setup)
     // second block from tip, since FlushStateToDisk is called with PERIODIC
     // inside the outer loop.
     m_node.validation_signals->SyncWithValidationInterfaceQueue();
-    BOOST_CHECK_EQUAL(sub->m_flushed_at_block, second_from_tip);
+    BOOST_REQUIRE(sub->m_flushed_block.has_value());
+    BOOST_CHECK(*sub->m_flushed_block == second_from_tip->GetBlockHash());
     BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return chainstate.GetLastFlushedBlock()), second_from_tip);
 }
 

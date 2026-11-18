@@ -42,6 +42,7 @@ BOOST_AUTO_TEST_CASE(flush_table)
     BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::Unlink)); // no unlink while the index still refers to the file
     BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesSynced, E::WriteCoins)); // no coins ahead of the index
     BOOST_CHECK(!FLUSH_TABLE.Next(S::CoinsWritten, E::WriteCoins));
+    BOOST_CHECK(!FLUSH_TABLE.Next(S::FilesUnlinked, E::WriteCoins)); // the unlink is the last step
 }
 
 // A block's bytes are Unsynced from the write until the next write-out, which syncs every file
@@ -84,6 +85,31 @@ BOOST_FIXTURE_TEST_CASE(durability_follows_the_files, TestChain100Setup)
         BOOST_CHECK(blockman.DataDurability(*tip) == DurabilityState::Absent);
         BOOST_CHECK(blockman.UndoDurability(*tip) == DurabilityState::Absent);
     }
+}
+
+// A block is written with cs_main released, between the claim of its position and the end of the
+// write (PinBlockFile(), UnpinBlockFile()). A sync made in between did not cover its bytes: the
+// file is Unsynced again when the write ends, until the next sync.
+BOOST_FIXTURE_TEST_CASE(write_off_the_lock_marks_the_file_again, TestChain100Setup)
+{
+    auto& chainman{*Assert(m_node.chainman)};
+    auto& blockman{static_cast<TestBlockManager&>(chainman.m_blockman)};
+
+    CreateAndProcessBlock({}, CScript() << OP_TRUE);
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+    BOOST_REQUIRE(tip);
+    LOCK(cs_main);
+    BOOST_REQUIRE(blockman.SyncWrittenFiles());
+    BOOST_REQUIRE(blockman.DataDurability(*tip) == DurabilityState::Synced);
+
+    blockman.PinBlockFile(tip->nFile); // a position in the file is claimed
+    BOOST_REQUIRE(blockman.SyncWrittenFiles()); // a sync before the write
+    BOOST_CHECK(blockman.DataDurability(*tip) == DurabilityState::Synced);
+    blockman.UnpinBlockFile(tip->nFile); // the write ended
+    BOOST_CHECK(blockman.DataDurability(*tip) == DurabilityState::Unsynced);
+
+    BOOST_CHECK(blockman.SyncWrittenFiles());
+    BOOST_CHECK(blockman.DataDurability(*tip) == DurabilityState::Synced);
 }
 
 namespace {
@@ -209,7 +235,8 @@ std::shared_ptr<const CBlock> ChildBlock(const CBlockHeader& prev, int height, C
 
 // The case the cursor file's sync does not cover: undo data written into the undo file of
 // a block file the cursor has left. Only SyncWrittenFiles() makes it durable before the
-// index records it; without that call the write-out's check in WriteBlockIndexDB fails.
+// index records it; without that call the batch still owes the sync when it is committed,
+// which CommitBlockIndexBatch() asserts against.
 BOOST_FIXTURE_TEST_CASE(undo_in_a_left_file_is_synced, FastPruneChain100Setup)
 {
     auto& chainman{*Assert(m_node.chainman)};

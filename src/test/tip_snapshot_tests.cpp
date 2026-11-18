@@ -4,11 +4,16 @@
 
 #include <chain.h>
 #include <consensus/validation.h>
+#include <kernel/mempool_removal_reason.h>
 #include <node/block_facts.h>
+#include <node/mempool_persist.h>
 #include <node/tip_snapshot.h>
 #include <script/script.h>
+#include <sync.h>
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
+#include <txmempool.h>
+#include <util/fs.h>
 #include <validation.h>
 #include <validationinterface.h>
 
@@ -150,8 +155,6 @@ BOOST_AUTO_TEST_CASE(tip_is_published_at_the_end_of_the_hold)
     signals.UnregisterValidationInterface(&inside);
 }
 
-    // A step that connects several blocks queues their BlockConnected signals after the
-    // last of them is connected. Each still carries the number its own block was connected
 BOOST_AUTO_TEST_CASE(block_facts_are_one_copy)
 {
     ChainstateManager& chainman{*Assert(m_node.chainman)};
@@ -168,6 +171,105 @@ BOOST_AUTO_TEST_CASE(block_facts_are_one_copy)
     BOOST_CHECK_EQUAL(facts->tx_count, tip->nTx);
     BOOST_CHECK(facts->HaveData());
     BOOST_CHECK(facts->data_pos == tip->GetBlockPos());
+}
+
+//! Records the order of a block's and a transaction's announcement.
+struct AnnouncementOrder final : public CValidationInterface {
+    std::vector<char> m_order;
+    void BlockConnected(const kernel::ChainstateRole&, const std::shared_ptr<const CBlock>&, const CBlockIndex*) override
+    {
+        m_order.push_back('b');
+    }
+    void TransactionAddedToMempool(const NewMempoolTransactionInfo&, uint64_t) override
+    {
+        m_order.push_back('t');
+    }
+};
+
+//! In initial block download a block's BlockConnected waits for the block's undo write. A transaction
+//! accepted after the block is still announced after it.
+BOOST_AUTO_TEST_CASE(a_transaction_is_announced_after_the_block_in_ibd)
+{
+    auto& chainman{static_cast<TestChainstateManager&>(*Assert(m_node.chainman))};
+    ValidationSignals& signals{*Assert(m_node.validation_signals)};
+
+    // A block that is two days old when it arrives leaves the node in initial block download.
+    const CBlock block{CreateBlock({}, CScript{} << OP_TRUE)};
+    m_clock += std::chrono::hours{48};
+    chainman.ResetIbd();
+    signals.SyncWithValidationInterfaceQueue();
+
+    AnnouncementOrder order;
+    signals.RegisterValidationInterface(&order);
+
+    bool new_block{false};
+    BOOST_REQUIRE(chainman.ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, &new_block));
+    BOOST_REQUIRE(new_block);
+    BOOST_REQUIRE(chainman.IsInitialBlockDownload());
+    BOOST_REQUIRE(WITH_LOCK(::cs_main, return chainman.ActiveTip()->GetBlockHash()) == block.GetHash());
+
+    const CMutableTransaction tx{CreateValidMempoolTransaction(m_coinbase_txns[0], /*input_vout=*/0, /*input_height=*/1, coinbaseKey,
+                                                               CScript{} << OP_0 << std::vector<uint8_t>(20, 1), CAmount{1 * COIN}, /*submit=*/false)};
+    const MempoolAcceptResult result{WITH_LOCK(::cs_main, return chainman.ProcessTransaction(MakeTransactionRef(tx)))};
+    BOOST_REQUIRE(result.m_result_type == MempoolAcceptResult::ResultType::VALID);
+    signals.SyncWithValidationInterfaceQueue();
+    signals.UnregisterValidationInterface(&order);
+
+    const std::vector<char> expected{'b', 't'};
+    BOOST_CHECK_EQUAL_COLLECTIONS(order.m_order.begin(), order.m_order.end(), expected.begin(), expected.end());
+}
+
+//! The same for a transaction the node loads from its mempool file: in initial block download
+//! LoadMempool() hands the signals of the blocks connected so far over before each transaction.
+//!
+//! Nothing here can see whether the block's signal still waited when the file was loaded, and a round in
+//! which it had left already passes whatever LoadMempool() does. So the round is run several times, each
+//! with a block of its own: a LoadMempool() that does not settle the signals has to be missed by all of
+//! them.
+BOOST_AUTO_TEST_CASE(a_loaded_transaction_is_announced_after_the_block_in_ibd)
+{
+    auto& chainman{static_cast<TestChainstateManager&>(*Assert(m_node.chainman))};
+    ValidationSignals& signals{*Assert(m_node.validation_signals)};
+    CTxMemPool& pool{*Assert(m_node.mempool)};
+
+    // A mempool file with one transaction, which the pool then no longer holds.
+    const CMutableTransaction tx{CreateValidMempoolTransaction(m_coinbase_txns[0], /*input_vout=*/0, /*input_height=*/1, coinbaseKey,
+                                                               CScript{} << OP_0 << std::vector<uint8_t>(20, 1), CAmount{1 * COIN}, /*submit=*/true)};
+    const fs::path path{m_args.GetDataDirNet() / "mempool_one_transaction.dat"};
+    BOOST_REQUIRE(node::DumpMempool(pool, path));
+    const auto remove_transaction{[&] {
+        LOCK2(::cs_main, pool.cs);
+        pool.removeRecursive(CTransaction{tx}, MemPoolRemovalReason::REPLACED);
+        BOOST_REQUIRE_EQUAL(pool.size(), 0U);
+    }};
+    remove_transaction();
+
+    for (int round{0}; round < 3; ++round) {
+        // A block that is two days old when it arrives leaves the node in initial block download.
+        const CBlock block{CreateBlock({}, CScript{} << OP_TRUE)};
+        m_clock += std::chrono::hours{48};
+        chainman.ResetIbd();
+        signals.SyncWithValidationInterfaceQueue();
+
+        AnnouncementOrder order;
+        signals.RegisterValidationInterface(&order);
+
+        bool new_block{false};
+        BOOST_REQUIRE(chainman.ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, &new_block));
+        BOOST_REQUIRE(new_block);
+        BOOST_REQUIRE(chainman.IsInitialBlockDownload());
+
+        BOOST_REQUIRE(node::LoadMempool(pool, path, chainman.ActiveChainstate(), {}));
+        BOOST_REQUIRE_EQUAL(WITH_LOCK(pool.cs, return pool.size()), 1U);
+        signals.SyncWithValidationInterfaceQueue();
+        signals.UnregisterValidationInterface(&order);
+
+        const std::vector<char> expected{'b', 't'};
+        BOOST_CHECK_EQUAL_COLLECTIONS(order.m_order.begin(), order.m_order.end(), expected.begin(), expected.end());
+
+        // The next round loads the file again.
+        remove_transaction();
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -631,6 +631,10 @@ public:
         genesis = CreateGenesisBlock(1296688602, 2, 0x207fffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256{"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"});
+        // No block below height 1,983,702 is checked for BIP30 (ConnectBlockChecksBIP30()), as on mainnet from
+        // BIP34's height on. BIP34 itself keeps its height: from the genesis block on, the genesis block
+        // would fail its height and version rules when a -reindex accepts it again.
+        m_bip30_off = opts.bip30_off;
         assert(genesis.hashMerkleRoot == uint256{"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"});
 
         vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.

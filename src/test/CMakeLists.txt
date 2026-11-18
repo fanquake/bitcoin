@@ -40,6 +40,7 @@ add_executable(test_bitcoin
   cluster_linearize_tests.cpp
   coins_entry_machine_tests.cpp
   coins_tests.cpp
+  connect_machine_tests.cpp
   coinsstore_tests.cpp
   coinscachepair_tests.cpp
   coinstatsindex_tests.cpp
@@ -118,6 +119,7 @@ add_executable(test_bitcoin
   sock_tests.cpp
   span_tests.cpp
   streams_tests.cpp
+  sync_mode_tests.cpp
   sync_tests.cpp
   system_ram_tests.cpp
   system_tests.cpp

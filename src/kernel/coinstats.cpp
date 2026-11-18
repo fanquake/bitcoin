@@ -109,18 +109,18 @@ static void ApplyStats(CCoinsStats& stats, const std::map<uint32_t, Coin>& outpu
 
 //! Calculate statistics about the unspent transaction output set
 template <typename T>
-static std::optional<CCoinsStats> ComputeUTXOStats(T hash_obj, const CCoinsViewDB& view, node::BlockManager& blockman, const std::function<void()>& interruption_point)
+static std::optional<CCoinsStats> ComputeUTXOStats(T hash_obj, const CCoinsViewDB& view, node::BlockManager& blockman, const std::function<void()>& interruption_point, std::unique_ptr<CCoinsViewCursor> pcursor)
 {
-    std::unique_ptr<CCoinsViewCursor> pcursor;
     CBlockIndex* pindex;
     {
         LOCK(::cs_main);
-        pcursor = view.Cursor();
+        if (!pcursor) pcursor = view.Cursor();
         pindex = blockman.LookupBlockIndex(pcursor->GetBestBlock());
     }
     // A write-out run that is not the last of its write-out leaves the database without a best block
-    // until a later run closes it. One may have started since the caller wrote the cache out: there is
-    // no block the database's coins are the set of.
+    // until a later run closes it. A cursor taken in the hold that wrote the cache out has one; without
+    // one the write-out failed, or the cursor is of a later hold: there is no block the database's
+    // coins are the set of.
     if (!pindex) return std::nullopt;
     CCoinsStats stats{pindex->nHeight, pindex->GetBlockHash()};
 
@@ -156,20 +156,20 @@ static std::optional<CCoinsStats> ComputeUTXOStats(T hash_obj, const CCoinsViewD
     return stats;
 }
 
-std::optional<CCoinsStats> ComputeUTXOStats(CoinStatsHashType hash_type, const CCoinsViewDB& view, node::BlockManager& blockman, const std::function<void()>& interruption_point)
+std::optional<CCoinsStats> ComputeUTXOStats(CoinStatsHashType hash_type, const CCoinsViewDB& view, node::BlockManager& blockman, const std::function<void()>& interruption_point, std::unique_ptr<CCoinsViewCursor> cursor)
 {
     return [&]() -> std::optional<CCoinsStats> {
         switch (hash_type) {
         case(CoinStatsHashType::HASH_SERIALIZED): {
             HashWriter ss{};
-            return ComputeUTXOStats(ss, view, blockman, interruption_point);
+            return ComputeUTXOStats(ss, view, blockman, interruption_point, std::move(cursor));
         }
         case(CoinStatsHashType::MUHASH): {
             MuHash3072 muhash;
-            return ComputeUTXOStats(muhash, view, blockman, interruption_point);
+            return ComputeUTXOStats(muhash, view, blockman, interruption_point, std::move(cursor));
         }
         case(CoinStatsHashType::NONE): {
-            return ComputeUTXOStats(nullptr, view, blockman, interruption_point);
+            return ComputeUTXOStats(nullptr, view, blockman, interruption_point, std::move(cursor));
         }
         } // no default case, so the compiler can warn about missing cases
         assert(false);

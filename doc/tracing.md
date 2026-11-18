@@ -165,7 +165,9 @@ Arguments passed:
 3. Transactions in the Block as `uint64`
 4. Inputs spend in the Block as `int32`
 5. SigOps in the Block (excluding coinbase SigOps) `uint64`
-6. Time it took to connect the Block in nanoseconds (ns) as `uint64`
+6. Time it took to connect the Block in nanoseconds (ns) as `uint64`: from the start of its validation to
+   its publication as the tip. For a block validated in the connect window during initial block download
+   this includes the wait for the blocks below it; the undo data is written afterwards and is not included.
 
 ### Context `utxocache`
 
@@ -181,7 +183,9 @@ We can't tell if a temporary cache or the _main_ cache was changed.
 
 #### Tracepoint `utxocache:flush`
 
-Is called *after* the in-memory UTXO cache is flushed.
+Is called *after* the in-memory UTXO cache is flushed, and after a coins write-out run (which writes the
+changes up to a height while blocks are connected) has landed, with the mode of the flush that started it.
+A run's time includes its wait behind the undo data written before it.
 
 Arguments passed:
 1. Time it took to flush the cache microseconds as `int64`

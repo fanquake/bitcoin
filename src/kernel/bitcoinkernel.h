@@ -500,7 +500,8 @@ typedef uint32_t btck_TxValidationResult;
  * Holds the validation interface callbacks. The user data pointer may be used
  * to point to user-defined structures to make processing the validation
  * callbacks easier. Note that these callbacks block any further validation
- * execution when they are called.
+ * execution when they are called. They may be called from an internal thread
+ * and must not call back into the chainstate manager.
  */
 typedef struct {
     void* user_data;                                              //!< Holds a user-defined opaque structure that is passed to the validation
@@ -512,6 +513,8 @@ typedef struct {
     btck_ValidationInterfacePoWValidBlock pow_valid_block;        //!< Called when a new block extends the header chain and has a valid transaction
                                                                   //!< and segwit merkle root.
     btck_ValidationInterfaceBlockConnected block_connected;       //!< Called when a block is valid and has now been connected to the best chain.
+                                                                  //!< During initial block download it is called once the block's undo data
+                                                                  //!< is written, which may be after the block_tip notification of the block.
     btck_ValidationInterfaceBlockDisconnected block_disconnected; //!< Called during a re-org when a block has been removed from the best chain.
 } btck_ValidationInterfaceCallbacks;
 
@@ -1298,7 +1301,12 @@ BITCOINKERNEL_API void btck_chainstate_manager_options_set_worker_threads_num(
  *
  * The total cache is split internally between the block tree database,
  * chainstate database, and in-memory coins cache. If this function is not
- * called, the total cache defaults to 450 MiB.
+ * called, the total cache defaults to 450 MiB. On top of it, whatever the
+ * total cache size: up to 128 MiB of accepted blocks kept in memory until they
+ * are connected, an eighth of the coins cache and 32 MiB at least for the
+ * blocks being connected, up to 64 MiB of undo data waiting to be written, and,
+ * with no limit in bytes, the blocks whose notifications wait for an undo
+ * write.
  *
  * @param[in] chainstate_manager_options Non-null, options to be set.
  * @param[in] database_cache_bytes       The total database cache size in bytes. Values below 4 MiB are rejected.

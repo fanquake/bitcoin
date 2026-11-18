@@ -11,6 +11,7 @@
 #include <uint256.h>
 #include <util/time.h>
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -70,6 +71,28 @@ public:
 };
 
 
+/**
+ * A memory-only flag caching that a check of a block passed. One block object may be checked by several
+ * threads at once (ProcessNewBlock() runs a block's own checks without cs_main), so the flag is atomic. It
+ * says nothing but that a pure check of the block passed: a thread that does not see another's store
+ * repeats the check.
+ */
+class BlockCheckedFlag
+{
+    std::atomic<bool> m_passed{false};
+
+public:
+    BlockCheckedFlag() noexcept = default;
+    BlockCheckedFlag(const BlockCheckedFlag& other) noexcept : m_passed{other.m_passed.load(std::memory_order_relaxed)} {}
+    BlockCheckedFlag& operator=(const BlockCheckedFlag& other) noexcept { return *this = bool{other}; }
+    BlockCheckedFlag& operator=(bool passed) noexcept
+    {
+        m_passed.store(passed, std::memory_order_relaxed);
+        return *this;
+    }
+    operator bool() const noexcept { return m_passed.load(std::memory_order_relaxed); }
+};
+
 class CBlock : public CBlockHeader
 {
 public:
@@ -77,9 +100,9 @@ public:
     std::vector<CTransactionRef> vtx;
 
     // Memory-only flags for caching expensive checks
-    mutable bool fChecked;                            // CheckBlock()
-    mutable bool m_checked_witness_commitment{false}; // CheckWitnessCommitment()
-    mutable bool m_checked_merkle_root{false};        // CheckMerkleRoot()
+    mutable BlockCheckedFlag fChecked;                     // CheckBlock()
+    mutable BlockCheckedFlag m_checked_witness_commitment; // CheckWitnessCommitment()
+    mutable BlockCheckedFlag m_checked_merkle_root;        // CheckMerkleRoot()
 
     CBlock()
     {

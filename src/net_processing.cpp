@@ -3841,6 +3841,8 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
                                      const std::atomic<bool>& interruptMsgProc)
 {
     AssertLockHeld(g_msgproc_mutex);
+    // The mode the message is processed in (node/sync_mode.h): read once, here.
+    const node::SyncMode mode{m_chainman.SyncModeNow()};
 
     LogDebug(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(msg_type), vRecv.size(), pfrom.GetId());
 
@@ -4726,7 +4728,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         // Stop processing the transaction early if we are still in IBD since we don't
         // have enough information to validate it yet. Sending unsolicited transactions
         // is not considered a protocol violation, so don't punish the peer.
-        if (m_chainman.IsInitialBlockDownload()) return;
+        if (mode == node::SyncMode::Download) return;
 
         CTransactionRef ptx;
         vRecv >> TX_WITH_WITNESS(ptx);

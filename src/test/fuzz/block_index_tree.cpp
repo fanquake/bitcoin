@@ -143,7 +143,7 @@ FUZZ_TARGET(block_index_tree, .init = initialize_block_index_tree)
                         }
                         chain.SetTip(*block);
                         chainman.ActiveChainstate().PruneBlockIndexCandidates();
-                        // ActivateBestChainStep may release cs_main / not connect all blocks in one go - but only if we have at least as much chain work as we had at the start.
+                        // A step may release cs_main / not connect all blocks in one go - but only if we have at least as much chain work as we had at the start.
                         if (block->nChainWork > old_tip->nChainWork && fuzzed_data_provider.ConsumeBool()) {
                             break;
                         }

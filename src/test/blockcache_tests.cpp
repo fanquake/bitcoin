@@ -118,6 +118,17 @@ BOOST_AUTO_TEST_CASE(take_reports_measured_bytes)
     BOOST_CHECK_EQUAL(bytes, 7U);
 }
 
+BOOST_AUTO_TEST_CASE(default_size)
+{
+    // The size of the coins cache, between 32 MiB and the default.
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(0), 32_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(4_MiB), 32_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(32_MiB), 32_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(100_MiB), 100_MiB);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(DEFAULT_BLOCK_CACHE_BYTES), DEFAULT_BLOCK_CACHE_BYTES);
+    BOOST_CHECK_EQUAL(node::DefaultBlockCacheBytes(1024_MiB), DEFAULT_BLOCK_CACHE_BYTES);
+}
+
 //! With the budget used up by blocks the tip has not passed, a block above every one kept is neither measured
 //! nor kept, even one that would fit; once a block has left, such a block is kept again. A copy dropped because
 //! another one was connected leaves without counting as a hit.

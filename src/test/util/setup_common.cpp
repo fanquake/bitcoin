@@ -9,6 +9,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <coins.h>
+#include <common/args.h>
 #include <common/system.h>
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
@@ -313,6 +314,7 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
             .worker_threads_num = EnableFuzzDeterminism() ? 0 : 2,
             .prevoutfetch_threads_num = EnableFuzzDeterminism() ? 0 : 2,
         };
+        chainman_opts.test_write_out_every_block = HasTestOption(*m_node.args, "write_out_every_block");
         if (opts.min_validation_cache) {
             chainman_opts.script_execution_cache_bytes = 0;
             chainman_opts.signature_cache_bytes = 0;

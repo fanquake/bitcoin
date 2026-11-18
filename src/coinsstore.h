@@ -262,6 +262,24 @@ public:
     //! The block's height, as given to BeginBlock().
     int BlockHeight(BlockId block) const;
     /**
+     * A window block says which transactions it holds, before its changes are applied: until they are
+     * (CreatesApplied()), a coin of one of those transaction ids is in no place a higher block could read
+     * it from, and CreatesPendingBelow() says so without a lookup. The ids go into one table for all open
+     * blocks, of fixed size and without a lock, where a later id may take an earlier one's place: what the
+     * table says is a hint, never a fact about a coin.
+     */
+    void AnnounceCreates(BlockId block, std::span<const CTransactionRef> txs);
+    //! The block's changes are in the store (the first ApplyBatch() of a block that announced).
+    void CreatesApplied(BlockId block);
+    /**
+     * Whether an open block below `viewer` announced `txid` and is not applied yet. True means a lookup of
+     * that transaction's outputs would find nothing now, in the tier or the database. It may be true for a
+     * transaction no such block holds (two ids that share their place and tag in the table), and false for
+     * one a block does hold: the caller may only take it as a reason to look again later, as a window
+     * block does that defers a transaction to its continuation (ConnectBlock()), never as a coin's absence.
+     */
+    bool CreatesPendingBelow(BlockId viewer, const Txid& txid) const;
+    /**
      * The block becomes part of the confirmed state: the confirmed height becomes its height, which is what
      * its creates and its spent markers are told from plain ones by, and the identity is freed. No entry
      * is visited but two kinds from the block's record: the spends that owe the database an erase, which
@@ -403,6 +421,9 @@ private:
         std::atomic<int> begin_confirmed{-1};
         //! As given to BeginBlock(); the block's applier reads it.
         std::atomic<bool> mark_fresh_spends{false};
+        //! From AnnounceCreates() until CreatesApplied(): the block's transaction ids in the table of
+        //! pending ones stand for coins that are not in the store yet.
+        std::atomic<bool> creates_pending{false};
         /**
          * What the block's changes add to the tier's dirty entries over what they add to the confirmed
          * state's (nothing, until the block is confirmed): GetDirtyCount() takes it off again. Exact
@@ -1087,6 +1108,17 @@ private:
     std::atomic<int> m_dropped_through{-1};
     //! The slots not free, for the readers' check that there is no record to look into.
     std::atomic<int> m_open_slots{0};
+    /**
+     * The transaction ids the open blocks announced (AnnounceCreates()). An id has one place, by some of
+     * its bits, and an entry is a tag from other bits of the id with the height and the slot of the block
+     * that announced it; zero is empty. Entries are never removed: one is void once its block's slot is
+     * free, at another height or applied. 4 MiB, allocated when the first block announces, and not counted
+     * as cache: it holds no coin and does not grow.
+     */
+    static constexpr size_t PENDING_TXID_PLACES{size_t{1} << 19};
+    std::once_flag m_pending_txids_once;
+    std::unique_ptr<std::atomic<uint64_t>[]> m_pending_txids_owner; //!< set once, under m_pending_txids_once
+    std::atomic<std::atomic<uint64_t>*> m_pending_txids{nullptr};
     //! See SetBaseWrites().
     uint64_t m_batch_bytes{DEFAULT_DB_CACHE_BATCH};
     bool m_base_concurrent{false};
@@ -1124,6 +1156,10 @@ public:
     //! at the tip reads without it: one that fails leaves none of its inputs in the cache.
     //! Set before the block's first lookup; the view's reset clears it.
     void SetKeepBaseReads(bool keep) { m_keep_base_reads = keep; }
+    //! See CoinsStore::AnnounceCreates(): called with the block before its validation, by a window block.
+    void AnnounceCreates(const CBlock& block);
+    //! See CoinsStore::CreatesPendingBelow(), for the view's block.
+    bool CreatesPendingBelow(const Txid& txid) const { return HasBlock() && m_store.CreatesPendingBelow(m_block, txid); }
 
     //! Bring the block's inputs that the tier holds into the view, with one hold of each shard's lock.
     void Prefetch(const CBlock& block);

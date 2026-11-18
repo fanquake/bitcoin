@@ -28,7 +28,7 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
 
 PGO_CFLAGS=""
 if [ -n "$PGO_GENERATE" ]; then
-    PGO_CFLAGS="-fprofile-generate=/pgo_data -fprofile-update=atomic -fprofile-reproducible=multithreaded"
+    PGO_CFLAGS="-fprofile-generate=/pgo_data -fprofile-update=single"
 elif [ -n "$PGO_USE" ]; then
     PGO_CFLAGS="-fprofile-use=/pgo_data -fprofile-correction -fprofile-partial-training -Wno-error=coverage-mismatch"
 fi

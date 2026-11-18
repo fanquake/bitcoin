@@ -15,6 +15,7 @@
 #include <array>
 #include <functional>
 #include <latch>
+#include <mutex>
 #include <ranges>
 #include <semaphore>
 
@@ -490,6 +491,31 @@ BOOST_AUTO_TEST_CASE(submit_range_of_tasks_complete_successfully)
     BOOST_CHECK_EQUAL(sum, expected_sum);
     BOOST_CHECK_EQUAL(squares_sum, expected_squares_sum);
     BOOST_CHECK_EQUAL(threadPool.WorkQueueSize(), 0);
+}
+
+// A task submitted to the front of the queue runs before the tasks already waiting.
+BOOST_AUTO_TEST_CASE(front_submission_runs_before_waiting_tasks)
+{
+    ThreadPool threadPool(POOL_NAME);
+    threadPool.Start(1);
+    std::counting_semaphore<> blocker(0);
+    const auto blocking_tasks = BlockWorkers(threadPool, blocker, 1);
+
+    std::mutex mutex;
+    std::vector<int> order;
+    const auto record{[&](int n) { std::lock_guard lock{mutex}; order.push_back(n); }};
+    auto first = Submit(threadPool, [&] { record(1); });
+    auto second = Submit(threadPool, [&] { record(2); });
+    auto front = threadPool.Submit([&] { record(0); }, /*front=*/true);
+    BOOST_REQUIRE(front);
+
+    blocker.release(1);
+    WAIT_FOR(blocking_tasks);
+    first.wait();
+    second.wait();
+    front->wait();
+    BOOST_CHECK((order == std::vector<int>{0, 1, 2}));
+    threadPool.Stop();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

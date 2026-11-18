@@ -385,9 +385,41 @@ public:
 
     std::optional<std::pair<ScriptError, std::string>> operator()();
 
-    /** Run checks with their ECDSA signatures verified together, and return the first failure. A check with an
-     *  invalid signature is run again without deferral, since that signature may change the script's outcome. */
+    /** Run checks with their ECDSA signatures verified together (see ScriptCheckBatch), and return a failure. */
     static std::optional<std::pair<ScriptError, std::string>> RunBatch(std::span<CScriptCheck> checks);
+
+    friend class ScriptCheckBatch;
+};
+
+/**
+ * Script checks run in rounds, with each round's ECDSA signatures verified together.
+ *
+ * A round runs the pending checks with their ECDSA checks deferred and reported as successful, then verifies the
+ * deferred signatures. A check whose deferred signatures are all valid ran exactly as it would have with each
+ * signature checked when reached, so its outcome stands. A check with an invalid signature stays pending: under
+ * consensus rules an invalid signature does not by itself fail a script (`CHECKSIG NOT`, and CHECKMULTISIG trying
+ * keys in turn). Its next run reports the outcomes verified so far and defers only signatures it had not reached,
+ * such as the next key a CHECKMULTISIG tries, so every round resolves at least one more of its signatures.
+ */
+class ScriptCheckBatch
+{
+    std::vector<CScriptCheck> m_checks;
+    DeferredECDSAChecks m_deferred;
+    std::vector<size_t> m_deferred_ends;
+    std::vector<std::optional<std::pair<ScriptError, std::string>>> m_results;
+    std::vector<unsigned char> m_valid;
+
+    void Clear();
+
+public:
+    /** Checks not yet run, or still unresolved after a round. Further checks may be added. */
+    std::vector<CScriptCheck>& Pending() { return m_checks; }
+
+    /** Run one round and return a failure, if any. On failure, all pending checks are dropped. */
+    std::optional<std::pair<ScriptError, std::string>> Run();
+
+    /** Run rounds until no checks are pending, and return a failure, if any. */
+    std::optional<std::pair<ScriptError, std::string>> Finish();
 };
 
 // CScriptCheck is used a lot in std::vector, make sure that's efficient

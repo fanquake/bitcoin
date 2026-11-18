@@ -67,6 +67,7 @@ bool CachingTransactionSignatureChecker::VerifyECDSASignature(const std::vector<
     if (m_signature_cache.Get(entry, !store))
         return true;
     if (m_deferred) {
+        if (const auto it{m_deferred->verified.find(entry)}; it != m_deferred->verified.end()) return it->second;
         if (!m_deferred->batch.Add(pubkey, sighash, vchSig)) return false;
         m_deferred->cache_entries.push_back(entry);
         return true;

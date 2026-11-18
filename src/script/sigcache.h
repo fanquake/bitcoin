@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <shared_mutex>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 class CPubKey;
@@ -66,6 +67,8 @@ public:
 struct DeferredECDSAChecks {
     ECDSABatch batch;
     std::vector<uint256> cache_entries;
+    /** Outcomes of checks verified earlier, by signature cache entry, reported instead of being deferred again. */
+    std::unordered_map<uint256, bool, SaltedUint256Hasher> verified;
 
     void clear()
     {
@@ -79,8 +82,9 @@ class CachingTransactionSignatureChecker : public TransactionSignatureChecker
 private:
     bool store;
     SignatureCache& m_signature_cache;
-    /** If set, ECDSA checks that miss the signature cache are added to it instead of being verified, and reported as
-     *  successful. A script's outcome then only holds if every check it deferred turns out to be valid. */
+    /** If set, ECDSA checks that miss the signature cache and its verified outcomes are added to it instead of being
+     *  verified, and reported as successful. A script's outcome then only holds if every check it deferred turns out
+     *  to be valid. */
     DeferredECDSAChecks* m_deferred;
 
 public:

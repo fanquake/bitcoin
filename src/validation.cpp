@@ -2245,34 +2245,57 @@ std::optional<std::pair<ScriptError, std::string>> CScriptCheck::operator()() {
 
 std::optional<std::pair<ScriptError, std::string>> CScriptCheck::RunBatch(std::span<CScriptCheck> checks)
 {
-    thread_local DeferredECDSAChecks deferred;
-    thread_local std::vector<size_t> deferred_ends;
-    thread_local std::vector<std::optional<std::pair<ScriptError, std::string>>> results;
-    thread_local std::vector<unsigned char> valid;
-    deferred.clear();
-    deferred_ends.clear();
-    results.clear();
+    thread_local ScriptCheckBatch batch;
+    std::ranges::move(checks, std::back_inserter(batch.Pending()));
+    return batch.Finish();
+}
 
-    for (CScriptCheck& check : checks) {
-        results.push_back(check.Execute(&deferred));
-        deferred_ends.push_back(deferred.batch.size());
+void ScriptCheckBatch::Clear()
+{
+    m_checks.clear();
+    m_deferred.clear();
+    m_deferred.verified.clear();
+}
+
+std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Run()
+{
+    m_deferred.clear();
+    m_deferred_ends.clear();
+    m_results.clear();
+    for (CScriptCheck& check : m_checks) {
+        m_results.push_back(check.Execute(&m_deferred));
+        m_deferred_ends.push_back(m_deferred.batch.size());
     }
-    deferred.batch.Verify(valid);
+    m_deferred.batch.Verify(m_valid);
 
     size_t begin{0};
-    for (size_t i{0}; i < checks.size(); ++i) {
-        const size_t end{deferred_ends[i]};
-        bool all_valid{true};
+    size_t unresolved{0};
+    for (size_t i{0}; i < m_checks.size(); ++i) {
+        const size_t end{m_deferred_ends[i]};
+        const bool all_valid{std::all_of(m_valid.begin() + begin, m_valid.begin() + end, [](unsigned char v) { return v; })};
         for (size_t j{begin}; j < end; ++j) {
-            if (!valid[j]) {
-                all_valid = false;
-            } else if (checks[i].cacheStore) {
-                checks[i].m_signature_cache->Set(deferred.cache_entries[j]);
-            }
+            if (m_valid[j] && m_checks[i].cacheStore) m_checks[i].m_signature_cache->Set(m_deferred.cache_entries[j]);
+            if (!all_valid) m_deferred.verified.emplace(m_deferred.cache_entries[j], m_valid[j]);
         }
-        if (!all_valid) results[i] = checks[i]();
-        if (results[i]) return std::move(results[i]);
+        if (!all_valid) {
+            if (unresolved != i) m_checks[unresolved] = std::move(m_checks[i]);
+            ++unresolved;
+        } else if (m_results[i]) {
+            auto failure{std::move(m_results[i])};
+            Clear();
+            return failure;
+        }
         begin = end;
+    }
+    m_checks.erase(m_checks.begin() + unresolved, m_checks.end());
+    if (m_checks.empty()) m_deferred.verified.clear();
+    return std::nullopt;
+}
+
+std::optional<std::pair<ScriptError, std::string>> ScriptCheckBatch::Finish()
+{
+    while (!m_checks.empty()) {
+        if (auto failure{Run()}) return failure;
     }
     return std::nullopt;
 }
@@ -2877,15 +2900,14 @@ static bool CheckBlockTransaction(const CTransaction& tx, const BlockValidationC
     return true;
 }
 
-//! Script checks run without a check queue are collected and run in batches of this many, so that their
-//! signatures are verified together.
+//! Script checks run without a check queue are collected and run in rounds once this many are pending, so that
+//! their signatures are verified together. Checks a round leaves unresolved join the next one.
 static constexpr size_t SCRIPT_CHECK_BATCH_SIZE{128};
 
-/** Run collected script checks of a block and clear them. */
-static bool RunScriptChecks(std::vector<CScriptCheck>& checks, BlockValidationState& state)
+/** Run a round of a block's collected script checks, or all of them if `finish`. */
+static bool RunScriptChecks(ScriptCheckBatch& checks, bool finish, BlockValidationState& state)
 {
-    const auto failure{CScriptCheck::RunBatch(checks)};
-    checks.clear();
+    const auto failure{finish ? checks.Finish() : checks.Run()};
     if (!failure) return true;
     return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, strprintf("block-script-verify-flag-failed (%s)", ScriptErrorString(failure->first)), failure->second);
 }
@@ -2973,7 +2995,7 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
     std::vector<PrecomputedTransactionData> txsdata(block.vtx.size());
     std::optional<CCheckQueueControl<CScriptCheck>> control;
     if (check_queue && check_queue->HasThreads() && fScriptChecks) control.emplace(*check_queue);
-    std::vector<CScriptCheck> block_checks;
+    ScriptCheckBatch block_checks;
 
     std::vector<int> prevheights;
     //! This block's transaction ids in sorted order, built when the first transaction is deferred.
@@ -3058,12 +3080,12 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
             std::vector<CScriptCheck> vChecks;
             // In a block that may defer, the test above found every input (or the transaction was deferred).
             if (!CheckBlockTransaction(tx, ctx, view, flags, nLockTimeFlags, fScriptChecks, fCacheResults, txsdata[i], validation_cache,
-                                       control ? &vChecks : &block_checks, prevheights, nFees, nSigOpsCost, state,
+                                       control ? &vChecks : &block_checks.Pending(), prevheights, nFees, nSigOpsCost, state,
                                        /*inputs_found=*/ctx.defer_missing_inputs)) {
                 break;
             }
             if (control && fScriptChecks) control->Add(std::move(vChecks));
-            if (block_checks.size() >= SCRIPT_CHECK_BATCH_SIZE && !RunScriptChecks(block_checks, state)) break;
+            if (block_checks.Pending().size() >= SCRIPT_CHECK_BATCH_SIZE && !RunScriptChecks(block_checks, /*finish=*/false, state)) break;
         } else {
             // A coinbase has legacy sigops only.
             if (!AddBlockSigOps(tx, view, flags, nSigOpsCost, state)) break;
@@ -3075,7 +3097,7 @@ bool ConnectBlock(const CBlock& block, const BlockValidationContext& ctx,
         }
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), ctx.height);
     }
-    if (state.IsValid() && !block_checks.empty()) RunScriptChecks(block_checks, state);
+    if (state.IsValid()) RunScriptChecks(block_checks, /*finish=*/true, state);
     result.time_connected = SteadyClock::now();
     result.fees = nFees;
 
@@ -3116,7 +3138,7 @@ bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContex
     std::vector<PrecomputedTransactionData> txsdata(result.deferred_txs.size());
 
     std::vector<int> prevheights;
-    std::vector<CScriptCheck> checks;
+    ScriptCheckBatch checks;
     for (size_t k{0}; k < result.deferred_txs.size() && state.IsValid(); ++k) {
         const uint32_t i{result.deferred_txs[k]};
         assert(i > 0 && i < block.vtx.size());
@@ -3124,10 +3146,10 @@ bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContex
 
         // The same checks as in order (CheckBlockTransaction()), now that the inputs are in.
         if (!CheckBlockTransaction(tx, ctx, view, flags, nLockTimeFlags, ctx.check_scripts, /*cache_results=*/false, txsdata[k],
-                                   validation_cache, &checks, prevheights, result.fees, result.sigops_cost, state)) {
+                                   validation_cache, &checks.Pending(), prevheights, result.fees, result.sigops_cost, state)) {
             break;
         }
-        if (checks.size() >= SCRIPT_CHECK_BATCH_SIZE && !RunScriptChecks(checks, state)) break;
+        if (checks.Pending().size() >= SCRIPT_CHECK_BATCH_SIZE && !RunScriptChecks(checks, /*finish=*/false, state)) break;
         // The outputs were created when the block was applied; only the inputs are spent now, into the
         // transaction's own undo slot.
         CTxUndo& txundo{result.undo.vtxundo.at(i - 1)};
@@ -3138,7 +3160,7 @@ bool FinishDeferredTransactions(const CBlock& block, const BlockValidationContex
             assert(is_spent);
         }
     }
-    if (state.IsValid() && !checks.empty()) RunScriptChecks(checks, state);
+    if (state.IsValid()) RunScriptChecks(checks, /*finish=*/true, state);
     if (state.IsValid()) CheckCoinbaseAmount(block, ctx, result.fees, state);
     if (!state.IsValid()) return false;
     result.deferred_txs.clear();

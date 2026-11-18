@@ -799,12 +799,14 @@ BOOST_AUTO_TEST_CASE(present_inputs_check_the_same_with_deferral)
     for (const Case& c : cases) {
         const CBlock block{chain.MakeBlock(Spend(c.spend_value), GetBlockSubsidy(HEIGHT, chain.Consensus()) + fee)};
         const uint256 hash{block.GetHash()};
-        for (const bool defer : {false, true}) {
+        // Without deferral, with it, and with it and a word on pending blocks' transactions to ask for.
+        for (const int mode : {0, 1, 2}) {
             auto view{std::make_unique<CCoinsViewCache>(&CoinsViewEmpty::Get())};
             view->SetBestBlock(chain.prev_hash);
             view->AddCoin(SEEDED_OUT, Coin{CTxOut{c.coin_value, CScript() << OP_TRUE}, /*nHeightIn=*/1, c.coin_is_coinbase}, /*possible_overwrite=*/false);
             BlockValidationContext ctx{chain.Context(hash)};
-            ctx.defer_missing_inputs = defer;
+            ctx.defer_missing_inputs = mode > 0;
+            if (mode == 2) ctx.made_by_pending_block = [](const Txid&) { return false; };
             BlockValidationState state;
             ConnectBlockResult result;
             const bool connected{chain.Connect(block, ctx, *view, state, result)};
@@ -817,6 +819,84 @@ BOOST_AUTO_TEST_CASE(present_inputs_check_the_same_with_deferral)
                 BOOST_CHECK(view->HaveCoin(COutPoint{block.vtx[1]->GetHash(), 0}));
             }
         }
+    }
+}
+
+//! In a block that may defer, an input the view does not hold yet and whose transaction a lower block is
+//! said to hold (BlockValidationContext::made_by_pending_block) is not looked up: its transaction is
+//! deferred, and checked against the input itself when the block is finished. The word is a hint: given
+//! for a coin that is there all along, the block's result is the same as without it.
+BOOST_AUTO_TEST_CASE(pending_block_hint_defers_without_a_lookup)
+{
+    Chain chain;
+    const CAmount fee{COIN / 10};
+    const CTransactionRef spend_a{Spend(COIN - fee)};
+    const CBlock block_a{chain.MakeBlock(spend_a, GetBlockSubsidy(2, chain.Consensus()) + fee)};
+    const uint256 hash_a{block_a.GetHash()};
+    const COutPoint out_a{spend_a->GetHash(), 0};
+
+    CMutableTransaction spend_b_mut;
+    spend_b_mut.vin.emplace_back(out_a);
+    spend_b_mut.vout.emplace_back(COIN - 2 * fee, CScript() << OP_TRUE);
+    const CTransactionRef spend_b{MakeTransactionRef(std::move(spend_b_mut))};
+    CMutableTransaction coinbase_b;
+    coinbase_b.vin.emplace_back(COutPoint{}, CScript() << 3 << OP_0);
+    coinbase_b.vout.emplace_back(GetBlockSubsidy(3, chain.Consensus()) + fee, CScript() << OP_TRUE);
+    const CBlock block_b{chain.MakeBlockAbove(block_a, std::move(coinbase_b), {spend_b})};
+    const uint256 hash_b{block_b.GetHash()};
+
+    for (const bool hint : {false, true}) {
+        for (const bool fetched : {false, true}) {
+            // A's output is below the view: a lookup finds it.
+            CCoinsViewCache below{&CoinsViewEmpty::Get()};
+            below.AddCoin(out_a, Coin{spend_a->vout[0], 2, false}, false);
+            CCoinsViewCache view{&below};
+            view.SetBestBlock(hash_a);
+            if (fetched) BOOST_REQUIRE(view.HaveCoin(out_a));
+            BOOST_CHECK_EQUAL(view.HaveCoinInCache(out_a), fetched);
+
+            int asked{0};
+            BlockValidationContext ctx{chain.ContextAbove(hash_b, hash_a)};
+            ctx.defer_missing_inputs = true;
+            ctx.made_by_pending_block = [&](const Txid& txid) {
+                ++asked;
+                return hint && txid == spend_a->GetHash();
+            };
+            BlockValidationState state;
+            ConnectBlockResult result;
+            BOOST_REQUIRE_MESSAGE(ConnectBlock(block_b, ctx, view, nullptr, chain.cache, false, state, result), state.ToString());
+            // The hint is asked only for a coin the view does not hold, and only then defers.
+            const bool deferred{hint && !fetched};
+            BOOST_CHECK_EQUAL(asked, fetched ? 0 : 1);
+            BOOST_CHECK_EQUAL(result.deferred_txs.size(), deferred ? 1U : 0U);
+            BOOST_CHECK_EQUAL(result.coinbase_check_deferred, deferred);
+            if (deferred) {
+                BOOST_CHECK(!view.HaveCoinInCache(out_a)); // not looked up
+                BOOST_REQUIRE_MESSAGE(FinishDeferredTransactions(block_b, ctx, view, chain.cache, state, result), state.ToString());
+            }
+            BOOST_CHECK_EQUAL(result.fees, fee);
+            BOOST_REQUIRE_EQUAL(result.undo.vtxundo.size(), 1U);
+            BOOST_REQUIRE_EQUAL(result.undo.vtxundo[0].vprevout.size(), 1U);
+            BOOST_CHECK_EQUAL(result.undo.vtxundo[0].vprevout[0].out.nValue, COIN - fee);
+            BOOST_CHECK(!view.HaveCoin(out_a));
+            BOOST_CHECK(view.HaveCoin(COutPoint{spend_b->GetHash(), 0}));
+        }
+    }
+
+    // The hint given for a transaction whose coin never comes: the block fails when it is finished, as a
+    // deferred transaction's missing input does.
+    {
+        CCoinsViewCache view{&CoinsViewEmpty::Get()};
+        view.SetBestBlock(hash_a);
+        BlockValidationContext ctx{chain.ContextAbove(hash_b, hash_a)};
+        ctx.defer_missing_inputs = true;
+        ctx.made_by_pending_block = [](const Txid&) { return true; };
+        BlockValidationState state;
+        ConnectBlockResult result;
+        BOOST_REQUIRE(ConnectBlock(block_b, ctx, view, nullptr, chain.cache, false, state, result));
+        BOOST_CHECK_EQUAL(result.deferred_txs.size(), 1U);
+        BOOST_CHECK(!FinishDeferredTransactions(block_b, ctx, view, chain.cache, state, result));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-inputs-missingorspent");
     }
 }
 

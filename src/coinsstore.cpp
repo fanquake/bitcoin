@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <exception>
 #include <functional>
 #include <limits>
@@ -652,6 +653,7 @@ CoinsStore::BlockId CoinsStore::BeginBlock(int height, bool mark_fresh_spends)
         slot.height.store(height, std::memory_order_relaxed);
         slot.begin_confirmed.store(m_confirmed_height.load(std::memory_order_relaxed), std::memory_order_relaxed);
         slot.mark_fresh_spends.store(mark_fresh_spends, std::memory_order_relaxed);
+        slot.creates_pending.store(false, std::memory_order_relaxed);
         slot.status.store(BlockStatus::APPLIED, std::memory_order_release);
         return id;
     }
@@ -664,6 +666,54 @@ int CoinsStore::BlockHeight(BlockId block) const
 {
     Assert(block < m_window.size());
     return m_window[block].height.load(std::memory_order_relaxed);
+}
+
+//! An entry of the pending transaction ids: the id's tag, the announcing block's height and its slot.
+static constexpr uint64_t PENDING_HEIGHT_MASK{0xffffff};
+static size_t PendingTxidPlace(const Txid& txid, size_t places) { return txid.ToUint256().GetUint64(1) & (places - 1); }
+static uint64_t PendingTxidTag(const Txid& txid) { return txid.ToUint256().GetUint64(2) >> 32; }
+
+void CoinsStore::AnnounceCreates(BlockId block, std::span<const CTransactionRef> txs)
+{
+    Assert(block != NO_BLOCK && block < m_window.size());
+    static_assert(MAX_WINDOW_SLOTS <= 256 && std::has_single_bit(PENDING_TXID_PLACES));
+    WindowBlock& slot{m_window[block]};
+    std::atomic<uint64_t>* table{m_pending_txids.load(std::memory_order_acquire)};
+    if (!table) {
+        std::call_once(m_pending_txids_once, [&] {
+            m_pending_txids_owner = std::make_unique<std::atomic<uint64_t>[]>(PENDING_TXID_PLACES);
+            m_pending_txids.store(m_pending_txids_owner.get(), std::memory_order_release);
+        });
+        table = m_pending_txids.load(std::memory_order_acquire);
+    }
+    const uint64_t owner{(static_cast<uint64_t>(slot.height.load(std::memory_order_relaxed)) & PENDING_HEIGHT_MASK) << 8 | block};
+    for (const CTransactionRef& tx : txs) {
+        table[PendingTxidPlace(tx->GetHash(), PENDING_TXID_PLACES)].store(PendingTxidTag(tx->GetHash()) << 32 | owner, std::memory_order_relaxed);
+    }
+    slot.creates_pending.store(true, std::memory_order_release);
+}
+
+void CoinsStore::CreatesApplied(BlockId block)
+{
+    Assert(block != NO_BLOCK && block < m_window.size());
+    m_window[block].creates_pending.store(false, std::memory_order_release);
+}
+
+bool CoinsStore::CreatesPendingBelow(BlockId viewer, const Txid& txid) const
+{
+    const std::atomic<uint64_t>* table{m_pending_txids.load(std::memory_order_acquire)};
+    if (!table || viewer == NO_BLOCK) return false;
+    const uint64_t entry{table[PendingTxidPlace(txid, PENDING_TXID_PLACES)].load(std::memory_order_relaxed)};
+    if (entry >> 32 != PendingTxidTag(txid)) return false;
+    const BlockId maker{static_cast<BlockId>(entry & 0xff)};
+    if (maker == NO_BLOCK || maker >= m_window.size()) return false;
+    // The entry is that of a block still open at the height it was announced at, below the viewer's, whose
+    // changes are not in the store. A slot freed and claimed again has had its mark cleared.
+    const WindowBlock& slot{m_window[maker]};
+    if (!slot.creates_pending.load(std::memory_order_acquire)) return false;
+    if (slot.status.load(std::memory_order_acquire) != BlockStatus::APPLIED) return false;
+    const int height{slot.height.load(std::memory_order_relaxed)};
+    return (static_cast<uint64_t>(height) & PENDING_HEIGHT_MASK) == (entry >> 8 & PENDING_HEIGHT_MASK) && height < BlockHeight(viewer);
 }
 
 uint32_t CoinsStore::ConflictCount(BlockId block) const
@@ -2118,10 +2168,19 @@ bool BlockApplyView::SpendCoin(const COutPoint& outpoint, Coin* moveto)
     return true;
 }
 
+void BlockApplyView::AnnounceCreates(const CBlock& block)
+{
+    Assert(HasBlock());
+    m_store.AnnounceCreates(m_block, block.vtx);
+}
+
 void BlockApplyView::ApplyChanges()
 {
     Assert(HasBlock());
-    if (m_dirty_count == 0) return;
+    if (m_dirty_count == 0) {
+        m_store.CreatesApplied(m_block);
+        return;
+    }
     std::vector<CoinsStore::Change> changes;
     changes.reserve(m_dirty_count);
     const uint32_t own_height{static_cast<uint32_t>(m_store.BlockHeight(m_block))};
@@ -2149,6 +2208,8 @@ void BlockApplyView::ApplyChanges()
     cachedCoinsUsage = 0;
     m_dirty_count = 0;
     m_store.ApplyBatch(m_block, std::move(changes));
+    // The block's outputs are in the store, a deferred transaction's too: a higher block reads them there.
+    m_store.CreatesApplied(m_block);
 }
 
 void BlockApplyView::Flush(bool /*reallocate_cache*/)

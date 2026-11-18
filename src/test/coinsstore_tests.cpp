@@ -5,6 +5,7 @@
 #include <coins.h>
 #include <coinsstore.h>
 #include <dbwrapper.h>
+#include <primitives/block.h>
 #include <script/script.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
@@ -1966,6 +1967,73 @@ BOOST_AUTO_TEST_CASE(block_apply_view_reads_a_database_coin_once)
     BOOST_CHECK_EQUAL(base.m_reads, 2);
     view.Unwind();
     BOOST_CHECK(store.HaveCoin(kept_coin));
+    store.SanityCheck();
+}
+
+//! A window block announces its transactions; until its changes are applied a higher block is told that
+//! their coins are pending, and no other block is. The mark goes with the apply, with the unwind, and
+//! does not pass to the next block in the slot.
+BOOST_AUTO_TEST_CASE(pending_creates_are_announced_until_applied)
+{
+    CCoinsViewDB db{MemoryDb("store"), {}};
+    CoinsStore store{&db, 4, true};
+    store.SetBestBlock(uint256::ONE, 1);
+    util::NotNull pool{std::make_shared<ThreadPool>("test")};
+    BlockApplyView lower{store, pool, /*deterministic=*/true};
+    BlockApplyView higher{store, pool, /*deterministic=*/true};
+    const auto make_block{[](uint32_t salt) {
+        CBlock block;
+        for (uint32_t i{0}; i < 3; ++i) {
+            CMutableTransaction mtx;
+            mtx.vin.emplace_back(COutPoint{Txid::FromUint256(uint256{static_cast<uint8_t>(salt)}), i});
+            mtx.vout.emplace_back(1000 + i, CScript{} << OP_TRUE);
+            block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
+        }
+        return block;
+    }};
+    const CBlock block_low{make_block(20)};
+    const CBlock block_high{make_block(21)};
+    const Txid low_txid{block_low.vtx[1]->GetHash()};
+    const Txid high_txid{block_high.vtx[1]->GetHash()};
+
+    lower.BeginBlock(2);
+    higher.BeginBlock(3);
+    BOOST_CHECK(!higher.CreatesPendingBelow(low_txid)); // nothing announced
+    lower.AnnounceCreates(block_low);
+    higher.AnnounceCreates(block_high);
+    for (const auto& tx : block_low.vtx) BOOST_CHECK(higher.CreatesPendingBelow(tx->GetHash()));
+    BOOST_CHECK(!lower.CreatesPendingBelow(low_txid));   // its own
+    BOOST_CHECK(!higher.CreatesPendingBelow(high_txid)); // its own
+    BOOST_CHECK(!lower.CreatesPendingBelow(high_txid));  // a higher block's
+    BOOST_CHECK(!store.CreatesPendingBelow(CoinsStore::NO_BLOCK, low_txid));
+    BOOST_CHECK(!higher.CreatesPendingBelow(Txid::FromUint256(uint256{22})));
+
+    // Applied: the coin is in the store, and is looked up there.
+    AddCoins(lower, *block_low.vtx[1], 2);
+    lower.ApplyChanges();
+    BOOST_CHECK(!higher.CreatesPendingBelow(low_txid));
+    BOOST_CHECK(higher.HaveCoin(COutPoint{low_txid, 0}));
+    higher.Unwind();
+    lower.Unwind();
+
+    // Unwound before it applied: nothing is pending, and the next block in the slot starts without the mark.
+    lower.BeginBlock(2);
+    higher.BeginBlock(3);
+    lower.AnnounceCreates(block_low);
+    BOOST_CHECK(higher.CreatesPendingBelow(low_txid));
+    higher.Unwind();
+    lower.Unwind();
+    lower.BeginBlock(2);
+    higher.BeginBlock(3);
+    BOOST_CHECK(!higher.CreatesPendingBelow(low_txid));
+    // A block with nothing to apply is applied all the same.
+    lower.AnnounceCreates(block_low);
+    BOOST_CHECK(higher.CreatesPendingBelow(low_txid));
+    lower.ApplyChanges();
+    BOOST_CHECK(!higher.CreatesPendingBelow(low_txid));
+    higher.Unwind();
+    lower.Unwind();
+    BOOST_CHECK_EQUAL(store.OpenBlocks(), 0U);
     store.SanityCheck();
 }
 

@@ -1306,7 +1306,8 @@ BITCOINKERNEL_API void btck_chainstate_manager_options_set_worker_threads_num(
  * are connected, an eighth of the coins cache and 32 MiB at least for the
  * blocks being connected, up to 64 MiB of undo data waiting to be written, and,
  * with no limit in bytes, the blocks whose notifications wait for an undo
- * write.
+ * write. Further, 4 MiB for each chainstate that validated blocks beside each
+ * other.
  *
  * @param[in] chainstate_manager_options Non-null, options to be set.
  * @param[in] database_cache_bytes       The total database cache size in bytes. Values below 4 MiB are rejected.

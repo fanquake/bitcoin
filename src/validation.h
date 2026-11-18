@@ -625,10 +625,9 @@ struct DeploymentFlags {
  * ChainstateManager. The contextual header and block checks also take the
  * previous block index entry, for the difficulty calculation.
  *
- * Every member is a copy, with two exceptions: params refers to the chain's
- * constant parameters, and median_time_past_at is a function, because which
- * ancestors a block's relative lock times refer to is known only once its
- * inputs are looked up.
+ * Every member is a copy, with three exceptions: params refers to the chain's
+ * constant parameters, and median_time_past_at and made_by_pending_block are
+ * functions.
  */
 struct BlockValidationContext {
     const Consensus::Params& params;
@@ -665,6 +664,13 @@ struct BlockValidationContext {
      * every lower block is in. With a complete window a missing input is "bad-txns-inputs-missingorspent".
      */
     bool defer_missing_inputs{false};
+    /**
+     * With `defer_missing_inputs`: whether a lower block that is not applied yet holds the transaction
+     * `txid` (CoinsStore::CreatesPendingBelow()), so that an input from it is taken as missing without a
+     * lookup. A hint: a wrong yes defers a transaction whose inputs FinishDeferredTransactions() then
+     * finds, a wrong no costs the lookup. Not set: every input is looked up.
+     */
+    std::function<bool(const Txid&)> made_by_pending_block{};
     //! Where the block is on disk, as the index recorded it when the block was planned, for a worker that
     //! reads the block itself. Null where the block is not read from there.
     FlatFilePos block_pos{};
@@ -704,18 +710,11 @@ struct ConnectBlockResult {
 /**
  * Apply `block` to `view`, checking every consensus rule that needs the UTXO
  * set. Pure apart from the view and from what it is handed to use: it reads
- * node state only through the context's callbacks (median_time_past_at),
- * reads and updates the script execution cache, erases the entries of the
- * signature cache that its script checks hit (as on master: a block's
- * signatures are not looked up twice), reads the steady clock for its
- * timings, writes nothing to disk and logs nothing itself (CheckBlock() does,
- * in a debug category, where a signet block's solution fails). Script checks run
- * on `check_queue` when it is
- * non-null and has worker threads, otherwise inline; they are skipped
- * entirely when `ctx.check_scripts` is false. With `just_check` the block's
- * PoW and merkle root are not rechecked, the script execution cache takes the
- * results of the checks that run inline, and the view's best block is left
- * untouched.
+ * node state only through the context's callbacks, reads and updates the
+ * script execution cache, erases the signature cache entries its script
+ * checks hit, reads the steady clock and writes nothing to disk. Which
+ * transactions a window block defers depends on the timing of the other
+ * blocks (made_by_pending_block); its verdict does not.
  *
  * Script checks run on `check_queue` when it is non-null and has worker
  * threads, otherwise inline; they are skipped when `ctx.check_scripts` is

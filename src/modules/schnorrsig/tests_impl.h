@@ -989,9 +989,75 @@ static void test_schnorrsig_taproot(void) {
     CHECK(secp256k1_xonly_pubkey_tweak_add_check(CTX, output_pk_bytes, pk_parity, &internal_pk, tweak) == 1);
 }
 
+/* Check that secp256k1_schnorrsig_verify_many agrees with secp256k1_schnorrsig_verify
+ * for n signatures starting at index 0. */
+static void test_schnorrsig_verify_many_check(const unsigned char *sigs64, const unsigned char *msgs32, const secp256k1_xonly_pubkey *pks, size_t n) {
+    unsigned char results[64];
+    size_t i;
+    CHECK(secp256k1_schnorrsig_verify_many(CTX, results, sigs64, msgs32, pks, n));
+    for (i = 0; i < n; i++) {
+        CHECK(results[i] == secp256k1_schnorrsig_verify(CTX, &sigs64[64 * i], &msgs32[32 * i], 32, &pks[i]));
+    }
+}
+
+static void test_schnorrsig_verify_many_internal(void) {
+    enum { N_SIGS = 37 };
+    static const unsigned char p_bytes[32] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xfc, 0x2f
+    };
+    static const unsigned char n_bytes[32] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+        0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41
+    };
+    unsigned char sigs64[N_SIGS][64];
+    unsigned char msgs32[N_SIGS][32];
+    secp256k1_xonly_pubkey pks[N_SIGS];
+    unsigned char results[N_SIGS];
+    size_t i;
+
+    for (i = 0; i < N_SIGS; i++) {
+        unsigned char sk[32];
+        secp256k1_keypair keypair;
+        testutil_random_scalar_order_b32(sk);
+        testrand256(msgs32[i]);
+        CHECK(secp256k1_keypair_create(CTX, &keypair, sk));
+        CHECK(secp256k1_keypair_xonly_pub(CTX, &pks[i], NULL, &keypair));
+        CHECK(secp256k1_schnorrsig_sign32(CTX, sigs64[i], msgs32[i], &keypair, NULL));
+    }
+    CHECK(secp256k1_schnorrsig_verify_many(CTX, results, &sigs64[0][0], &msgs32[0][0], pks, N_SIGS));
+    for (i = 0; i < N_SIGS; i++) {
+        CHECK(results[i] == 1);
+    }
+    /* Every batch size, including partial groups of lanes. */
+    for (i = 1; i <= 17; i++) {
+        test_schnorrsig_verify_many_check(&sigs64[0][0], &msgs32[0][0], pks, i);
+    }
+
+    /* Invalid signatures in many lane positions. */
+    for (i = 0; i < N_SIGS; i += 3) {
+        msgs32[i][testrand_bits(5)] ^= 1;
+    }
+    sigs64[1][testrand_bits(5)] ^= 1;
+    sigs64[4][32 + testrand_bits(5)] ^= 1;
+    memcpy(&sigs64[7][0], p_bytes, 32);
+    memcpy(&sigs64[10][32], n_bytes, 32);
+    pks[13] = pks[14];
+    memset(&sigs64[16][32], 0, 32);
+    test_schnorrsig_verify_many_check(&sigs64[0][0], &msgs32[0][0], pks, N_SIGS);
+    test_schnorrsig_verify_many_check(&sigs64[8][0], &msgs32[8][0], &pks[8], N_SIGS - 8);
+
+    CHECK_ILLEGAL(CTX, secp256k1_schnorrsig_verify_many(CTX, NULL, &sigs64[0][0], &msgs32[0][0], pks, N_SIGS));
+    CHECK_ILLEGAL(CTX, secp256k1_schnorrsig_verify_many(CTX, results, NULL, &msgs32[0][0], pks, N_SIGS));
+    CHECK_ILLEGAL(CTX, secp256k1_schnorrsig_verify_many(CTX, results, &sigs64[0][0], NULL, pks, N_SIGS));
+    CHECK_ILLEGAL(CTX, secp256k1_schnorrsig_verify_many(CTX, results, &sigs64[0][0], &msgs32[0][0], NULL, N_SIGS));
+    CHECK_ILLEGAL(CTX, secp256k1_schnorrsig_verify_many(CTX, results, &sigs64[0][0], &msgs32[0][0], pks, 0));
+}
+
 /* --- Test registry --- */
 REPEAT_TEST(test_schnorrsig_sign)
 REPEAT_TEST(test_schnorrsig_sign_verify)
+REPEAT_TEST(test_schnorrsig_verify_many)
 
 static const struct tf_test_entry tests_schnorrsig[] = {
     CASE(nonce_function_bip340_tests),
@@ -1000,6 +1066,7 @@ static const struct tf_test_entry tests_schnorrsig[] = {
     CASE1(test_schnorrsig_bip_vectors),
     CASE1(test_schnorrsig_sign),
     CASE1(test_schnorrsig_sign_verify),
+    CASE1(test_schnorrsig_verify_many),
     CASE1(test_schnorrsig_taproot),
     CASE1(test_schnorrsig_ctx_sha256),
 };

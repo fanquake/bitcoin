@@ -59,13 +59,24 @@ SECP256K1_ECDSA_IFMA_INLINE secp256k1_ecdsa_ifma_fe8 secp256k1_ecdsa_ifma_fe8_on
     return r;
 }
 
+/* Fold the bits above 2^256 into the low limb and carry through limbs 1 to 3, so
+ * that every limb is below 2^52 (limb 4 at most 2^48). The multiplication
+ * instructions only read the low 52 bits of each limb, so a wider limb would
+ * silently lose its top bit. */
 SECP256K1_ECDSA_IFMA_INLINE secp256k1_ecdsa_ifma_fe8 secp256k1_ecdsa_ifma_fe8_top_fold(secp256k1_ecdsa_ifma_fe8 r) {
+    const __m512i m52 = secp256k1_ecdsa_ifma_vsplat(SECP256K1_ECDSA_IFMA_M52);
     __m512i top = _mm512_srli_epi64(r.n[4], 48);
     __m512i v;
     r.n[4] = _mm512_and_si512(r.n[4], secp256k1_ecdsa_ifma_vsplat(UINT64_C(0xFFFFFFFFFFFF)));
-    v = _mm512_add_epi64(r.n[0], _mm512_mullo_epi64(top, secp256k1_ecdsa_ifma_vsplat(SECP256K1_ECDSA_IFMA_C256)));
-    r.n[0] = _mm512_and_si512(v, secp256k1_ecdsa_ifma_vsplat(SECP256K1_ECDSA_IFMA_M52));
+    v = _mm512_madd52lo_epu64(r.n[0], top, secp256k1_ecdsa_ifma_vsplat(SECP256K1_ECDSA_IFMA_C256));
+    r.n[0] = _mm512_and_si512(v, m52);
     r.n[1] = _mm512_add_epi64(r.n[1], _mm512_srli_epi64(v, 52));
+    r.n[2] = _mm512_add_epi64(r.n[2], _mm512_srli_epi64(r.n[1], 52));
+    r.n[1] = _mm512_and_si512(r.n[1], m52);
+    r.n[3] = _mm512_add_epi64(r.n[3], _mm512_srli_epi64(r.n[2], 52));
+    r.n[2] = _mm512_and_si512(r.n[2], m52);
+    r.n[4] = _mm512_add_epi64(r.n[4], _mm512_srli_epi64(r.n[3], 52));
+    r.n[3] = _mm512_and_si512(r.n[3], m52);
     return r;
 }
 
@@ -565,13 +576,40 @@ static void secp256k1_ecdsa_ifma_prepare_tile(const secp256k1_context *ctx, secp
     secp256k1_ecdsa_sig_inverse_var_many(inverses, ss, count);
 }
 
-SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_prepare8(const secp256k1_context *ctx, secp256k1_ecdsa_ifma_prepared8 *p, const secp256k1_scalar *rs, const secp256k1_scalar *ss, const unsigned char *msghashes32, const secp256k1_pubkey *pubkeys, const secp256k1_scalar *inverses, size_t count) {
+/* Prepare the lanes of p to compute u1[lane]*G + u2[lane]*q[lane]. */
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_prepare_mult8(secp256k1_ecdsa_ifma_prepared8 *p, const secp256k1_scalar u1[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_scalar u2[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_ge q[SECP256K1_ECDSA_IFMA_LANES]) {
     secp256k1_fe qx[SECP256K1_ECDSA_IFMA_LANES];
     secp256k1_fe qy[SECP256K1_ECDSA_IFMA_LANES];
-    secp256k1_fe rf[SECP256K1_ECDSA_IFMA_LANES];
-    secp256k1_fe rnf[SECP256K1_ECDSA_IFMA_LANES];
     secp256k1_ecdsa_ifma_fe8 qx8;
     secp256k1_ecdsa_ifma_fe8 qy8;
+    int lane;
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        secp256k1_scalar split[4];
+        secp256k1_scalar_split_lambda(&split[0], &split[1], &u1[lane]);
+        secp256k1_scalar_split_lambda(&split[2], &split[3], &u2[lane]);
+        secp256k1_ecdsa_ifma_dense_recode(p, 0, lane, &split[0]);
+        secp256k1_ecdsa_ifma_dense_recode(p, 1, lane, &split[1]);
+        secp256k1_ecdsa_ifma_dense_recode(p, 2, lane, &split[2]);
+        secp256k1_ecdsa_ifma_dense_recode(p, 3, lane, &split[3]);
+        qx[lane] = q[lane].x;
+        qy[lane] = q[lane].y;
+        secp256k1_fe_normalize_var(&qx[lane]);
+        secp256k1_fe_normalize_var(&qy[lane]);
+    }
+    qx8 = secp256k1_ecdsa_ifma_fe8_pack(qx);
+    qy8 = secp256k1_ecdsa_ifma_fe8_pack(qy);
+    p->global_z = secp256k1_ecdsa_ifma_build_global_table(p->qtab, qx8, qy8);
+    p->iso_z2 = secp256k1_ecdsa_ifma_fe8_sqr(p->global_z);
+    p->iso_z3 = secp256k1_ecdsa_ifma_fe8_mul(p->iso_z2, p->global_z);
+    secp256k1_ecdsa_ifma_phi_table(p->qphi, p->qtab);
+}
+
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_prepare8(const secp256k1_context *ctx, secp256k1_ecdsa_ifma_prepared8 *p, const secp256k1_scalar *rs, const secp256k1_scalar *ss, const unsigned char *msghashes32, const secp256k1_pubkey *pubkeys, const secp256k1_scalar *inverses, size_t count) {
+    secp256k1_scalar u1[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_scalar u2[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_ge q[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_fe rf[SECP256K1_ECDSA_IFMA_LANES];
+    secp256k1_fe rnf[SECP256K1_ECDSA_IFMA_LANES];
     int lane;
     memset(p, 0, sizeof(*p));
     for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
@@ -579,31 +617,17 @@ SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_prepare8(const secp
         secp256k1_scalar r = rs[at];
         secp256k1_scalar s = ss[at];
         secp256k1_scalar message;
-        secp256k1_scalar u1;
-        secp256k1_scalar u2;
-        secp256k1_scalar split[4];
-        secp256k1_ge q;
         unsigned char rb32[32];
         int q_ok;
         int range;
-        q_ok = secp256k1_pubkey_load(ctx, &q, &pubkeys[at]);
+        q_ok = secp256k1_pubkey_load(ctx, &q[lane], &pubkeys[at]);
         if (!q_ok) {
-            q = secp256k1_ge_const_g;
+            q[lane] = secp256k1_ge_const_g;
         }
         p->eligible[lane] = (uint8_t)((size_t)lane < count && q_ok && !secp256k1_scalar_is_zero(&r) && !secp256k1_scalar_is_zero(&s) && !secp256k1_scalar_is_high(&s));
         secp256k1_scalar_set_b32(&message, &msghashes32[32 * at], NULL);
-        secp256k1_scalar_mul(&u1, &message, &inverses[at]);
-        secp256k1_scalar_mul(&u2, &r, &inverses[at]);
-        secp256k1_scalar_split_lambda(&split[0], &split[1], &u1);
-        secp256k1_scalar_split_lambda(&split[2], &split[3], &u2);
-        secp256k1_ecdsa_ifma_dense_recode(p, 0, lane, &split[0]);
-        secp256k1_ecdsa_ifma_dense_recode(p, 1, lane, &split[1]);
-        secp256k1_ecdsa_ifma_dense_recode(p, 2, lane, &split[2]);
-        secp256k1_ecdsa_ifma_dense_recode(p, 3, lane, &split[3]);
-        qx[lane] = q.x;
-        qy[lane] = q.y;
-        secp256k1_fe_normalize_var(&qx[lane]);
-        secp256k1_fe_normalize_var(&qy[lane]);
+        secp256k1_scalar_mul(&u1[lane], &message, &inverses[at]);
+        secp256k1_scalar_mul(&u2[lane], &r, &inverses[at]);
         secp256k1_scalar_get_b32(rb32, &r);
         range = secp256k1_fe_set_b32_limit(&rf[lane], rb32);
 #ifdef VERIFY
@@ -618,14 +642,9 @@ SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_prepare8(const secp
             secp256k1_fe_add(&rnf[lane], &secp256k1_ecdsa_const_order_as_fe);
         }
     }
-    qx8 = secp256k1_ecdsa_ifma_fe8_pack(qx);
-    qy8 = secp256k1_ecdsa_ifma_fe8_pack(qy);
     p->r = secp256k1_ecdsa_ifma_fe8_pack(rf);
     p->r_plus_n = secp256k1_ecdsa_ifma_fe8_pack(rnf);
-    p->global_z = secp256k1_ecdsa_ifma_build_global_table(p->qtab, qx8, qy8);
-    p->iso_z2 = secp256k1_ecdsa_ifma_fe8_sqr(p->global_z);
-    p->iso_z3 = secp256k1_ecdsa_ifma_fe8_mul(p->iso_z2, p->global_z);
-    secp256k1_ecdsa_ifma_phi_table(p->qphi, p->qtab);
+    secp256k1_ecdsa_ifma_prepare_mult8(p, u1, u2, q);
 }
 
 SECP256K1_ECDSA_IFMA_INLINE secp256k1_ecdsa_ifma_aff8 secp256k1_ecdsa_ifma_fixed_correction(const secp256k1_ecdsa_ifma_prepared8 *p, secp256k1_ecdsa_ifma_aff8 q, const uint8_t neg[SECP256K1_ECDSA_IFMA_LANES]) {
@@ -635,7 +654,7 @@ SECP256K1_ECDSA_IFMA_INLINE secp256k1_ecdsa_ifma_aff8 secp256k1_ecdsa_ifma_fixed
     return q;
 }
 
-SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_finish8(uint8_t out[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_ecdsa_ifma_prepared8 *p, secp256k1_ecdsa_ifma_jac8 acc) {
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_finish8(uint8_t out[SECP256K1_ECDSA_IFMA_LANES], uint8_t z_zero[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_ecdsa_ifma_prepared8 *p, secp256k1_ecdsa_ifma_jac8 acc) {
     secp256k1_ecdsa_ifma_fe8 final_z = secp256k1_ecdsa_ifma_fe8_mul(acc.z, p->global_z);
     secp256k1_ecdsa_ifma_fe8 z2 = secp256k1_ecdsa_ifma_fe8_sqr(final_z);
     secp256k1_ecdsa_ifma_fe8 d1 = secp256k1_ecdsa_ifma_fe8_sub(acc.x, secp256k1_ecdsa_ifma_fe8_mul(p->r, z2));
@@ -655,58 +674,85 @@ SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_finish8(uint8_t out
         d1_is_zero = secp256k1_fe_normalizes_to_zero_var(&d1_lane);
         d2_is_zero = secp256k1_fe_normalizes_to_zero_var(&d2_lane);
         out[lane] = (uint8_t)(p->eligible[lane] && !z_is_zero && (d1_is_zero || (p->r_plus_n_ok[lane] && d2_is_zero)));
+        z_zero[lane] = (uint8_t)z_is_zero;
     }
 }
 
-SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_verify_group8(const secp256k1_context *ctx, uint8_t fast[SECP256K1_ECDSA_IFMA_LANES], uint8_t eligible[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_scalar *rs, const secp256k1_scalar *ss, const unsigned char *msghashes32, const secp256k1_pubkey *pubkeys, const secp256k1_scalar *inverses, size_t count) {
-    secp256k1_ecdsa_ifma_prepared8 p;
+/* Compute u1*G + u2*Q in every lane prepared by secp256k1_ecdsa_ifma_prepare_mult8,
+ * in Jacobian coordinates on the isomorphic curve: the true Z is the result's Z
+ * times p->global_z. An exceptional addition sets Z to zero and keeps it zero. */
+SECP256K1_ECDSA_IFMA_TARGET static secp256k1_ecdsa_ifma_jac8 secp256k1_ecdsa_ifma_mult8(const secp256k1_ecdsa_ifma_prepared8 *p) {
     secp256k1_ecdsa_ifma_jac8 acc;
     secp256k1_ecdsa_ifma_aff8 q;
     uint8_t zero_mag[SECP256K1_ECDSA_IFMA_LANES];
     int window;
-    int lane;
     int base;
     memset(zero_mag, 0, sizeof(zero_mag));
-    secp256k1_ecdsa_ifma_prepare8(ctx, &p, rs, ss, msghashes32, pubkeys, inverses, count);
-    q = secp256k1_ecdsa_ifma_map_fixed(&p, secp256k1_ecdsa_ifma_lookup_joint(&p, SECP256K1_ECDSA_IFMA_WINDOWS - 1));
+    q = secp256k1_ecdsa_ifma_map_fixed(p, secp256k1_ecdsa_ifma_lookup_joint(p, SECP256K1_ECDSA_IFMA_WINDOWS - 1));
     acc.x = q.x;
     acc.y = q.y;
     acc.z = secp256k1_ecdsa_ifma_fe8_one();
-    q = secp256k1_ecdsa_ifma_lookup_q(p.qtab, p.dmag[2][SECP256K1_ECDSA_IFMA_WINDOWS - 1], p.dneg[2][SECP256K1_ECDSA_IFMA_WINDOWS - 1]);
+    q = secp256k1_ecdsa_ifma_lookup_q(p->qtab, p->dmag[2][SECP256K1_ECDSA_IFMA_WINDOWS - 1], p->dneg[2][SECP256K1_ECDSA_IFMA_WINDOWS - 1]);
     acc = secp256k1_ecdsa_ifma_point_add_affine(acc, q);
-    q = secp256k1_ecdsa_ifma_lookup_q(p.qphi, p.dmag[3][SECP256K1_ECDSA_IFMA_WINDOWS - 1], p.dneg[3][SECP256K1_ECDSA_IFMA_WINDOWS - 1]);
+    q = secp256k1_ecdsa_ifma_lookup_q(p->qphi, p->dmag[3][SECP256K1_ECDSA_IFMA_WINDOWS - 1], p->dneg[3][SECP256K1_ECDSA_IFMA_WINDOWS - 1]);
     acc = secp256k1_ecdsa_ifma_point_add_affine(acc, q);
     for (window = SECP256K1_ECDSA_IFMA_WINDOWS - 2; window >= 0; window--) {
         acc = secp256k1_ecdsa_ifma_point_double(acc);
         acc = secp256k1_ecdsa_ifma_point_double(acc);
         acc = secp256k1_ecdsa_ifma_point_double(acc);
         acc = secp256k1_ecdsa_ifma_point_double(acc);
-        q = secp256k1_ecdsa_ifma_map_fixed(&p, secp256k1_ecdsa_ifma_lookup_joint(&p, window));
+        q = secp256k1_ecdsa_ifma_map_fixed(p, secp256k1_ecdsa_ifma_lookup_joint(p, window));
         acc = secp256k1_ecdsa_ifma_point_add_affine(acc, q);
-        q = secp256k1_ecdsa_ifma_lookup_q(p.qtab, p.dmag[2][window], p.dneg[2][window]);
+        q = secp256k1_ecdsa_ifma_lookup_q(p->qtab, p->dmag[2][window], p->dneg[2][window]);
         acc = secp256k1_ecdsa_ifma_point_add_affine(acc, q);
-        q = secp256k1_ecdsa_ifma_lookup_q(p.qphi, p.dmag[3][window], p.dneg[3][window]);
+        q = secp256k1_ecdsa_ifma_lookup_q(p->qphi, p->dmag[3][window], p->dneg[3][window]);
         acc = secp256k1_ecdsa_ifma_point_add_affine(acc, q);
     }
     for (base = 0; base < 2; base++) {
         secp256k1_ecdsa_ifma_jac8 corrected;
-        __mmask8 mask = secp256k1_ecdsa_ifma_mask8(p.even[base]);
+        __mmask8 mask = secp256k1_ecdsa_ifma_mask8(p->even[base]);
         const uint64_t *x = base == 0 ? secp256k1_ecdsa_ifma_gx : secp256k1_ecdsa_ifma_gphix;
         const uint64_t *y = base == 0 ? secp256k1_ecdsa_ifma_gy : secp256k1_ecdsa_ifma_gphiy;
         q.x = secp256k1_ecdsa_ifma_fe8_splat_limbs(x);
         q.y = secp256k1_ecdsa_ifma_fe8_splat_limbs(y);
-        q = secp256k1_ecdsa_ifma_fixed_correction(&p, q, p.correction_neg[base]);
+        q = secp256k1_ecdsa_ifma_fixed_correction(p, q, p->correction_neg[base]);
         corrected = secp256k1_ecdsa_ifma_point_add_affine(acc, q);
         acc = secp256k1_ecdsa_ifma_jac8_select(mask, corrected, acc);
     }
     for (base = 2; base < 4; base++) {
         secp256k1_ecdsa_ifma_jac8 corrected;
-        __mmask8 mask = secp256k1_ecdsa_ifma_mask8(p.even[base]);
-        q = secp256k1_ecdsa_ifma_lookup_q(base == 2 ? p.qtab : p.qphi, zero_mag, p.correction_neg[base]);
+        __mmask8 mask = secp256k1_ecdsa_ifma_mask8(p->even[base]);
+        q = secp256k1_ecdsa_ifma_lookup_q(base == 2 ? p->qtab : p->qphi, zero_mag, p->correction_neg[base]);
         corrected = secp256k1_ecdsa_ifma_point_add_affine(acc, q);
         acc = secp256k1_ecdsa_ifma_jac8_select(mask, corrected, acc);
     }
-    secp256k1_ecdsa_ifma_finish8(fast, &p, acc);
+    return acc;
+}
+
+/* Convert the lanes of a secp256k1_ecdsa_ifma_mult8 result to affine points with
+ * one shared inversion. A lane whose Z is zero, from an exceptional addition or an
+ * infinite result, becomes infinity. */
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_to_affine8(secp256k1_ge r[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_ecdsa_ifma_prepared8 *p, secp256k1_ecdsa_ifma_jac8 acc) {
+    secp256k1_ecdsa_ifma_fe8 final_z = secp256k1_ecdsa_ifma_fe8_mul(acc.z, p->global_z);
+    secp256k1_gej j[SECP256K1_ECDSA_IFMA_LANES];
+    int lane;
+    for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
+        secp256k1_ecdsa_ifma_fe8_get_lane(&j[lane].x, &acc.x, lane);
+        secp256k1_ecdsa_ifma_fe8_get_lane(&j[lane].y, &acc.y, lane);
+        secp256k1_ecdsa_ifma_fe8_get_lane(&j[lane].z, &final_z, lane);
+        secp256k1_fe_normalize_var(&j[lane].x);
+        secp256k1_fe_normalize_var(&j[lane].y);
+        secp256k1_fe_normalize_var(&j[lane].z);
+        j[lane].infinity = secp256k1_fe_is_zero(&j[lane].z);
+    }
+    secp256k1_ge_set_all_gej_var(r, j, SECP256K1_ECDSA_IFMA_LANES);
+}
+
+SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_verify_group8(const secp256k1_context *ctx, uint8_t fast[SECP256K1_ECDSA_IFMA_LANES], uint8_t eligible[SECP256K1_ECDSA_IFMA_LANES], uint8_t z_zero[SECP256K1_ECDSA_IFMA_LANES], const secp256k1_scalar *rs, const secp256k1_scalar *ss, const unsigned char *msghashes32, const secp256k1_pubkey *pubkeys, const secp256k1_scalar *inverses, size_t count) {
+    secp256k1_ecdsa_ifma_prepared8 p;
+    int lane;
+    secp256k1_ecdsa_ifma_prepare8(ctx, &p, rs, ss, msghashes32, pubkeys, inverses, count);
+    secp256k1_ecdsa_ifma_finish8(fast, z_zero, &p, secp256k1_ecdsa_ifma_mult8(&p));
     for (lane = 0; lane < SECP256K1_ECDSA_IFMA_LANES; lane++) {
         eligible[lane] = p.eligible[lane];
     }
@@ -714,8 +760,10 @@ SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_verify_group8(const
 
 /* Verify every input independently. An exceptional addition in the incomplete
  * mixed-add path can only set Z to zero and thus cause rejection; subsequent
- * formulas keep Z zero. Recheck otherwise eligible rejections with the
- * existing ECDSA verifier to preserve exact verification semantics. */
+ * formulas keep Z zero. With a nonzero Z every addition was regular, so the
+ * comparison with r is exact and a rejection is final. Only eligible lanes
+ * whose Z is zero, from an exceptional addition or an infinite result, are
+ * rechecked with the existing ECDSA verifier. */
 SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_verify_many(const secp256k1_context *ctx, uint8_t *out, const secp256k1_ecdsa_signature *sigs, const unsigned char *msghashes32, const secp256k1_pubkey *pubkeys, size_t count) {
     secp256k1_scalar rs[SECP256K1_ECDSA_IFMA_TILE];
     secp256k1_scalar ss[SECP256K1_ECDSA_IFMA_TILE];
@@ -731,17 +779,18 @@ SECP256K1_ECDSA_IFMA_TARGET static void secp256k1_ecdsa_ifma_verify_many(const s
         for (group_base = 0; group_base < tile_count; group_base += SECP256K1_ECDSA_IFMA_LANES) {
             uint8_t fast[SECP256K1_ECDSA_IFMA_LANES];
             uint8_t eligible[SECP256K1_ECDSA_IFMA_LANES];
+            uint8_t z_zero[SECP256K1_ECDSA_IFMA_LANES];
             size_t group_count = tile_count - group_base;
             size_t lane;
             if (group_count > SECP256K1_ECDSA_IFMA_LANES) {
                 group_count = SECP256K1_ECDSA_IFMA_LANES;
             }
-            secp256k1_ecdsa_ifma_verify_group8(ctx, fast, eligible, rs + group_base, ss + group_base, msghashes32 + 32 * (tile_base + group_base), pubkeys + tile_base + group_base, inverses + group_base, group_count);
+            secp256k1_ecdsa_ifma_verify_group8(ctx, fast, eligible, z_zero, rs + group_base, ss + group_base, msghashes32 + 32 * (tile_base + group_base), pubkeys + tile_base + group_base, inverses + group_base, group_count);
             for (lane = 0; lane < group_count; lane++) {
                 size_t index = tile_base + group_base + lane;
                 if (fast[lane]) {
                     out[index] = 1;
-                } else if (!eligible[lane]) {
+                } else if (!eligible[lane] || !z_zero[lane]) {
                     out[index] = 0;
                 } else {
                     out[index] = (uint8_t)secp256k1_ecdsa_verify(ctx, &sigs[index], &msghashes32[32 * index], &pubkeys[index]);

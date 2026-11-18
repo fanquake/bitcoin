@@ -19,6 +19,10 @@ typedef struct {
     const unsigned char **pk;
     const unsigned char **sigs;
     const unsigned char **msgs;
+    unsigned char *many_sigs;
+    unsigned char *many_msgs;
+    secp256k1_xonly_pubkey *many_pks;
+    unsigned char *many_results;
 } bench_schnorrsig_data;
 
 static void bench_schnorrsig_sign(void* arg, int iters) {
@@ -45,6 +49,11 @@ static void bench_schnorrsig_verify(void* arg, int iters) {
     }
 }
 
+static void bench_schnorrsig_verify_many(void* arg, int iters) {
+    bench_schnorrsig_data *data = (bench_schnorrsig_data *)arg;
+    CHECK(secp256k1_schnorrsig_verify_many(data->ctx, data->many_results, data->many_sigs, data->many_msgs, data->many_pks, iters));
+}
+
 static void run_schnorrsig_bench(int iters, int argc, char** argv) {
     int i;
     bench_schnorrsig_data data;
@@ -55,6 +64,10 @@ static void run_schnorrsig_bench(int iters, int argc, char** argv) {
     data.pk = malloc(iters * sizeof(unsigned char *));
     data.msgs = malloc(iters * sizeof(unsigned char *));
     data.sigs = malloc(iters * sizeof(unsigned char *));
+    data.many_sigs = malloc(iters * 64);
+    data.many_msgs = malloc(iters * MSGLEN);
+    data.many_pks = malloc(iters * sizeof(secp256k1_xonly_pubkey));
+    data.many_results = malloc(iters);
 
     CHECK(MSGLEN >= 4);
     for (i = 0; i < iters; i++) {
@@ -80,10 +93,14 @@ static void run_schnorrsig_bench(int iters, int argc, char** argv) {
         CHECK(secp256k1_schnorrsig_sign_custom(data.ctx, sig, msg, MSGLEN, keypair, NULL));
         CHECK(secp256k1_keypair_xonly_pub(data.ctx, &pk, NULL, keypair));
         CHECK(secp256k1_xonly_pubkey_serialize(data.ctx, pk_char, &pk) == 1);
+        memcpy(&data.many_sigs[64 * i], sig, 64);
+        memcpy(&data.many_msgs[MSGLEN * i], msg, MSGLEN);
+        data.many_pks[i] = pk;
     }
 
     if (d || have_flag(argc, argv, "schnorrsig") || have_flag(argc, argv, "sign") || have_flag(argc, argv, "schnorrsig_sign")) run_benchmark("schnorrsig_sign", bench_schnorrsig_sign, NULL, NULL, (void *) &data, 10, iters);
     if (d || have_flag(argc, argv, "schnorrsig") || have_flag(argc, argv, "verify") || have_flag(argc, argv, "schnorrsig_verify")) run_benchmark("schnorrsig_verify", bench_schnorrsig_verify, NULL, NULL, (void *) &data, 10, iters);
+    if (d || have_flag(argc, argv, "schnorrsig") || have_flag(argc, argv, "verify") || have_flag(argc, argv, "schnorrsig_verify_many")) run_benchmark("schnorrsig_verify_many", bench_schnorrsig_verify_many, NULL, NULL, (void *) &data, 10, iters);
 
     for (i = 0; i < iters; i++) {
         free((void *)data.keypairs[i]);
@@ -97,6 +114,10 @@ static void run_schnorrsig_bench(int iters, int argc, char** argv) {
     free((void *)data.pk);
     free((void *)data.msgs);
     free((void *)data.sigs);
+    free(data.many_sigs);
+    free(data.many_msgs);
+    free(data.many_pks);
+    free(data.many_results);
 
     secp256k1_context_destroy(data.ctx);
 }

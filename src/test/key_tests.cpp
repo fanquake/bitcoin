@@ -395,4 +395,30 @@ BOOST_AUTO_TEST_CASE(key_schnorr_tweak_smoke_test)
     secp256k1_context_destroy(secp256k1_context_sign);
 }
 
+BOOST_AUTO_TEST_CASE(ecdsa_batch)
+{
+    // More checks than one group of batch verification holds, with a partial final group.
+    ECDSABatch batch;
+    std::vector<unsigned char> expected;
+    for (int i{0}; i < 37; ++i) {
+        const CKey key{GenerateRandomKey()};
+        const uint256 hash{m_rng.rand256()};
+        std::vector<unsigned char> sig;
+        BOOST_REQUIRE(key.Sign(hash, sig));
+        const uint256 checked_hash{i % 5 ? hash : m_rng.rand256()};
+        BOOST_CHECK(batch.Add(key.GetPubKey(), checked_hash, sig));
+        expected.push_back(key.GetPubKey().Verify(checked_hash, sig));
+    }
+    BOOST_CHECK(!batch.Add(GenerateRandomKey().GetPubKey(), m_rng.rand256(), {}));
+    BOOST_CHECK_EQUAL(batch.size(), expected.size());
+
+    std::vector<unsigned char> results;
+    batch.Verify(results);
+    BOOST_CHECK_EQUAL_COLLECTIONS(results.begin(), results.end(), expected.begin(), expected.end());
+
+    batch.clear();
+    batch.Verify(results);
+    BOOST_CHECK(results.empty());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

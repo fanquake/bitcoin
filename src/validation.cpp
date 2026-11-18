@@ -2240,10 +2240,49 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
 }
 
 std::optional<std::pair<ScriptError, std::string>> CScriptCheck::operator()() {
+    return Execute(/*deferred=*/nullptr);
+}
+
+std::optional<std::pair<ScriptError, std::string>> CScriptCheck::RunBatch(std::span<CScriptCheck> checks)
+{
+    thread_local DeferredECDSAChecks deferred;
+    thread_local std::vector<size_t> deferred_ends;
+    thread_local std::vector<std::optional<std::pair<ScriptError, std::string>>> results;
+    thread_local std::vector<unsigned char> valid;
+    deferred.clear();
+    deferred_ends.clear();
+    results.clear();
+
+    for (CScriptCheck& check : checks) {
+        results.push_back(check.Execute(&deferred));
+        deferred_ends.push_back(deferred.batch.size());
+    }
+    deferred.batch.Verify(valid);
+
+    size_t begin{0};
+    for (size_t i{0}; i < checks.size(); ++i) {
+        const size_t end{deferred_ends[i]};
+        bool all_valid{true};
+        for (size_t j{begin}; j < end; ++j) {
+            if (!valid[j]) {
+                all_valid = false;
+            } else if (checks[i].cacheStore) {
+                checks[i].m_signature_cache->Set(deferred.cache_entries[j]);
+            }
+        }
+        if (!all_valid) results[i] = checks[i]();
+        if (results[i]) return std::move(results[i]);
+        begin = end;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::pair<ScriptError, std::string>> CScriptCheck::Execute(DeferredECDSAChecks* deferred)
+{
     const CScript &scriptSig = ptxTo->vin[nIn].scriptSig;
     const CScriptWitness *witness = &ptxTo->vin[nIn].scriptWitness;
     ScriptError error{SCRIPT_ERR_UNKNOWN_ERROR};
-    if (VerifyScript(scriptSig, m_tx_out.scriptPubKey, witness, m_flags, CachingTransactionSignatureChecker(ptxTo, nIn, m_tx_out.nValue, cacheStore, *m_signature_cache, *txdata), &error)) {
+    if (VerifyScript(scriptSig, m_tx_out.scriptPubKey, witness, m_flags, CachingTransactionSignatureChecker(ptxTo, nIn, m_tx_out.nValue, cacheStore, *m_signature_cache, *txdata, deferred), &error)) {
         return std::nullopt;
     } else {
         auto debug_str = strprintf("input %i of %s (wtxid %s), spending %s:%i", nIn, ptxTo->GetHash().ToString(), ptxTo->GetWitnessHash().ToString(), ptxTo->vin[nIn].prevout.hash.ToString(), ptxTo->vin[nIn].prevout.n);

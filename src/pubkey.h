@@ -232,6 +232,31 @@ public:
     [[nodiscard]] bool Derive(CPubKey& pubkeyChild, ChainCode &ccChild, unsigned int nChild, const ChainCode& cc, uint256* bip32_tweak_out = nullptr) const;
 };
 
+struct secp256k1_ecdsa_signature;
+struct secp256k1_pubkey;
+
+/** ECDSA signature checks collected to be verified together, which is several times faster than one at a time. */
+class ECDSABatch
+{
+    std::vector<secp256k1_ecdsa_signature> m_sigs;
+    std::vector<uint256> m_hashes;
+    std::vector<secp256k1_pubkey> m_pubkeys;
+
+public:
+    ECDSABatch();
+    ~ECDSABatch();
+
+    /** Add a check with the semantics of CPubKey::Verify. Returns false, adding nothing, if the public key or the
+     *  signature does not parse: such a check fails without being verified. */
+    bool Add(const CPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig);
+
+    size_t size() const { return m_hashes.size(); }
+    void clear();
+
+    /** Verify every added check. Element i of results is whether the i-th added check succeeded. */
+    void Verify(std::vector<unsigned char>& results) const;
+};
+
 class XOnlyPubKey
 {
 private:

@@ -8,6 +8,7 @@
 
 #include <consensus/amount.h>
 #include <crypto/sha256.h>
+#include <pubkey.h>
 #include <cuckoocache.h>
 #include <script/interpreter.h>
 #include <uint256.h>
@@ -61,14 +62,29 @@ public:
     void Set(const uint256& entry);
 };
 
+/** ECDSA signature checks deferred by CachingTransactionSignatureChecker, with their signature cache entries. */
+struct DeferredECDSAChecks {
+    ECDSABatch batch;
+    std::vector<uint256> cache_entries;
+
+    void clear()
+    {
+        batch.clear();
+        cache_entries.clear();
+    }
+};
+
 class CachingTransactionSignatureChecker : public TransactionSignatureChecker
 {
 private:
     bool store;
     SignatureCache& m_signature_cache;
+    /** If set, ECDSA checks that miss the signature cache are added to it instead of being verified, and reported as
+     *  successful. A script's outcome then only holds if every check it deferred turns out to be valid. */
+    DeferredECDSAChecks* m_deferred;
 
 public:
-    CachingTransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, bool storeIn, SignatureCache& signature_cache, PrecomputedTransactionData& txdataIn) : TransactionSignatureChecker(txToIn, nInIn, amountIn, txdataIn, MissingDataBehavior::ASSERT_FAIL), store(storeIn), m_signature_cache(signature_cache)  {}
+    CachingTransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, bool storeIn, SignatureCache& signature_cache, PrecomputedTransactionData& txdataIn, DeferredECDSAChecks* deferred = nullptr) : TransactionSignatureChecker(txToIn, nInIn, amountIn, txdataIn, MissingDataBehavior::ASSERT_FAIL), store(storeIn), m_signature_cache(signature_cache), m_deferred(deferred) {}
 
     bool VerifyECDSASignature(const std::vector<unsigned char>& vchSig, const CPubKey& vchPubKey, const uint256& sighash) const override;
     bool VerifySchnorrSignature(std::span<const unsigned char> sig, const XOnlyPubKey& pubkey, const uint256& sighash) const override;

@@ -90,7 +90,7 @@ bool CheckMapFlagNames()
 */
 bool CheckTxScripts(const CTransaction& tx, const std::map<COutPoint, CScript>& map_prevout_scriptPubKeys,
     const std::map<COutPoint, int64_t>& map_prevout_values, script_verify_flags flags,
-    const PrecomputedTransactionData& txdata, const std::string& strTest, bool expect_valid)
+    PrecomputedTransactionData& txdata, const std::string& strTest, bool expect_valid)
 {
     bool tx_valid = true;
     ScriptError err = expect_valid ? SCRIPT_ERR_UNKNOWN_ERROR : SCRIPT_ERR_OK;
@@ -114,6 +114,17 @@ bool CheckTxScripts(const CTransaction& tx, const std::map<COutPoint, CScript>& 
         BOOST_CHECK_MESSAGE(!tx_valid, strTest);
         BOOST_CHECK_MESSAGE((err != SCRIPT_ERR_OK), ScriptErrorString(err));
     }
+
+    // Verifying the inputs' ECDSA signatures together must give the same outcome.
+    static SignatureCache signature_cache{1 << 20};
+    std::vector<CScriptCheck> checks;
+    for (unsigned int i = 0; i < tx.vin.size(); ++i) {
+        const COutPoint& prevout{tx.vin[i].prevout};
+        const CAmount amount = map_prevout_values.contains(prevout) ? map_prevout_values.at(prevout) : 0;
+        checks.emplace_back(CTxOut{amount, map_prevout_scriptPubKeys.at(prevout)}, tx, signature_cache, i, flags, /*cacheIn=*/false, &txdata);
+    }
+    BOOST_CHECK_MESSAGE(CScriptCheck::RunBatch(checks).has_value() != tx_valid, "Batch verification differs: " << strTest);
+
     return (tx_valid == expect_valid);
 }
 

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <vector>
 
 /**
@@ -128,9 +129,13 @@ private:
             }
             // execute work
             if (do_work) {
-                for (T& check : vChecks) {
-                    local_result = check();
-                    if (local_result.has_value()) break;
+                if constexpr (requires { T::RunBatch(std::span<T>{vChecks}); }) {
+                    local_result = T::RunBatch(vChecks);
+                } else {
+                    for (T& check : vChecks) {
+                        local_result = check();
+                        if (local_result.has_value()) break;
+                    }
                 }
             }
             vChecks.clear();

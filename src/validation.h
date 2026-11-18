@@ -372,6 +372,8 @@ private:
     PrecomputedTransactionData *txdata;
     SignatureCache* m_signature_cache;
 
+    std::optional<std::pair<ScriptError, std::string>> Execute(DeferredECDSAChecks* deferred);
+
 public:
     CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, SignatureCache& signature_cache, unsigned int nInIn, script_verify_flags flags, bool cacheIn, PrecomputedTransactionData* txdataIn) :
         m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), m_flags(flags), cacheStore(cacheIn), txdata(txdataIn), m_signature_cache(&signature_cache) { }
@@ -382,6 +384,10 @@ public:
     CScriptCheck& operator=(CScriptCheck&&) = default;
 
     std::optional<std::pair<ScriptError, std::string>> operator()();
+
+    /** Run checks with their ECDSA signatures verified together, and return the first failure. A check with an
+     *  invalid signature is run again without deferral, since that signature may change the script's outcome. */
+    static std::optional<std::pair<ScriptError, std::string>> RunBatch(std::span<CScriptCheck> checks);
 };
 
 // CScriptCheck is used a lot in std::vector, make sure that's efficient

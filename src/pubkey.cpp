@@ -280,21 +280,63 @@ std::optional<std::pair<XOnlyPubKey, bool>> XOnlyPubKey::CreateTapTweak(const ui
 }
 
 
-bool CPubKey::Verify(const uint256 &hash, const std::vector<unsigned char>& vchSig) const {
-    if (!IsValid())
+/** Parse a public key and a signature for ECDSA verification. */
+static bool ParseForVerify(const CPubKey& pubkey, std::span<const unsigned char> sig_der, secp256k1_pubkey& pubkey_out, secp256k1_ecdsa_signature& sig_out)
+{
+    if (!pubkey.IsValid())
         return false;
-    secp256k1_pubkey pubkey;
-    secp256k1_ecdsa_signature sig;
-    if (!secp256k1_ec_pubkey_parse(secp256k1_context_static, &pubkey, vch, size())) {
+    if (!secp256k1_ec_pubkey_parse(secp256k1_context_static, &pubkey_out, pubkey.data(), pubkey.size())) {
         return false;
     }
-    if (!ecdsa_signature_parse_der_lax(&sig, vchSig.data(), vchSig.size())) {
+    if (!ecdsa_signature_parse_der_lax(&sig_out, sig_der.data(), sig_der.size())) {
         return false;
     }
     /* libsecp256k1's ECDSA verification requires lower-S signatures, which have
      * not historically been enforced in Bitcoin, so normalize them first. */
-    secp256k1_ecdsa_signature_normalize(secp256k1_context_static, &sig, &sig);
+    secp256k1_ecdsa_signature_normalize(secp256k1_context_static, &sig_out, &sig_out);
+    return true;
+}
+
+bool CPubKey::Verify(const uint256 &hash, const std::vector<unsigned char>& vchSig) const {
+    secp256k1_pubkey pubkey;
+    secp256k1_ecdsa_signature sig;
+    if (!ParseForVerify(*this, vchSig, pubkey, sig)) {
+        return false;
+    }
     return secp256k1_ecdsa_verify(secp256k1_context_static, &sig, hash.begin(), &pubkey);
+}
+
+ECDSABatch::ECDSABatch() = default;
+ECDSABatch::~ECDSABatch() = default;
+
+bool ECDSABatch::Add(const CPubKey& pubkey, const uint256& hash, std::span<const unsigned char> sig)
+{
+    secp256k1_pubkey parsed_pubkey;
+    secp256k1_ecdsa_signature parsed_sig;
+    if (!ParseForVerify(pubkey, sig, parsed_pubkey, parsed_sig)) {
+        return false;
+    }
+    m_pubkeys.push_back(parsed_pubkey);
+    m_sigs.push_back(parsed_sig);
+    m_hashes.push_back(hash);
+    return true;
+}
+
+void ECDSABatch::clear()
+{
+    m_pubkeys.clear();
+    m_sigs.clear();
+    m_hashes.clear();
+}
+
+void ECDSABatch::Verify(std::vector<unsigned char>& results) const
+{
+    results.resize(size());
+    if (results.empty()) return;
+    // secp256k1 takes the message hashes as one array of consecutive 32-byte hashes.
+    static_assert(sizeof(uint256) == 32);
+    const int args_valid{secp256k1_ecdsa_verify_many(secp256k1_context_static, results.data(), m_sigs.data(), m_hashes.front().data(), m_pubkeys.data(), size())};
+    assert(args_valid);
 }
 
 bool CPubKey::RecoverCompact(const uint256 &hash, const std::vector<unsigned char>& vchSig) {

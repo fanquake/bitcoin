@@ -17,4 +17,7 @@ class TxValidationState;
 
 bool CheckTransaction(const CTransaction& tx, TxValidationState& state);
 
+/** Whether two inputs of the transaction spend the same outpoint (see CVE-2018-17144). */
+bool HasDuplicateInputs(const CTransaction& tx);
+
 #endif // BITCOIN_CONSENSUS_TX_CHECK_H

@@ -11,10 +11,32 @@
 #include <script/script.h>
 #include <serialize.h>
 
-#include <set>
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
+
+bool HasDuplicateInputs(const CTransaction& tx)
+{
+    const size_t inputs{tx.vin.size()};
+    // Few inputs, as most transactions have: every pair is compared in place, with no memory allocated.
+    static constexpr size_t MAX_PAIRWISE_INPUTS{8};
+    if (inputs <= MAX_PAIRWISE_INPUTS) {
+        for (size_t i{1}; i < inputs; ++i) {
+            for (size_t j{0}; j < i; ++j) {
+                if (tx.vin[i].prevout == tx.vin[j].prevout) return true;
+            }
+        }
+        return false;
+    }
+    // Otherwise a sorted copy of the outpoints, where two equal ones are neighbours: one allocation for the
+    // transaction, where a std::set makes one per input.
+    std::vector<COutPoint> outpoints;
+    outpoints.reserve(inputs);
+    for (const auto& txin : tx.vin) outpoints.push_back(txin.prevout);
+    std::sort(outpoints.begin(), outpoints.end());
+    return std::adjacent_find(outpoints.begin(), outpoints.end()) != outpoints.end();
+}
 
 bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
 {
@@ -46,10 +68,8 @@ bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
     // of a tx as spent, it does not check if the tx has duplicate inputs.
     // Failure to run this check will result in either a crash or an inflation bug, depending on the implementation of
     // the underlying coins database.
-    std::set<COutPoint> vInOutPoints;
-    for (const auto& txin : tx.vin) {
-        if (!vInOutPoints.insert(txin.prevout).second)
-            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-inputs-duplicate");
+    if (HasDuplicateInputs(tx)) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-inputs-duplicate");
     }
 
     if (tx.IsCoinBase())

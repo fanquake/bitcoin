@@ -829,5 +829,29 @@ BOOST_FIXTURE_TEST_CASE(RemoveTxs, TestChain100Setup)
     TestUnloadWallet(std::move(wallet));
 }
 
+#ifdef DEBUG_LOCKORDER
+// A wallet attached to the chain takes cs_wallet in its chain callbacks, so a wait for the
+// validation signal queue under that lock is refused (the wait rule of sync.h).
+BOOST_FIXTURE_TEST_CASE(wait_for_the_signal_queue_refuses_cs_wallet, TestChain100Setup)
+{
+    m_args.ForceSetArg("-unsafesqlitesync", "1");
+    WalletContext context;
+    context.args = &m_args;
+    context.chain = m_node.chain.get();
+    auto wallet = TestCreateWallet(context);
+
+    const bool prev{g_debug_lockorder_abort};
+    g_debug_lockorder_abort = false;
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_CHECK_EXCEPTION(m_node.validation_signals->SyncWithValidationInterfaceQueue(), std::logic_error,
+                              HasReason{"waiting for the validation signal queue while holding cs_wallet"});
+    }
+    g_debug_lockorder_abort = prev;
+
+    TestUnloadWallet(std::move(wallet));
+}
+#endif // DEBUG_LOCKORDER
+
 BOOST_AUTO_TEST_SUITE_END()
 } // namespace wallet

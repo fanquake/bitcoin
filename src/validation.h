@@ -504,6 +504,64 @@ struct DeploymentFlags {
 };
 
 /**
+ * Ordering preconditions.
+ *
+ * Processing one block at a time under cs_main gives the rest of the node
+ * guarantees that no type or annotation states. They are listed here, and
+ * the code that relies on one says so with its number. Where the condition
+ * can be tested it is asserted (Assume, so that a debug build stops and a
+ * release build goes on as before).
+ *
+ *  O1  The only half-processed state a block can be seen in is "stored, not
+ *      yet activated", and calling ActivateBestChain() closes it.
+ *      ProcessNewBlock() opens it; ProcessGetBlockData() and the GETBLOCKS
+ *      handler in net_processing close it before they answer.
+ *  O2  When AcceptBlock() returns for a new block, its data, its position
+ *      and BLOCK_VALID_TRANSACTIONS are recorded together. Asserted there,
+ *      as the postcondition of ReceivedBlockTransactions().
+ *  O3  BlockChecked is delivered under cs_main before the tip moves: the
+ *      order of the statements in ConnectTip(), with O9's assertion above.
+ *  O4  NewPoWValidBlock is delivered under cs_main before the block is
+ *      written, and only for a block on top of the tip. Not asserted: both
+ *      conditions are the control flow of AcceptBlock().
+ *  O5  Message processing requests only blocks that are not stored, and
+ *      a block is "received, not stored" only inside the handling of the
+ *      one message that delivers it: BLOCK, or the BLOCKTXN or CMPCTBLOCK
+ *      that completes a compact block (O13). Not asserted: the
+ *      getblockfrompeer RPC checks and requests in two holds of cs_main
+ *      and may request a stored block.
+ *  O6  The tip is the fully connected frontier: its coins are in the tip
+ *      view and its transaction counts are known. Asserted in PublishTip(),
+ *      with O8's condition for the coins, which covers a write-out that
+ *      failed inside ConnectTip() or DisconnectTip().
+ *  O7  Signals are queued under cs_main in the order of connection, and
+ *      what they name is stored and connected. Asserted in part. That the
+ *      block is stored and is the tip, or has left the chain, is checked
+ *  O8  A flush never sees a half-applied block: the coins' best block is
+ *      the tip, its parent (inside DisconnectTip(), which writes before the
+ *      tip moves), or the one block on top of the tip that is being
+ *      connected, or was when a write-out failed. Asserted in
+ *      FlushStateToDisk().
+ *  O9  Connection is strictly sequential: a block is connected on top of
+ *      the tip, one ActivateBestChain() at a time. ConnectTip() asserts
+ *      the first; the second is m_chainstate_mutex.
+ *  O10 nSequenceId is assigned in arrival order, in
+ *      ReceivedBlockTransactions() under cs_main.
+ *  O11 A file position copied under cs_main stays readable afterwards, or
+ *      the reader handles the failed read (node::BlockFacts).
+ *  O12 The block index invariants hold whenever cs_main is free.
+ *      CheckBlockIndex() checks them.
+ *  O13 Messages are processed on one thread, so a block request may be
+ *      removed before the block is stored and no message asks for the
+ *      block again in between. Asserted at the BLOCK message and in
+ *      ProcessCompactBlockTxns().
+ *  O14 InvalidateBlock() tolerates blocks arriving between its lock drops,
+ *      by going over the block index again at its end.
+ *  O15 The tip does not move while a block template or proposal is
+ *      checked: TestBlockValidity() runs under cs_main.
+ */
+
+/**
  * Everything a block validation function needs from the node besides the
  * block itself and the coins view. The node builds one under cs_main from
  * configuration and the header chain; the validation functions read it and
@@ -1277,7 +1335,7 @@ public:
      * of the current chainstate or the initial block download latch (after
      * UpdateIBDStatus()) may have changed outside such a hold; does nothing
      * if nothing changed. The tip being published is the fully connected
-     * frontier.
+     * frontier (precondition O6).
      */
     void PublishTip() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
@@ -1297,7 +1355,6 @@ public:
     }
     bool TipUnpublished() const { return m_tip_unpublished.load(); }
 
-    //! The number of the tip as it is now.
     /**
      * Every received block is assigned a unique and increasing identifier, so we
      * know which one to give priority in case of a fork.

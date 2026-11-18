@@ -1338,6 +1338,9 @@ bool PeerManagerImpl::BlockRequested(NodeId nodeid, const CBlockIndex& block, st
     CNodeState *state = State(nodeid);
     assert(state != nullptr);
 
+    // Precondition O5 (validation.h): the requests of message processing are for blocks that
+    // are not stored. Not asserted here: the getblockfrompeer RPC checks for the data in one
+    // hold of cs_main and requests in another, and may ask for a block stored in between.
     Assume(mapBlocksInFlight.count(hash) <= MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK);
 
     // Short-circuit most stuff in case it is from the same node
@@ -2585,6 +2588,7 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
         if (pindex) {
             if (pindex->HaveNumChainTxs() && !pindex->IsValid(BLOCK_VALID_SCRIPTS) &&
                     pindex->IsValid(BLOCK_VALID_TREE)) {
+                // Precondition O1 (validation.h):
                 // If we have the block and all of its parents, but have not yet validated it,
                 // we might be in the middle of connecting it (ie in the unlock of cs_main
                 // before ActivateBestChain but after AcceptBlock).
@@ -3702,6 +3706,9 @@ void PeerManagerImpl::ProcessCompactBlockTxns(CNode& pfrom, Peer& peer, const Bl
 {
     std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
     bool fBlockRead{false};
+    // Precondition O13 (validation.h): as at the BLOCK message, the request for a block that
+    // is complete is removed below, before ProcessBlock() stores the block.
+    AssertLockHeld(g_msgproc_mutex);
     {
         LOCK(cs_main);
 
@@ -4507,6 +4514,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         // We might have announced the currently-being-connected tip using a
         // compact block, which resulted in the peer sending a getblocks
         // request, which we would otherwise respond to without the new block.
+        // (Precondition O1 in validation.h.)
         // To avoid this situation we simply verify that we are on our best
         // known chain now. This is super overkill, but we handle it better
         // for getheaders requests, and there are no known nodes which support
@@ -4591,7 +4599,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         FlatFilePos block_pos{};
         {
             // Facts read: the block's entry (data present, height, position), in one copy, and the
-            // tip's height. Condition for using the position after the copy: a block this
+            // tip's height. Condition for using the position after the copy (O11): a block this
             // near the tip is not pruned.
             const auto facts{WITH_LOCK(cs_main, return m_chainman.m_blockman.LookupBlockFacts(req.blockhash))};
             if (!facts || !facts->HaveData()) {
@@ -5137,6 +5145,12 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
             // Always process the block if we requested it, since we may
             // need it even when it's not a candidate for a new best tip.
             forceProcessing = IsBlockRequested(hash);
+            // Precondition O13 (validation.h): the request is removed before the block is stored,
+            // which leaves the block neither in flight nor stored until ProcessBlock() below
+            // returns. No message asks for it again in between because messages are processed on
+            // this one thread. The getblockfrompeer RPC can; the second copy then arrives for a
+            // block that is stored, which AcceptBlock() handles.
+            AssertLockHeld(g_msgproc_mutex);
             RemoveBlockRequest(hash, pfrom.GetId());
             // mapBlockSource is only used for punishing peers and setting
             // which peers send us compact blocks, so the race between here and

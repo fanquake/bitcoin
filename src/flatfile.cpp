@@ -114,3 +114,19 @@ bool FlatFileSeq::Flush(const FlatFilePos& pos, bool finalize) const
     }
     return true;
 }
+
+bool FlatFileSeq::Truncate(const FlatFilePos& pos) const
+{
+    FILE* file = Open(FlatFilePos(pos.nFile, 0)); // Avoid fseek to nPos
+    if (!file) {
+        LogError("%s: failed to open file %d", __func__, pos.nFile);
+        return false;
+    }
+    const bool truncated{TruncateFile(file, pos.nPos)};
+    if (!truncated) LogError("%s: failed to truncate file %d", __func__, pos.nFile);
+    if (fclose(file) != 0) {
+        LogError("Failed to close file %d after truncating it", pos.nFile);
+        return false;
+    }
+    return truncated;
+}

@@ -849,6 +849,18 @@ bool BlockManager::FlushBlockFile(int blockfile_num, bool fFinalize, bool finali
     return success;
 }
 
+void BlockManager::TrimBlockFile(int blockfile_num, bool trim_undo)
+{
+    AssertLockHeld(::cs_main);
+    // A failed trim leaves pre-allocated bytes in the file and nothing else: its data and its sync are untouched.
+    if (!m_block_file_seq.Truncate(FlatFilePos(blockfile_num, m_blockfile_info[blockfile_num].nSize))) {
+        LogWarning("Failed to trim block file %05i", blockfile_num);
+    }
+    if (trim_undo && !m_undo_file_seq.Truncate(FlatFilePos(blockfile_num, m_blockfile_info[blockfile_num].nUndoSize))) {
+        LogWarning("Failed to trim undo file %05i", blockfile_num);
+    }
+}
+
 BlockfileType BlockManager::BlockfileTypeForHeight(int height)
 {
     if (!m_snapshot_height) {
@@ -966,18 +978,11 @@ FlatFilePos BlockManager::FindNextBlockPos(uint64_t nAddSize, unsigned int nHeig
         LogDebug(BCLog::BLOCKSTORAGE, "Leaving block file %i: %s (onto %i) (height %i)\n",
                  last_blockfile, m_blockfile_info[last_blockfile].ToString(), nFile, nHeight);
 
-        // Do not propagate the return code. The flush concerns a previous block
-        // and undo file that has already been written to. If a flush fails
-        // here, and we crash, there is no expected additional block data
-        // inconsistency arising from the flush failure here. However, the undo
-        // data may be inconsistent after a crash if the flush is called during
-        // a reindex. A flush error might also leave some of the data files
-        // untrimmed.
-        if (!FlushBlockFile(last_blockfile, /*fFinalize=*/true, finalize_undo)) {
-            LogWarning(
-                          "Failed to flush previous block file %05i (finalize=1, finalize_undo=%i) before opening new block file %05i\n",
-                          last_blockfile, finalize_undo, nFile);
-        }
+        // The file is trimmed, not synced. It stays marked unsynced (m_unsynced_block_files, its undo file in
+        // m_unsynced_undo_files), and whatever records its blocks in the block index syncs it first
+        // (SyncWrittenFiles()). A sync here would be made under cs_main, holding every block being stored behind
+        // it, for a durability nothing reads yet.
+        TrimBlockFile(last_blockfile, /*trim_undo=*/finalize_undo);
         // No undo data yet in the new file, so reset our undo-height tracking.
         m_blockfile_cursors[chain_type] = BlockfileCursor{nFile};
     }

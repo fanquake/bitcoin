@@ -80,6 +80,14 @@ public:
      * @return true on success, false on failure.
      */
     bool Flush(const FlatFilePos& pos, bool finalize = false) const;
+
+    /**
+     * Truncate off a file's pre-allocated bytes, without committing it to disk.
+     *
+     * @param[in] pos The first unwritten position in the file.
+     * @return true on success, false on failure.
+     */
+    bool Truncate(const FlatFilePos& pos) const;
 };
 
 #endif // BITCOIN_FLATFILE_H

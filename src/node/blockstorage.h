@@ -211,6 +211,10 @@ private:
     /** Return false if block file or undo file flushing fails. */
     [[nodiscard]] bool FlushBlockFile(int blockfile_num, bool fFinalize, bool finalize_undo) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    /** Trim a block file the write position has left, and its undo file where that is finished too, without a
+     *  sync: both stay marked unsynced until whatever records their blocks in the block index syncs them. */
+    void TrimBlockFile(int blockfile_num, bool trim_undo) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     /** Return false if undo file flushing fails. */
     [[nodiscard]] bool FlushUndoFile(int block_file, bool finalize = false) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 

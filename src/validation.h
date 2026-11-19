@@ -1337,8 +1337,12 @@ protected:
     NodeClock::time_point m_next_write{NodeClock::time_point::max()};
     const CBlockIndex* m_last_flushed_block GUARDED_BY(::cs_main){nullptr};
     //! Set by the connect window around its periodic write: a write-out run started there is waited for
-    //! by the connector once it has released cs_main, not inside FlushStateToDisk().
+    //! by the connector once it has released cs_main, not inside FlushStateToDisk(). So is the run that
+    //! automatic pruning needs; the files are then chosen by the next flush.
     bool m_defer_write_out_wait GUARDED_BY(::cs_main){false};
+    //! Set by the connect window around a block's publication: the write-out before the tip moves leaves
+    //! automatic pruning to the periodic write of the same hold.
+    bool m_prune_at_periodic_write GUARDED_BY(::cs_main){false};
     //! The write-out runs that failed (a fatal error is raised for each). What rests on a run having
     //! landed, the removal of pruned files, compares it across the wait.
     uint64_t m_write_out_runs_failed GUARDED_BY(::cs_main){0};
